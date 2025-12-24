@@ -181,3 +181,10 @@ void mmu_enable_caches(void) {
     write_sctlr_el1(sctlr);
     isb();
 }
+
+// --- Phase 3.0: address-space contract (stubs acceptable) ---
+
+void mmu_kernel_init_global(void) {
+    // Phase 3.0: behavior unchanged; still build the single address space.
+    mmu_early_enable();
+}

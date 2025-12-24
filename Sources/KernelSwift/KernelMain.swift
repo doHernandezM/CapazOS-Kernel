@@ -6,12 +6,15 @@
 //
 
 @_silgen_name("uart_puts")
-func uart_puts(_ s: UnsafePointer<CChar>)
+func print(_ s: UnsafePointer<CChar>)
+
+@_silgen_name("uart_putn")
+func printLine(_ s: UnsafePointer<CChar>)
 
 @_cdecl("swift_kmain")
 public func swift_kmain() {
-    "======================\n".withCString { uart_puts($0) }
-    "=OSpost: Hello World!=\n".withCString { uart_puts($0) }
-    "======================\n".withCString { uart_puts($0) }
+    "\n======================\n".withCString { print($0) }
+    "= CapazOS: 0.0.1     =\n".withCString { print($0) }
+    "======================\n".withCString { print($0) }
 //    while true {}
 }

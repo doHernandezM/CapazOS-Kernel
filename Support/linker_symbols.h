@@ -1,6 +1,6 @@
 //
 //  linker_symbols.h
-//  OSpost
+//  Capaz
 //
 //  Linker-provided symbols for section boundaries and reserved regions.
 //

@@ -58,6 +58,9 @@
 		AA1D9AB32EFA1B2D00E5AA34 /* capability.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = capability.h; sourceTree = "<group>"; };
 		AA1D9AB42EFA1B5400E5AA34 /* vm_object.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vm_object.h; sourceTree = "<group>"; };
 		AA1D9AB52EFA1B7D00E5AA34 /* kiface.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kiface.h; sourceTree = "<group>"; };
+		AA40ABFC2EFB467B00688184 /* mmu_task_space.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu_task_space.h; sourceTree = "<group>"; };
+		AA40ABFD2EFB468200688184 /* mmu_task_space.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu_task_space.c; sourceTree = "<group>"; };
+		AA40ABFE2EFB59C200688184 /* vm_layout.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vm_layout.c; sourceTree = "<group>"; };
 		AA44B4C62EFA221400C9F498 /* kiface.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kiface.c; sourceTree = "<group>"; };
 		AA44B4C72EFA223200C9F498 /* vm_object.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vm_object.c; sourceTree = "<group>"; };
 		AA44B4C82EFA23C100C9F498 /* work_request.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = work_request.c; sourceTree = "<group>"; };
@@ -94,9 +97,12 @@
 		AA1D9AAC2EF9001E00E5AA34 /* MMU */ = {
 			isa = PBXGroup;
 			children = (
-				AA44B4CF2EFA3FED00C9F498 /* purgetable.h */,
 				AA44B4D02EFA3FFE00C9F498 /* purgetable.c */,
+				AA44B4CF2EFA3FED00C9F498 /* purgetable.h */,
+				AA40ABFD2EFB468200688184 /* mmu_task_space.c */,
+				AA40ABFC2EFB467B00688184 /* mmu_task_space.h */,
 				AA44B4D42EFA48B700C9F498 /* vm_layout.h */,
+				AA40ABFE2EFB59C200688184 /* vm_layout.c */,
 				AA44B4D52EFA48F200C9F498 /* mmu_ttbr1.c */,
 				AA1D9AB02EF9004E00E5AA34 /* memattr.h */,
 				AA1D9AAE2EF9002E00E5AA34 /* mmu.c */,

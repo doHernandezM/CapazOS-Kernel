@@ -1,6 +1,6 @@
 //
 //  kernel.h
-//  OSpost
+//  Capaz
 //
 //  Created by Cosas on 12/20/25.
 //

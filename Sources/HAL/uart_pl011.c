@@ -40,3 +40,13 @@ void uart_puts(const char* s) {
         uart_putc(*s++);
     }
 }
+
+void uart_putn(const char* s) {
+    if (!uart_initialized) {
+        return;
+    }
+    // Print the provided string
+    uart_puts(s);
+    // Append a carriage return at the end
+    uart_putc('\n');
+}

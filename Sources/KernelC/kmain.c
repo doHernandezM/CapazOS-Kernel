@@ -25,7 +25,7 @@ static void halt_forever(void) {
 }
 
 void kmain(void) {
-  uart_puts("kmain() reached.\n");
+  uart_puts("C Kernel: 0.0.1\n");
 
   work_request_t boot_req = {
     .intent = INTENT_INTERACTIVE,

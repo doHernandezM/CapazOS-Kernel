@@ -20,23 +20,22 @@ void crt0(void) {
 
     uart_init();
     uart_puts("====================\n");
-    uart_puts("C runtime is up\n");
+    uart_puts("Architecture: Qemu AArch64 virt\n");
+    uart_puts("Version: 0.0.1\n");
 
 #if KTEST_ENABLE
     ktest_run_stage(KTEST_STAGE_PRE_MMU);
 #endif
 
-    uart_puts("MMU: enabling (translation only)\n");
-    mmu_early_enable();
-    uart_puts("MMU: enabled\n");
-
+    mmu_kernel_init_global();
+    
 #if KTEST_ENABLE
     ktest_run_stage(KTEST_STAGE_POST_MMU);
 #endif
 
-    uart_puts("MMU: enabling caches\n");
+//    uart_puts("MMU: enabling caches\n");
     mmu_enable_caches();
-    uart_puts("MMU: caches enabled\n");
+    uart_puts("MMU: Enabled\n");
 
 #if KTEST_ENABLE
     ktest_run_stage(KTEST_STAGE_POST_CACHE);
