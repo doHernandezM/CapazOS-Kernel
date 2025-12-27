@@ -14,11 +14,13 @@
 
 _start:
     // Boot stack (identity, MMU off)
-    ldr x0, =__boot_stack_top
+    adrp x0, __boot_stack_top
+    add  x0, x0, :lo12:__boot_stack_top
     mov sp, x0
 
     // Install a minimal boot vector table (keeps faults diagnosable during early MMU work)
-    ldr x0, =boot_vectors
+    adrp x0, boot_vectors
+    add  x0, x0, :lo12:boot_vectors
     msr vbar_el1, x0
     isb
 

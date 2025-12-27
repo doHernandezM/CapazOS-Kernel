@@ -47,7 +47,8 @@ LDFLAGS=(
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Arch/aarch64/vectors.S" -o "$OUT_DIR/obj/vectors.o"
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Arch/aarch64/boot_higherhalf.S" -o "$OUT_DIR/obj/boot_higherhalf.o"
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/MMU/mmu.c"             -o "$OUT_DIR/obj/mmu.o"
-"$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/MMU/mmu_ttbr1.c"             -o "$OUT_DIR/obj/mmu_ttbr1.o"
+
+"$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/MMU/mmu_ttbr1.c" -o "$OUT_DIR/obj/mmu_ttbr1.o"
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/MMU/mmu_task_space.c"             -o "$OUT_DIR/obj/mmu_task_space.o"
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Sources/MMU/vm_layout.c"             -o "$OUT_DIR/obj/vm_layout.o"
 "$CC" "${CFLAGS[@]}" -c "$KERNEL_DIR/Support/include/capability.c"             -o "$OUT_DIR/obj/capability.o"

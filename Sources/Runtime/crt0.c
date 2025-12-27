@@ -27,9 +27,6 @@ void crt0(void) {
     // Clear kernel BSS (higher-half symbols)
     memset(__bss_start, 0, (size_t)(__bss_end - __bss_start));
 
-    /* NEW: adopt allocator cursor from boot (before TTBR0 is replaced). */
-        mmu_adopt_boot_pt_allocator();
-
     
     // Phase 3.1: lock down TTBR0 (user space) to default-deny now that we're in TTBR1.
     mmu_ttbr0_install(mmu_ttbr0_create_minimal(), 0);

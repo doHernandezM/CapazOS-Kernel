@@ -22,6 +22,10 @@ SECTIONS
   __boot_rodata_start = .;
   .rodata.boot : ALIGN(16) {
     *(.rodata.boot*)
+    /* Boot-time C code can still generate literal pools into plain .rodata.
+       Pull those from boot objects into the identity-mapped boot rodata region
+       so adrp/ldr sequences stay within range of .text.boot. */
+    *mmu_ttbr1.o(.rodata .rodata.* .rodata.cst* .srodata .srodata.*)
   }
   __boot_rodata_end = .;
 
@@ -31,14 +35,16 @@ SECTIONS
   }
   __boot_data_end = .;
 
+  __boot_bss_start = .;
   .bss.boot (NOLOAD) : ALIGN(16) {
     *(.bss.boot*)
   }
+  __boot_bss_end = .;
 
   /* Boot stack (identity) */
   .bootstack (NOLOAD) : ALIGN(0x1000) {
     __boot_stack_bottom = .;
-    . += 0x4000; /* 16KB boot stack */
+    . += 0x10000; /* 64KB boot stack (boot code can be stack-hungry at -O0) */
     __boot_stack_top = .;
   }
 
@@ -96,7 +102,7 @@ SECTIONS
 
   .pt ALIGN(0x4000) (NOLOAD) : AT(__phys) {
     __pt_base = .;
-    . += 0x20000;
+    . += 0x20000; /* 128KB page-table arena */
     __pt_end = .;
   }
   __phys += 0x20000;

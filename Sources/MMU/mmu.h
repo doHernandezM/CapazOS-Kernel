@@ -5,13 +5,15 @@
 extern "C" {
 #endif
 
-// Phase 2 compatibility (now delegates to Phase 3 bootstrap).
+/* Phase 2 compatibility (delegates to Phase 3 bootstrap). */
 void mmu_early_enable(void);
 void mmu_kernel_init_global(void);
-void mmu_adopt_boot_pt_allocator(void);
-// Phase 3.0/3.1 interfaces.
+
+/* Phase 3 bootstrap: builds TTBR0+TTBR1 and enables the MMU.
+ * Must be called from identity/boot code before branching to the higher-half. */
 void mmu_bootstrap(void);
 
+/* Runtime helpers (higher-half). */
 void mmu_enable_caches(void);
 
 void mmu_ttbr0_install(uint64_t root_pa, uint16_t asid);
