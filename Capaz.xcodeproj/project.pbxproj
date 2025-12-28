@@ -74,6 +74,10 @@
 		AA44B4D32EFA48A200C9F498 /* boot_higherhalf.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = boot_higherhalf.S; sourceTree = "<group>"; };
 		AA44B4D42EFA48B700C9F498 /* vm_layout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vm_layout.h; sourceTree = "<group>"; };
 		AA44B4D52EFA48F200C9F498 /* mmu_ttbr1.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu_ttbr1.c; sourceTree = "<group>"; };
+		AAA2CCAF2EFF82B900477D35 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
+		AAA2CCB02EFF838E00477D35 /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
+		AAA2CCB12EFF838E00477D35 /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
+		AAA2CCB22EFF8C8700477D35 /* boot_config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_config.h; sourceTree = "<group>"; };
 		AAE76CE42EF75EDC005230EB /* start.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = start.S; sourceTree = "<group>"; };
 		AAE76CE82EF75F07005230EB /* crt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = crt0.c; sourceTree = "<group>"; };
 		AAE76CEA2EF75F27005230EB /* uart_pl011.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uart_pl011.c; sourceTree = "<group>"; };
@@ -138,6 +142,8 @@
 			isa = PBXGroup;
 			children = (
 				AA1D9AB12EF9006900E5AA34 /* linker_symbols.h */,
+				AAA2CCB02EFF838E00477D35 /* boot.ld */,
+				AAA2CCB12EFF838E00477D35 /* kernel.ld */,
 				AAE76CF32EF75FD6005230EB /* module.modulemap */,
 				AAE76CF22EF75FC9005230EB /* linker.ld */,
 				AAE76CF02EF75F93005230EB /* include */,
@@ -166,6 +172,8 @@
 		AAE76CE62EF75EEE005230EB /* aarch64 */ = {
 			isa = PBXGroup;
 			children = (
+				AAA2CCB22EFF8C8700477D35 /* boot_config.h */,
+				AAA2CCAF2EFF82B900477D35 /* boot_info.h */,
 				AA44B4D32EFA48A200C9F498 /* boot_higherhalf.S */,
 				AA1D9AAF2EF9004000E5AA34 /* sysreg.h */,
 				AAE76D052EF790DD005230EB /* vectors.S */,

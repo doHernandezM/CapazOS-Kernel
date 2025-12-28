@@ -18,6 +18,76 @@
 #include "sysreg.h"
 #include "vm_layout.h"
 
+/*
+ * When building the boot image the kernel linker symbols such as
+ * __text_start_phys, __bss_end_phys, etc. are not available.  To
+ * construct the higher-half mappings without taking addresses of
+ * kernel-linked symbols, use constants defined in boot_config.h to
+ * describe the kernel's physical load address and size.  This header
+ * provides KERNEL_PHYS_BASE and KERNEL_PHYS_END which the boot
+ * bootstrap uses to map the entire kernel image as a single range.
+ */
+#include "boot_config.h"
+
+/*
+ * When compiling the runtime kernel image (BOOT_STAGE undefined), the
+ * macros describing the kernel's physical layout (KERNEL_PHYS_*) may
+ * not be provided on the command line.  Provide fallback definitions
+ * here so that references to these macros compile without error.
+ */
+#ifndef KERNEL_PHYS_BASE
+#define KERNEL_PHYS_BASE        0ull
+#endif
+#ifndef KERNEL_PHYS_END
+#define KERNEL_PHYS_END         0ull
+#endif
+#ifndef KERNEL_PHYS_TEXT_START
+#define KERNEL_PHYS_TEXT_START  0ull
+#endif
+#ifndef KERNEL_PHYS_TEXT_END
+#define KERNEL_PHYS_TEXT_END    0ull
+#endif
+#ifndef KERNEL_PHYS_RODATA_START
+#define KERNEL_PHYS_RODATA_START 0ull
+#endif
+#ifndef KERNEL_PHYS_RODATA_END
+#define KERNEL_PHYS_RODATA_END   0ull
+#endif
+#ifndef KERNEL_PHYS_DATA_START
+#define KERNEL_PHYS_DATA_START  0ull
+#endif
+#ifndef KERNEL_PHYS_BSS_END
+#define KERNEL_PHYS_BSS_END     0ull
+#endif
+#ifndef KERNEL_PHYS_PT_BASE
+#define KERNEL_PHYS_PT_BASE     0ull
+#endif
+#ifndef KERNEL_PHYS_PT_END
+#define KERNEL_PHYS_PT_END      0ull
+#endif
+#ifndef KERNEL_PHYS_STACK_BASE
+#define KERNEL_PHYS_STACK_BASE  0ull
+#endif
+#ifndef KERNEL_PHYS_STACK_END
+#define KERNEL_PHYS_STACK_END   0ull
+#endif
+
+/*
+ * In the runtime kernel (BOOT_STAGE undefined) the page-table allocator
+ * needs the start and end of the kernel's page-table arena.  These
+ * symbols are normally declared by <linker_symbols.h> when building
+ * the kernel image.  However, some build systems (e.g. Xcode) may not
+ * pick up the updated header search paths, leading to __pt_base and
+ * __pt_end being undeclared.  To make the allocator robust across
+ * build environments we redeclare them here when BOOT_STAGE is not
+ * defined.  They are defined by the linker script (kernel.ld) and
+ * imported as 8-bit symbols.
+ */
+#ifndef BOOT_STAGE
+extern uint8_t __pt_base[];
+extern uint8_t __pt_end[];
+#endif
+
 #ifndef MMU_UART0_BASE
 #define MMU_UART0_BASE 0x09000000ull
 #endif
@@ -45,7 +115,16 @@
  * Using the linker-provided symbol avoids silent divergence between vm_layout.h
  * and the link map.
  */
-static BOOT_RODATA const uint64_t kBootKvaOffset = (uint64_t)KERNEL_VA_OFFSET;
+/*
+ * During boot we map the kernel at a higher‑half virtual address that is
+ * independent of its physical load address.  Compute the VA offset as
+ * the difference between the configured KERNEL_VA_BASE and the actual
+ * physical base (KERNEL_PHYS_BASE) provided by the build script.  Using
+ * KERNEL_VA_OFFSET (which assumes KERNEL_PA_BASE = 0x4000_0000) would
+ * be incorrect when the kernel is loaded at a different physical base.
+ */
+static BOOT_RODATA const uint64_t kBootKvaOffset =
+    ((uint64_t)KERNEL_VA_BASE) - ((uint64_t)KERNEL_PHYS_BASE);
 static BOOT_RODATA const uint64_t kBootMairEl1   = (uint64_t)MAIR_VALUE;
 
 /* Precomputed TCR_EL1 for: 4KB granule, 39-bit VA, TTBR0+TTBR1 split, 32-bit PA. */
@@ -151,6 +230,25 @@ static BOOT_TEXT uint64_t boot_pte_device_rw_nx_desc(uint64_t pa) {
          | (PTE_PXN | PTE_UXN);
 }
 
+/*
+ * Construct a PTE suitable for mapping the entire kernel image during
+ * boot.  The kernel is mapped with read/write/execute permissions
+ * because its sections (text, data and bss) share a contiguous
+ * physical region.  We use the normal memory attribute index and
+ * grant RW at EL1.  Execute is allowed by omitting PTE_PXN and
+ * PTE_UXN.  Note that this is only used for the boot-time higher-half
+ * mapping; the runtime kernel builds its own page tables with finer
+ * granularity.
+ */
+static BOOT_TEXT uint64_t boot_pte_kernel_rw_x(uint64_t pa) {
+    return PTE_TYPE_PAGE
+         | PTE_PAGE_ADDR(pa)
+         | PTE_AF
+         | PTE_SH_INNER
+         | PTE_AP_RW_EL1
+         | PTE_ATTRINDX(MAIR_IDX_NORMAL);
+}
+
 static BOOT_TEXT uint64_t *get_l2_table_boot(pt_alloc_t *alloc, addr_to_pa_fn to_pa, uint64_t *l1, uint64_t va) {
     size_t i1 = BOOT_L1_INDEX(va);
     uint64_t e = l1[i1];
@@ -206,12 +304,34 @@ static BOOT_TEXT uint64_t make_ttbr_boot(uint16_t asid, uint64_t root_pa) {
 
 /* ---------------- Boot-time bootstrap (runs with MMU off) ---------------- */
 
+/*
+ * mmu_bootstrap constructs initial page tables for both TTBR0 (identity
+ * mapping for boot code) and TTBR1 (higher-half mapping for the kernel) and
+ * enables the MMU. It is only used in the early boot stage. When
+ * compiling the runtime kernel image the definition is omitted.
+ */
+#ifdef BOOT_STAGE
 __attribute__((section(".text.boot"))) BOOT_TARGET_GENERAL_REGS
 void mmu_bootstrap(void) {
-    /* Allocate page tables from the physical PT region (MMU is off). */
+    /*
+     * Allocate bootstrap page tables from a local arena.  The boot image
+     * cannot reference the kernel's page-table arena symbols since they
+     * are defined in the kernel linker script.  Reserving a small
+     * static buffer in .bss for boot page tables avoids the need for
+     * __pt_base_phys/__pt_end_phys in the boot image.  Adjust
+     * BOOT_PT_PAGES if you need more PT pages during early boot.
+     */
+
+    /* Number of pages to reserve for bootstrap page tables (defaults to 32
+     * pages = 128KiB).  Each page is 4KiB. */
+#ifndef BOOT_PT_PAGES
+#define BOOT_PT_PAGES 32u
+#endif
+    static uint8_t boot_pt_arena[PAGE_SIZE * BOOT_PT_PAGES] __attribute__((aligned(PAGE_SIZE)));
+
     pt_alloc_t alloc = {
-        .next = __pt_base_phys,
-        .end  = __pt_end_phys,
+        .next = boot_pt_arena,
+        .end  = boot_pt_arena + sizeof(boot_pt_arena),
     };
 
     /* Root tables are physical pointers in bootstrap context. */
@@ -219,44 +339,72 @@ void mmu_bootstrap(void) {
     uint64_t *ttbr0_l1 = (uint64_t *)pt_alloc_page_boot(&alloc);
 
     /* ----- TTBR1 (kernel higher-half) ----- */
-    const uint64_t text_pa0  = (uint64_t)(uintptr_t)__text_start_phys;
-    const uint64_t text_pa1  = (uint64_t)(uintptr_t)__text_end_phys;
-    const uint64_t ro_pa0    = (uint64_t)(uintptr_t)__rodata_start_phys;
-    const uint64_t ro_pa1    = (uint64_t)(uintptr_t)__rodata_end_phys;
-    const uint64_t data_pa0  = (uint64_t)(uintptr_t)__data_start_phys;
-    const uint64_t bss_pa1   = (uint64_t)(uintptr_t)__bss_end_phys;
+    /* Map kernel sections separately to honour WXN.  Text is mapped
+     * read+execute (RX), rodata is mapped read-only and non-executable,
+     * and data+bss are mapped read/write and non-executable.  Page
+     * tables and the kernel stack are also mapped RW+NX.  All
+     * addresses are supplied by boot_config.h. */
+    const uint64_t text_pa0   = (uint64_t)KERNEL_PHYS_TEXT_START;
+    const uint64_t text_pa1   = (uint64_t)KERNEL_PHYS_TEXT_END;
+    const uint64_t text_va0   = boot_pa_to_kva(text_pa0);
+    const uint64_t text_va1   = boot_pa_to_kva(text_pa1);
+    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
+                         text_va0, text_va1,
+                         text_pa0, boot_pte_ktext_rx);
 
-    const uint64_t pt_pa0    = (uint64_t)(uintptr_t)__pt_base_phys;
-    const uint64_t pt_pa1    = (uint64_t)(uintptr_t)__pt_end_phys;
-    const uint64_t stack_pa0 = (uint64_t)(uintptr_t)__stack_bottom_phys;
-    const uint64_t stack_pa1 = (uint64_t)(uintptr_t)__stack_top_phys;
+    const uint64_t ro_pa0     = (uint64_t)KERNEL_PHYS_RODATA_START;
+    const uint64_t ro_pa1     = (uint64_t)KERNEL_PHYS_RODATA_END;
+    const uint64_t ro_va0     = boot_pa_to_kva(ro_pa0);
+    const uint64_t ro_va1     = boot_pa_to_kva(ro_pa1);
+    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
+                         ro_va0, ro_va1,
+                         ro_pa0, boot_pte_krodata_ro_nx);
 
-    /* Compute higher-half VAs from PAs. */
-    const uint64_t text_va0  = boot_pa_to_kva(text_pa0);
-    const uint64_t text_va1  = boot_pa_to_kva(text_pa1);
-    const uint64_t ro_va0    = boot_pa_to_kva(ro_pa0);
-    const uint64_t ro_va1    = boot_pa_to_kva(ro_pa1);
-    const uint64_t data_va0  = boot_pa_to_kva(data_pa0);
-    const uint64_t bss_va1   = boot_pa_to_kva(bss_pa1);
+    /* Map the .got region (between rodata_end and data_start) as RW+NX.
+     * The kernel's Global Offset Table sits between the rodata and data
+     * sections.  Without mapping this range the CPU will fault when
+     * attempting to load function pointers through the GOT.  We treat
+     * the GOT as data and map it writable and non-executable. */
+    const uint64_t got_pa0   = (uint64_t)KERNEL_PHYS_RODATA_END;
+    const uint64_t got_pa1   = (uint64_t)KERNEL_PHYS_DATA_START;
+    if (got_pa1 > got_pa0) {
+        const uint64_t got_va0   = boot_pa_to_kva(got_pa0);
+        const uint64_t got_va1   = boot_pa_to_kva(got_pa1);
+        map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
+                             got_va0, got_va1,
+                             got_pa0, boot_pte_kdata_rw_nx);
+    }
 
-    const uint64_t pt_va0    = boot_pa_to_kva(pt_pa0);
-    const uint64_t pt_va1    = boot_pa_to_kva(pt_pa1);
-    const uint64_t stack_va0 = boot_pa_to_kva(stack_pa0);
-    const uint64_t stack_va1 = boot_pa_to_kva(stack_pa1);
+    /* data+bss form one contiguous PA range starting at data_start.  Map
+     * both sections with RW+NX permissions.  Note that this range starts
+     * at KERNEL_PHYS_DATA_START, which comes after the .got region. */
+    const uint64_t data_pa0   = (uint64_t)KERNEL_PHYS_DATA_START;
+    const uint64_t bss_pa1    = (uint64_t)KERNEL_PHYS_BSS_END;
+    const uint64_t data_va0   = boot_pa_to_kva(data_pa0);
+    const uint64_t bss_va1    = boot_pa_to_kva(bss_pa1);
+    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
+                         data_va0, bss_va1,
+                         data_pa0, boot_pte_kdata_rw_nx);
 
-    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1, text_va0, text_va1, text_pa0, boot_pte_ktext_rx);
-    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1, ro_va0,   ro_va1,   ro_pa0,   boot_pte_krodata_ro_nx);
+    /* Map the kernel's page-table region (PT) as RW+NX. */
+    const uint64_t pt_pa0     = (uint64_t)KERNEL_PHYS_PT_BASE;
+    const uint64_t pt_pa1     = (uint64_t)KERNEL_PHYS_PT_END;
+    const uint64_t pt_va0     = boot_pa_to_kva(pt_pa0);
+    const uint64_t pt_va1     = boot_pa_to_kva(pt_pa1);
+    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
+                         pt_va0, pt_va1,
+                         pt_pa0, boot_pte_kdata_rw_nx);
 
-    /* data+bss is one contiguous PA range starting at data_pa0 */
-    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1, data_va0, bss_va1,  data_pa0, boot_pte_kdata_rw_nx);
-
-    map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1, pt_va0,   pt_va1,   pt_pa0,   boot_pte_kdata_rw_nx);
-
+    /* Map the kernel stack as RW+NX, leaving a guard page at the bottom. */
+    const uint64_t stack_pa0  = (uint64_t)KERNEL_PHYS_STACK_BASE;
+    const uint64_t stack_pa1  = (uint64_t)KERNEL_PHYS_STACK_END;
+    const uint64_t stack_va0  = boot_pa_to_kva(stack_pa0);
+    const uint64_t stack_va1  = boot_pa_to_kva(stack_pa1);
     map_range_pages_boot(&alloc, id_to_pa, ttbr1_l1,
                          stack_va0 + PAGE_SIZE, stack_va1,
                          stack_pa0 + PAGE_SIZE, boot_pte_kdata_rw_nx);
 
-    /* Kernel MMIO: map UART into TTBR1 (kernel) region. */
+    /* Map kernel MMIO UART into TTBR1 region. */
     map_page_boot(&alloc, id_to_pa, ttbr1_l1,
                   kBootKernelUartVa, (uint64_t)MMU_UART0_BASE,
                   boot_pte_device_rw_nx_desc((uint64_t)MMU_UART0_BASE));
@@ -291,7 +439,7 @@ void mmu_bootstrap(void) {
                          boot_stack0, boot_stack1,
                          boot_stack0, boot_pte_kdata_rw_nx);
 
-    /* Optional: UART phys in TTBR0 too (early prints before switching VA). */
+    /* Optional: map UART phys in TTBR0 as well (for early prints before switching VA). */
     map_page_boot(&alloc, id_to_pa, ttbr0_l1,
                   (uint64_t)MMU_UART0_BASE, (uint64_t)MMU_UART0_BASE,
                   boot_pte_device_rw_nx_desc((uint64_t)MMU_UART0_BASE));
@@ -321,8 +469,19 @@ void mmu_bootstrap(void) {
     /* NOTE: No higher-half global state touched here. Runtime allocator is
      * initialized lazily from higher-half addresses after crt0 clears .bss. */
 }
+#endif /* BOOT_STAGE */
 
 /* ---------------- Runtime allocator (higher-half) ---------------- */
+
+/* ---------------- Runtime allocator and post-bootstrap functions --------- */
+/*
+ * When compiling the runtime kernel image (BOOT_STAGE undefined), the
+ * following symbols implement a simple page-table allocator and
+ * utilities to construct and install per-task TTBR0 mappings. The
+ * boot image does not include these helpers since it only needs
+ * mmu_bootstrap.
+ */
+#ifndef BOOT_STAGE
 
 static uint8_t *g_pt_next_va;
 static uint8_t *g_pt_end_va;
@@ -368,3 +527,4 @@ void mmu_ttbr0_install(uint64_t root_pa, uint16_t asid) {
     write_ttbr0_el1(make_ttbr(asid, root_pa));
     tlbi_aside1is(asid);
 }
+#endif /* !BOOT_STAGE */

@@ -135,4 +135,8 @@ SECTIONS
 
   PROVIDE(vectors_phys        = vectors        - __kern_offset);
   PROVIDE(__vectors_phys      = vectors        - __kern_offset);
+
+  /* Physical alias for crt0 so low-address bootstrap code can jump to it
+     without forming PC-relative references to the higher-half VMA. */
+  PROVIDE(crt0_phys           = crt0           - __kern_offset);
 }
