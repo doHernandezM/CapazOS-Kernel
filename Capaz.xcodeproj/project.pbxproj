@@ -47,115 +47,61 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AA1D9AAA2EF8A1A200E5AA34 /* mem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mem.c; sourceTree = "<group>"; };
-		AA1D9AAB2EF8A2AB00E5AA34 /* mem.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mem.h; sourceTree = "<group>"; };
-		AA1D9AAD2EF9002500E5AA34 /* mmu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu.h; sourceTree = "<group>"; };
-		AA1D9AAE2EF9002E00E5AA34 /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
-		AA1D9AAF2EF9004000E5AA34 /* sysreg.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sysreg.h; sourceTree = "<group>"; };
-		AA1D9AB02EF9004E00E5AA34 /* memattr.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = memattr.h; sourceTree = "<group>"; };
-		AA1D9AB12EF9006900E5AA34 /* linker_symbols.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = linker_symbols.h; sourceTree = "<group>"; };
-		AA1D9AB22EFA1B0900E5AA34 /* work_request.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = work_request.h; sourceTree = "<group>"; };
-		AA1D9AB32EFA1B2D00E5AA34 /* capability.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = capability.h; sourceTree = "<group>"; };
-		AA1D9AB42EFA1B5400E5AA34 /* vm_object.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vm_object.h; sourceTree = "<group>"; };
-		AA1D9AB52EFA1B7D00E5AA34 /* kiface.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kiface.h; sourceTree = "<group>"; };
-		AA40ABFC2EFB467B00688184 /* mmu_task_space.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu_task_space.h; sourceTree = "<group>"; };
-		AA40ABFD2EFB468200688184 /* mmu_task_space.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu_task_space.c; sourceTree = "<group>"; };
-		AA40ABFE2EFB59C200688184 /* vm_layout.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vm_layout.c; sourceTree = "<group>"; };
-		AA44B4C62EFA221400C9F498 /* kiface.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kiface.c; sourceTree = "<group>"; };
-		AA44B4C72EFA223200C9F498 /* vm_object.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vm_object.c; sourceTree = "<group>"; };
-		AA44B4C82EFA23C100C9F498 /* work_request.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = work_request.c; sourceTree = "<group>"; };
-		AA44B4C92EFA23D400C9F498 /* capability.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = capability.c; sourceTree = "<group>"; };
-		AA44B4CB2EFA2F1C00C9F498 /* kernel_test.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_test.h; sourceTree = "<group>"; };
-		AA44B4CC2EFA2F2900C9F498 /* kernel_test.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kernel_test.c; sourceTree = "<group>"; };
-		AA44B4CD2EFA3A2900C9F498 /* cpu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = cpu.h; sourceTree = "<group>"; };
-		AA44B4CE2EFA3A5C00C9F498 /* cpu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = cpu.c; sourceTree = "<group>"; };
-		AA44B4CF2EFA3FED00C9F498 /* purgetable.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = purgetable.h; sourceTree = "<group>"; };
-		AA44B4D02EFA3FFE00C9F498 /* purgetable.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = purgetable.c; sourceTree = "<group>"; };
-		AA44B4D32EFA48A200C9F498 /* boot_higherhalf.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = boot_higherhalf.S; sourceTree = "<group>"; };
-		AA44B4D42EFA48B700C9F498 /* vm_layout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vm_layout.h; sourceTree = "<group>"; };
-		AA44B4D52EFA48F200C9F498 /* mmu_ttbr1.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu_ttbr1.c; sourceTree = "<group>"; };
-		AAA2CCAF2EFF82B900477D35 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
-		AAA2CCB02EFF838E00477D35 /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
-		AAA2CCB12EFF838E00477D35 /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
-		AAA2CCB22EFF8C8700477D35 /* boot_config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_config.h; sourceTree = "<group>"; };
+		AAE12AED2F01CD6900870C5D /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
+		AAE12AEE2F01CD7C00870C5D /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
+		AAE12AF02F01CD9300870C5D /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
+		AAE12AF12F01CD9300870C5D /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
 		AAE76CE42EF75EDC005230EB /* start.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = start.S; sourceTree = "<group>"; };
-		AAE76CE82EF75F07005230EB /* crt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = crt0.c; sourceTree = "<group>"; };
 		AAE76CEA2EF75F27005230EB /* uart_pl011.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uart_pl011.c; sourceTree = "<group>"; };
 		AAE76CEB2EF75F2F005230EB /* uart_pl011.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = uart_pl011.h; sourceTree = "<group>"; };
-		AAE76CED2EF75F4E005230EB /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
-		AAE76CEF2EF75F6D005230EB /* KernelMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KernelMain.swift; sourceTree = "<group>"; };
-		AAE76CF12EF75FBC005230EB /* kernel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel.h; sourceTree = "<group>"; };
-		AAE76CF22EF75FC9005230EB /* linker.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = linker.ld; sourceTree = "<group>"; };
-		AAE76CF32EF75FD6005230EB /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
-		AAE76CF42EF75FE9005230EB /* build-kernel.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-kernel.sh"; sourceTree = "<group>"; };
 		AAE76CF52EF75FFC005230EB /* toolchain.env */ = {isa = PBXFileReference; explicitFileType = text.script; path = toolchain.env; sourceTree = "<group>"; };
 		AAE76CFB2EF76AA9005230EB /* .swift-version */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ".swift-version"; sourceTree = "<group>"; };
-		AAE76CFC2EF7766C005230EB /* embedded_shims.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = embedded_shims.c; sourceTree = "<group>"; };
 		AAE76CFD2EF7791E005230EB /* run-qemu.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "run-qemu.sh"; sourceTree = "<group>"; };
-		AAE76D052EF790DD005230EB /* vectors.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = vectors.S; sourceTree = "<group>"; };
-		AAE76D062EF790FE005230EB /* exceptions.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = exceptions.c; sourceTree = "<group>"; };
-		AAE76D072EF7A45D005230EB /* exceptions.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = exceptions.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		AA1D9AAC2EF9001E00E5AA34 /* MMU */ = {
-			isa = PBXGroup;
-			children = (
-				AA44B4D02EFA3FFE00C9F498 /* purgetable.c */,
-				AA44B4CF2EFA3FED00C9F498 /* purgetable.h */,
-				AA40ABFD2EFB468200688184 /* mmu_task_space.c */,
-				AA40ABFC2EFB467B00688184 /* mmu_task_space.h */,
-				AA44B4D42EFA48B700C9F498 /* vm_layout.h */,
-				AA40ABFE2EFB59C200688184 /* vm_layout.c */,
-				AA44B4D52EFA48F200C9F498 /* mmu_ttbr1.c */,
-				AA1D9AB02EF9004E00E5AA34 /* memattr.h */,
-				AA1D9AAE2EF9002E00E5AA34 /* mmu.c */,
-				AA1D9AAD2EF9002500E5AA34 /* mmu.h */,
-			);
-			path = MMU;
-			sourceTree = "<group>";
-		};
 		AA4605E82EF726B30018B236 = {
 			isa = PBXGroup;
 			children = (
 				AAE76CFB2EF76AA9005230EB /* .swift-version */,
+				AAE12AF22F01CD9300870C5D /* Linker */,
 				AAE76CE32EF75EC1005230EB /* Scripts */,
-				AAE76CE12EF75E3A005230EB /* Support */,
 				AAE76CE02EF727C7005230EB /* Sources */,
 			);
+			sourceTree = "<group>";
+		};
+		AAE12AEF2F01CD7C00870C5D /* Kernel */ = {
+			isa = PBXGroup;
+			children = (
+				AAE12AEE2F01CD7C00870C5D /* kmain.c */,
+			);
+			path = Kernel;
+			sourceTree = "<group>";
+		};
+		AAE12AF22F01CD9300870C5D /* Linker */ = {
+			isa = PBXGroup;
+			children = (
+				AAE12AF02F01CD9300870C5D /* boot.ld */,
+				AAE12AF12F01CD9300870C5D /* kernel.ld */,
+			);
+			path = Linker;
 			sourceTree = "<group>";
 		};
 		AAE76CE02EF727C7005230EB /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				AA1D9AAC2EF9001E00E5AA34 /* MMU */,
-				AAE76CEE2EF75F61005230EB /* KernelSwift */,
-				AAE76CEC2EF75F3E005230EB /* KernelC */,
+				AAE12AEF2F01CD7C00870C5D /* Kernel */,
 				AAE76CE92EF75F16005230EB /* HAL */,
-				AAE76CE72EF75F01005230EB /* Runtime */,
 				AAE76CE52EF75EE8005230EB /* Arch */,
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		AAE76CE12EF75E3A005230EB /* Support */ = {
-			isa = PBXGroup;
-			children = (
-				AA1D9AB12EF9006900E5AA34 /* linker_symbols.h */,
-				AAA2CCB02EFF838E00477D35 /* boot.ld */,
-				AAA2CCB12EFF838E00477D35 /* kernel.ld */,
-				AAE76CF32EF75FD6005230EB /* module.modulemap */,
-				AAE76CF22EF75FC9005230EB /* linker.ld */,
-				AAE76CF02EF75F93005230EB /* include */,
-			);
-			path = Support;
 			sourceTree = "<group>";
 		};
 		AAE76CE32EF75EC1005230EB /* Scripts */ = {
 			isa = PBXGroup;
 			children = (
 				AAE76CF52EF75FFC005230EB /* toolchain.env */,
-				AAE76CF42EF75FE9005230EB /* build-kernel.sh */,
+				AAE12AED2F01CD6900870C5D /* build.sh */,
 				AAE76CFD2EF7791E005230EB /* run-qemu.sh */,
 			);
 			path = Scripts;
@@ -172,23 +118,9 @@
 		AAE76CE62EF75EEE005230EB /* aarch64 */ = {
 			isa = PBXGroup;
 			children = (
-				AAA2CCB22EFF8C8700477D35 /* boot_config.h */,
-				AAA2CCAF2EFF82B900477D35 /* boot_info.h */,
-				AA44B4D32EFA48A200C9F498 /* boot_higherhalf.S */,
-				AA1D9AAF2EF9004000E5AA34 /* sysreg.h */,
-				AAE76D052EF790DD005230EB /* vectors.S */,
 				AAE76CE42EF75EDC005230EB /* start.S */,
 			);
 			path = aarch64;
-			sourceTree = "<group>";
-		};
-		AAE76CE72EF75F01005230EB /* Runtime */ = {
-			isa = PBXGroup;
-			children = (
-				AAE76CFC2EF7766C005230EB /* embedded_shims.c */,
-				AAE76CE82EF75F07005230EB /* crt0.c */,
-			);
-			path = Runtime;
 			sourceTree = "<group>";
 		};
 		AAE76CE92EF75F16005230EB /* HAL */ = {
@@ -198,46 +130,6 @@
 				AAE76CEB2EF75F2F005230EB /* uart_pl011.h */,
 			);
 			path = HAL;
-			sourceTree = "<group>";
-		};
-		AAE76CEC2EF75F3E005230EB /* KernelC */ = {
-			isa = PBXGroup;
-			children = (
-				AA44B4CD2EFA3A2900C9F498 /* cpu.h */,
-				AA44B4CE2EFA3A5C00C9F498 /* cpu.c */,
-				AA44B4CC2EFA2F2900C9F498 /* kernel_test.c */,
-				AA44B4CB2EFA2F1C00C9F498 /* kernel_test.h */,
-				AAE76D062EF790FE005230EB /* exceptions.c */,
-				AAE76D072EF7A45D005230EB /* exceptions.h */,
-				AA1D9AAA2EF8A1A200E5AA34 /* mem.c */,
-				AA1D9AAB2EF8A2AB00E5AA34 /* mem.h */,
-				AAE76CED2EF75F4E005230EB /* kmain.c */,
-			);
-			path = KernelC;
-			sourceTree = "<group>";
-		};
-		AAE76CEE2EF75F61005230EB /* KernelSwift */ = {
-			isa = PBXGroup;
-			children = (
-				AAE76CEF2EF75F6D005230EB /* KernelMain.swift */,
-			);
-			path = KernelSwift;
-			sourceTree = "<group>";
-		};
-		AAE76CF02EF75F93005230EB /* include */ = {
-			isa = PBXGroup;
-			children = (
-				AA1D9AB22EFA1B0900E5AA34 /* work_request.h */,
-				AA44B4C82EFA23C100C9F498 /* work_request.c */,
-				AA1D9AB32EFA1B2D00E5AA34 /* capability.h */,
-				AA44B4C92EFA23D400C9F498 /* capability.c */,
-				AA1D9AB42EFA1B5400E5AA34 /* vm_object.h */,
-				AA44B4C72EFA223200C9F498 /* vm_object.c */,
-				AA1D9AB52EFA1B7D00E5AA34 /* kiface.h */,
-				AA44B4C62EFA221400C9F498 /* kiface.c */,
-				AAE76CF12EF75FBC005230EB /* kernel.h */,
-			);
-			path = include;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -292,7 +184,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nset -e\n\"${SRCROOT}/Scripts/build-kernel.sh\"\n";
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nset -e\n\"${SRCROOT}/Scripts/build.sh\"\n";
 		};
 		AAE76D022EF78768005230EB /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

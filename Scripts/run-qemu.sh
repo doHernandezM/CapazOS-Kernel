@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
+#
+# Launch the combined boot+kernel image under QEMU.
+#
+# This script executes qemu-system-aarch64 in a configuration suitable for
+# testing the boot stage.  It uses the `virt` machine, the Cortex‑A72
+# compatible CPU, 128 MiB of RAM and maps the combined image at
+# physical address 0x4000_0000.  The serial console is redirected to
+# the host standard input and output.
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-# The unified build previously produced a single Kernel.elf.  With
-# separate boot and kernel images the build script now emits a
-# combined flat image (kernel.img) that contains the boot and kernel
-# concatenated with appropriate padding.  Use this image as the
-# -kernel argument to QEMU.  If you want to debug individual
-# components you can still point -kernel at build/boot.elf or
-# build/kernel.elf, but the default combined image reflects the new
-# packaging.
-ELF="$ROOT/build/kernel.img"
+IMAGE="$ROOT/build/kernel.img"
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [[ ! -f "$IMAGE" ]]; then
+  echo "Image $IMAGE not found.  Did you run build.sh?" >&2
+  exit 1
+fi
 
-echo "Kernel image location:"
-echo "$ELF"
-
-DEBUG_PORT="${DEBUG_PORT:-1225}"
+DEBUG_PORT="${DEBUG_PORT:-}" # set DEBUG_PORT=1234 to enable gdb
 
 exec qemu-system-aarch64 \
   -machine virt \
@@ -25,7 +26,6 @@ exec qemu-system-aarch64 \
   -m 128M \
   -nographic \
   -serial mon:stdio \
-  -kernel "$ELF" \
+  -kernel "$IMAGE" \
   -no-reboot -no-shutdown \
-  ${DEBUG:+-S} \
-  -gdb "tcp::${DEBUG_PORT}"
+  ${DEBUG_PORT:+-S -gdb tcp::${DEBUG_PORT}}

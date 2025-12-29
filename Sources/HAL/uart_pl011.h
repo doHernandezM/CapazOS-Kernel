@@ -1,14 +1,20 @@
+/*
+ * uart_pl011.h
+ *
+ * Minimal interface for the PL011 UART used on QEMU’s virt platform.
+ * The kernel stub uses these functions to print diagnostic messages.
+ *
+ * Note: These routines are not re‑entrant and busy‑wait on the UART’s
+ * transmit FIFO.  They intentionally avoid any dynamic allocation or
+ * standard library calls so that they can be used early in the boot.
+ */
+
 #pragma once
+
 #include <stdint.h>
 
-// Early console (PL011) for QEMU virt.
-// Phase 3.1: support switching the MMIO base from physical (pre-MMU) to the
-// kernel's TTBR1-mapped MMIO VA after higher-half bring-up.
+/* Write a single byte to the UART. */
+void uart_send(uint8_t byte);
 
-void uart_init(void);
-void uart_putc(char c);
-void uart_puts(const char* s);
-
-// Switch the MMIO base used for UART registers.
-void uart_set_base(uint64_t base);
-uint64_t uart_get_base(void);
+/* Write a null‑terminated string to the UART. */
+void uart_puts(const char *str);
