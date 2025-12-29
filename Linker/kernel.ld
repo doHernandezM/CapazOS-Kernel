@@ -1,32 +1,72 @@
-/*
- * Linker script for the stub kernel image.
- *
- * For now the kernel is placed at 0x4020_0000, i.e. 2 MiB above the
- * boot image, but the boot stage does not yet jump here.  The entry
- * point is `kmain`.  As the kernel evolves this script will grow to
- * export section boundaries for the runtime initialisation code.
+/* Kernel/Linker/kernel.ld
+ * Kernel linker script: higher-half VMA, physical LMA (lld-friendly).
  */
 
-ENTRY(kmain)
+ENTRY(_kcrt0)
 
 SECTIONS
 {
-    /* Load kernel 2 MiB above the boot image (0x4000_0000 + 0x200000). */
-    . = 0x40200000;
+  PROVIDE(RAM_BASE = 0x40000000);
+  PROVIDE(HH_PHYS_4000_BASE = 0xFFFF800040000000);
 
-    .text : ALIGN(16)
-    {
-        *(.text*)
-    }
+  /* Defaults; build.sh overrides via --defsym */
+  PROVIDE(KERNEL_PHYS_BASE = 0x40280000);
+  PROVIDE(KERNEL_VA_BASE   = HH_PHYS_4000_BASE + (KERNEL_PHYS_BASE - RAM_BASE));
+}
 
-    .rodata : ALIGN(16)
-    {
-        *(.rodata*)
-    }
+MEMORY
+{
+  KVIRT (rxw) : ORIGIN = KERNEL_VA_BASE,   LENGTH = 64M
+  KPHYS (rxw) : ORIGIN = KERNEL_PHYS_BASE, LENGTH = 64M
+}
 
-    .data : ALIGN(16)
-    {
-        *(.data*)
-    }
+PHDRS
+{
+  text PT_LOAD FLAGS(5); /* R-X */
+  data PT_LOAD FLAGS(6); /* RW- */
+}
 
+SECTIONS
+{
+  . = KERNEL_VA_BASE;
+  __kernel_image_start = .;
+
+  .kernel_header :
+  {
+    . = ALIGN(16);
+    KEEP(*(.kernel_header))
+  } >KVIRT AT>KPHYS :text
+
+  .text :
+  {
+    . = ALIGN(16);
+    *(.text._kcrt0)
+    *(.text*)
+  } >KVIRT AT>KPHYS :text
+
+  .rodata :
+  {
+    . = ALIGN(16);
+    *(.rodata*)
+  } >KVIRT AT>KPHYS :text
+
+  .data :
+  {
+    . = ALIGN(16);
+    *(.data*)
+    __kernel_loaded_end = .;
+  } >KVIRT AT>KPHYS :data
+
+  .bss (NOLOAD) :
+  {
+    . = ALIGN(16);
+    __bss_start = .;
+    *(.bss*)
+    *(COMMON)
+    __bss_end = .;
+
+    __kernel_image_end     = __kernel_loaded_end;
+    __kernel_image_size    = __kernel_image_end - __kernel_image_start;
+    __kernel_entry_offset  = _kcrt0 - __kernel_image_start;
+  } >KVIRT :data
 }

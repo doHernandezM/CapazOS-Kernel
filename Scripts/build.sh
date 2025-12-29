@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
+# Kernel/Scripts/build.sh
 #
-# Build script for the Capaz boot‑only project.
-#
-# This script produces two separate binaries: a minimal boot image
-# (boot.elf) that runs in identity‑mapped memory and a stub kernel
-# image (kernel.elf) that will be fleshed out later.  The two are
-# concatenated into a flat image (kernel.img) padded to a 2 MiB
-# boundary.  On macOS the cross‑compiler must be installed via
-# Homebrew (see toolchain.env).
+# Boot + kernel two-image build. QEMU virt loads -kernel at 0x40080000,
+# so KERNEL_PHYS_BASE is computed relative to that load address.
 
 set -euo pipefail
 
@@ -17,10 +12,8 @@ OUT_DIR="$ROOT/build"
 
 mkdir -p "$OUT_DIR/obj"
 
-# Load toolchain definitions
 source "$KERNEL_DIR/Scripts/toolchain.env"
 
-# Common compiler flags for both boot and kernel objects
 COMMON_CFLAGS=(
   -ffreestanding -fno-builtin -fno-stack-protector
   -fno-pic -fno-pie
@@ -34,60 +27,69 @@ COMMON_CFLAGS=(
 BOOT_CFLAGS=("${COMMON_CFLAGS[@]}" -DBOOT_STAGE=1)
 KERNEL_CFLAGS=("${COMMON_CFLAGS[@]}")
 
-################################################################################
-# Build the boot image
-################################################################################
+BOOT_LOAD_ADDR=$((0x40080000))
+RAM_BASE=$((0x40000000))
+HH_PHYS_4000_BASE="0xFFFF800040000000"
+ALIGN=$((2097152)) # 2 MiB
 
-# Compile the boot assembly.  start.S contains the _start symbol and a
-# minimal UART driver implemented in assembly.  No C code is used for
-# the boot image at this stage.
+################################################################################
+# Build boot
+################################################################################
 "$CC" "${BOOT_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Arch/aarch64/start.S" -o "$OUT_DIR/obj/start.o"
-
-# Link the boot image
 "$LD" -nostdlib -T "$KERNEL_DIR/Linker/boot.ld" \
   "$OUT_DIR/obj/start.o" \
   -o "$OUT_DIR/boot.elf"
-
-# Optionally produce a flat binary of the boot image
 "$OBJCOPY" -O binary "$OUT_DIR/boot.elf" "$OUT_DIR/boot.bin"
 
 ################################################################################
-# Build the kernel image (stub)
+# Compute kernel load base from boot.bin size (relative to BOOT_LOAD_ADDR)
 ################################################################################
+BOOT_BIN="$OUT_DIR/boot.bin"
 
-# Compile the kernel stub and the UART driver.  In future milestones
-# additional files will be added here.
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c" -o "$OUT_DIR/obj/kmain.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c" -o "$OUT_DIR/obj/uart.o"
+if BOOT_SIZE=$(stat -c%s "$BOOT_BIN" 2>/dev/null); then
+  :
+else
+  BOOT_SIZE=$(stat -f%z "$BOOT_BIN")
+fi
 
-# Link the kernel image
+PAD_SIZE=$(( (ALIGN - (BOOT_SIZE % ALIGN)) % ALIGN ))
+KERNEL_PHYS_BASE=$(( BOOT_LOAD_ADDR + BOOT_SIZE + PAD_SIZE ))
+KERNEL_PHYS_BASE_HEX=$(printf "0x%X" "$KERNEL_PHYS_BASE")
+
+KERNEL_VA_BASE=$(python3 - <<PY
+hh=int("${HH_PHYS_4000_BASE}", 16)
+ram=int("0x%X" % ${RAM_BASE}, 16)
+kpa=int("${KERNEL_PHYS_BASE_HEX}", 16)
+print(f"0x{(hh + (kpa - ram)) & ((1<<64)-1):X}")
+PY
+)
+
+################################################################################
+# Build kernel (stub)
+################################################################################
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_header.S" -o "$OUT_DIR/obj/kernel_header.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kcrt0.c"         -o "$OUT_DIR/obj/kcrt0.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"         -o "$OUT_DIR/obj/kmain.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
+
 "$LD" -nostdlib -T "$KERNEL_DIR/Linker/kernel.ld" \
+  --defsym=KERNEL_PHYS_BASE=$KERNEL_PHYS_BASE_HEX \
+  --defsym=KERNEL_VA_BASE=$KERNEL_VA_BASE \
+  "$OUT_DIR/obj/kernel_header.o" \
+  "$OUT_DIR/obj/kcrt0.o" \
   "$OUT_DIR/obj/kmain.o" \
   "$OUT_DIR/obj/uart.o" \
   -o "$OUT_DIR/kernel.elf"
 
-# Optionally produce a flat binary of the kernel image
 "$OBJCOPY" -O binary "$OUT_DIR/kernel.elf" "$OUT_DIR/kernel.bin"
 
 ################################################################################
-# Combine boot and kernel into a single flat image padded to 2 MiB
+# Combine
 ################################################################################
-
-BOOT_BIN="$OUT_DIR/boot.bin"
 KERNEL_BIN="$OUT_DIR/kernel.bin"
 COMBINED_IMG="$OUT_DIR/kernel.img"
 
 if [[ -f "$BOOT_BIN" && -f "$KERNEL_BIN" ]]; then
-  # Determine boot binary size.  Use GNU stat if available, otherwise fall back
-  # to BSD stat.  This allows the script to be portable across Linux and
-  # macOS.
-  if BOOT_SIZE=$(stat -c%s "$BOOT_BIN" 2>/dev/null); then
-    :
-  else
-    BOOT_SIZE=$(stat -f%z "$BOOT_BIN")
-  fi
-  ALIGN=2097152 # 2 MiB alignment
-  PAD_SIZE=$(( (ALIGN - (BOOT_SIZE % ALIGN)) % ALIGN ))
   BOOT_PAD="$OUT_DIR/boot.padded.bin"
   cp "$BOOT_BIN" "$BOOT_PAD"
   if [[ $PAD_SIZE -ne 0 ]]; then
@@ -98,3 +100,6 @@ if [[ -f "$BOOT_BIN" && -f "$KERNEL_BIN" ]]; then
 fi
 
 echo "Built boot and kernel images."
+echo "BOOT_LOAD_ADDR = $(printf "0x%X" "$BOOT_LOAD_ADDR")"
+echo "KERNEL_PHYS_BASE = $KERNEL_PHYS_BASE_HEX"
+echo "KERNEL_VA_BASE   = $KERNEL_VA_BASE"

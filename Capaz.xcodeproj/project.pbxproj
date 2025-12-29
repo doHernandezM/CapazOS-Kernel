@@ -51,6 +51,9 @@
 		AAE12AEE2F01CD7C00870C5D /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
 		AAE12AF02F01CD9300870C5D /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
 		AAE12AF12F01CD9300870C5D /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
+		AAE12AF42F0241F600870C5D /* kcrt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kcrt0.c; sourceTree = "<group>"; };
+		AAE12AF52F0241F600870C5D /* kernel_header.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_header.S; sourceTree = "<group>"; };
+		AAE12AF62F0241F600870C5D /* kernel_image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_image.h; sourceTree = "<group>"; };
 		AAE76CE42EF75EDC005230EB /* start.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = start.S; sourceTree = "<group>"; };
 		AAE76CEA2EF75F27005230EB /* uart_pl011.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uart_pl011.c; sourceTree = "<group>"; };
 		AAE76CEB2EF75F2F005230EB /* uart_pl011.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = uart_pl011.h; sourceTree = "<group>"; };
@@ -74,6 +77,9 @@
 			isa = PBXGroup;
 			children = (
 				AAE12AEE2F01CD7C00870C5D /* kmain.c */,
+				AAE12AF42F0241F600870C5D /* kcrt0.c */,
+				AAE12AF52F0241F600870C5D /* kernel_header.S */,
+				AAE12AF62F0241F600870C5D /* kernel_image.h */,
 			);
 			path = Kernel;
 			sourceTree = "<group>";

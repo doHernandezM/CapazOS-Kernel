@@ -12,8 +12,16 @@
 #include <stdint.h>
 #include "uart_pl011.h"
 
-void kmain(void)
+/*
+ * Main entry point for the kernel.  The boot stage passes a pointer
+ * to a boot_info structure in x0.  The kernel currently ignores
+ * this pointer but will use it in future milestones to discover
+ * memory layout and other boot parameters.  The signature takes
+ * a void* to avoid implicit integer promotion of the first argument.
+ */
+void kmain(void *boot_info)
 {
+    (void)boot_info;
     uart_puts("Kernel stage reached\n");
     for (;;) {
         __asm__ volatile ("wfi");
