@@ -70,6 +70,8 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_header.S" -o "$OUT_DIR/obj/kernel_header.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kcrt0.c"         -o "$OUT_DIR/obj/kcrt0.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"         -o "$OUT_DIR/obj/kmain.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"           -o "$OUT_DIR/obj/mmu.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
 
 "$LD" -nostdlib -T "$KERNEL_DIR/Linker/kernel.ld" \
@@ -78,6 +80,8 @@ PY
   "$OUT_DIR/obj/kernel_header.o" \
   "$OUT_DIR/obj/kcrt0.o" \
   "$OUT_DIR/obj/kmain.o" \
+  "$OUT_DIR/obj/mmu.o" \
+  "$OUT_DIR/obj/kernel_vectors.o" \
   "$OUT_DIR/obj/uart.o" \
   -o "$OUT_DIR/kernel.elf"
 

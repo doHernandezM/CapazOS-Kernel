@@ -2,50 +2,35 @@
  * kcrt0.c
  *
  * Freestanding C runtime entry for the Capaz kernel.  This function
- * is placed at the very start of the kernel’s text segment (see
- * kernel.ld) and is the first C code executed after the boot stage
- * enables the MMU and jumps into the kernel image.  It performs the
- * minimal runtime initialisation required before calling kmain():
+ * is placed at the beginning of the kernel image and is the first
+ * code executed once the boot stage has enabled the MMU and
+ * branched to the loaded kernel image.  It receives a pointer to a
+ * boot_info structure in x0 and forwards that pointer to kmain().
  *
- *   1. Zero the kernel’s BSS (.bss and COMMON) region.  The linker
- *      script exports __bss_start and __bss_end to delimit this
- *      range.
- *   2. Optionally perform other early initialisation (none yet).
- *   3. Call kmain(), passing through the boot_info pointer supplied
- *      in x0.  This preserves the first argument register so that
- *      kmain() can access boot parameters.
- *   4. If kmain() returns, halt by waiting for interrupts.
+ * In a more complete kernel this function would also clear the
+ * kernel’s .bss section, relocate .data if necessary, and call
+ * static constructors.  Those responsibilities are deferred to
+ * later milestones.
  */
 
 #include <stdint.h>
 
-/* Prototype of the kernel main function. */
+/* Prototype for the kernel’s main entry point defined in kmain.c. */
 void kmain(void *boot_info);
 
-/* Symbols exported by the linker script marking the BSS range. */
-extern uint8_t __bss_start[];
-extern uint8_t __bss_end[];
-
 /*
- * The `_kcrt0` entry point.  Placed in its own text section so the
- * linker can put it at the start of the kernel image.  The `used`
- * attribute prevents the compiler from discarding it as unused.
+ * _kcrt0 – kernel C runtime entry
+ *
+ * The boot stage branches to this symbol at offset zero in the
+ * kernel image.  It simply calls kmain() with the boot_info pointer
+ * and never returns.  If kmain() ever returns, we park the CPU in an
+ * infinite wfi loop.
  */
 __attribute__((section(".text._kcrt0"), used))
-void _kcrt0(void *boot_info)
-{
-    /* 1. Clear the BSS section. */
-    for (uint8_t *p = __bss_start; p < __bss_end; ++p) {
-        *p = 0;
-    }
-
-    /* 2. (reserved for future runtime init) */
-
-    /* 3. Call the kernel main function with the boot_info pointer. */
+void _kcrt0(void *boot_info) {
     kmain(boot_info);
-
-    /* 4. If kmain returns, spin forever. */
-    while (1) {
-        __asm__ volatile("wfi" ::: "memory");
+    /* Should not return.  Enter low‑power wait if it does. */
+    for (;;) {
+        __asm__ volatile ("wfi");
     }
 }

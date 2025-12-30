@@ -10,7 +10,19 @@
 
 #include "uart_pl011.h"
 
-#define UART0_BASE ((volatile uint32_t *)0x09000000UL)
+/*
+ * On systems with a split virtual address space the kernel maps all
+ * physical addresses into a higher-half direct map.  Once TTBR0 is
+ * cleared and only TTBR1 is active, low virtual addresses will
+ * generate faults.  To avoid hard‑coding low virtual MMIO addresses
+ * in C code, compute the kernel virtual alias from the physical
+ * address using the constant HH_PHYS_BASE defined here.  The boot
+ * stage maps 0x0000_0000.. and 0x4000_0000.. regions into
+ * 0xFFFF800000000000.., so MMIO like the PL011 UART at physical
+ * 0x0900_0000 appears at HH_PHYS_BASE + 0x0900_0000.
+ */
+#define HH_PHYS_BASE 0xFFFF800000000000ULL
+#define UART0_BASE ((volatile uint32_t *)(HH_PHYS_BASE + 0x09000000ULL))
 #define UART0_DR   (UART0_BASE + 0x00 / sizeof(uint32_t))
 #define UART0_FR   (UART0_BASE + 0x18 / sizeof(uint32_t))
 

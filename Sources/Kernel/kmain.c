@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include "uart_pl011.h"
+#include "mmu.h"
 
 /*
  * Main entry point for the kernel.  The boot stage passes a pointer
@@ -21,8 +22,18 @@
  */
 void kmain(void *boot_info)
 {
+    /* Bring up a fresh set of translation tables before touching any
+     * dynamic memory.  This will disable TTBR0 and rebuild TTBR1
+     * with only the device and RAM regions mapped.  In future
+     * milestones this call will also enforce W^X permissions and
+     * install user page tables.  The boot_info pointer is passed
+     * through to allow the MMU subsystem to consult physical
+     * memory maps when mapping beyond the initial 1 GiB range.  For
+     * now it is unused but must be retained in the prototype. */
+    mmu_init(boot_info);
+
     (void)boot_info;
-    uart_puts("Kernel stage reached\n");
+    uart_puts("Kernel: 0.2.0\n");
     for (;;) {
         __asm__ volatile ("wfi");
     }

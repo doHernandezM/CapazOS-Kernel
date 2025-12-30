@@ -190,7 +190,7 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "Boot stage reached\n"
+    .asciz "Boot: 0.2.0\n"
 
     .section .data.boot, "aw"
 uart_base:
