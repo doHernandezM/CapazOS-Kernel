@@ -31,35 +31,39 @@ SECTIONS
   . = KERNEL_VA_BASE;
   __kernel_image_start = .;
 
-  .kernel_header :
+  .kernel_header : ALIGN(0x1000)
   {
-    . = ALIGN(16);
+    __kernel_header_start = .;
     KEEP(*(.kernel_header))
+    __kernel_header_end = .;
   } >KVIRT AT>KPHYS :text
 
-  .text :
+  .text : ALIGN(0x1000)
   {
-    . = ALIGN(16);
+    __text_start = .;
     *(.text._kcrt0)
     *(.text*)
+    __text_end = .;
   } >KVIRT AT>KPHYS :text
 
-  .rodata :
+  .rodata : ALIGN(0x1000)
   {
-    . = ALIGN(16);
+    __rodata_start = .;
     *(.rodata*)
+    __rodata_end = .;
   } >KVIRT AT>KPHYS :text
 
-  .data :
+  .data : ALIGN(0x1000)
   {
-    . = ALIGN(16);
+    __data_start = .;
     *(.data*)
+    __data_end = .;
     __kernel_loaded_end = .;
   } >KVIRT AT>KPHYS :data
 
   .bss (NOLOAD) :
   {
-    . = ALIGN(16);
+    . = ALIGN(0x1000);
     __bss_start = .;
     *(.bss*)
     *(COMMON)
