@@ -47,3 +47,28 @@ void uart_puts(const char *str)
         uart_send((uint8_t)*str++);
     }
 }
+
+void uart_putchar(char c)
+{
+    uart_send((uint8_t)c);
+}
+
+void uart_putnl(void)
+{
+    uart_send((uint8_t)'\r');
+    uart_send((uint8_t)'\n');
+}
+
+static void uart_put_hex_nibble(uint8_t v)
+{
+    v &= 0xF;
+    uart_send((uint8_t)(v < 10 ? ('0' + v) : ('a' + (v - 10))));
+}
+
+void uart_puthex64(uint64_t v)
+{
+    uart_puts("0x");
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        uart_put_hex_nibble((uint8_t)(v >> (uint32_t)shift));
+    }
+}

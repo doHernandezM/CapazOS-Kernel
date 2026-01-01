@@ -18,3 +18,8 @@ void uart_send(uint8_t byte);
 
 /* Write a null‑terminated string to the UART. */
 void uart_puts(const char *str);
+
+/* Convenience helpers for early bring-up output. */
+void uart_putchar(char c);
+void uart_putnl(void);
+void uart_puthex64(uint64_t v);

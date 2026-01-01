@@ -1,371 +1,419 @@
-// Kernel MMU reconfiguration: rebuild TTBR1 with fine-grained mappings and W^X.
+/*
+ * mmu.c
+ *
+ * This file provides a minimal MMU setup routine for the Capaz
+ * kernel.  Its purpose is to construct a fresh set of translation
+ * tables and install them in TTBR1_EL1 while disabling TTBR0_EL1.
+ * The initial boot stage maps both low and high addresses via the
+ * same L0 table.  That is convenient for bring‑up but does not
+ * enforce a default‑deny policy: user space sees all of kernel
+ * memory.  Here we allocate a new L0 and L1 table, map only the
+ * device region (physical 0x0000_0000–0x3FFF_FFFF) and the kernel
+ * RAM region (physical 0x4000_0000–0x7FFF_FFFF) into the higher
+ * half virtual address space, and install the new tables with
+ * TCR.EPD0=1 so that TTBR0 is not consulted.  This is a stepping
+ * stone towards more granular mappings and W^X enforcement.
+ */
 
 #include "mmu.h"
-
-#include <stddef.h>
 #include <stdint.h>
+#include <stddef.h>
 
-// Linker-provided section boundaries (virtual addresses).
-extern uint8_t __kernel_header_start[];
-extern uint8_t __kernel_header_end[];
-extern uint8_t __text_start[];
-extern uint8_t __text_end[];
-extern uint8_t __rodata_start[];
-extern uint8_t __rodata_end[];
-extern uint8_t __data_start[];
-extern uint8_t __data_end[];
-extern uint8_t __bss_end[];
+/* Symbols exported by the linker marking the end of the loaded
+ * kernel image.  We use this to place the page‑table allocator just
+ * after the kernel in physical memory.  See kernel.ld.
+ */
+extern uint8_t __kernel_image_end[];
 
-// -----------------------------------------------------------------------------
-// Addressing / layout
-// -----------------------------------------------------------------------------
+/*
+ * The kernel’s exception vector table lives in kernel_vectors.S.
+ * Export its precise range so we can force that mapping executable
+ * even when using coarse-grained (2MiB) RAM mappings.
+ */
+extern char kernel_vectors[];
+extern char __kernel_vectors_start[];
+extern char __kernel_vectors_end[];
 
-// High-half direct map alias: VA = HH_PHYS_BASE + PA.
-// Boot tables already provide this alias; we preserve it when rebuilding TTBR1.
-#ifndef HH_PHYS_BASE
-#define HH_PHYS_BASE 0xFFFF800000000000ULL
-#endif
+/* Physical base of the kernel image (passed in via --defsym in the
+ * linker invocation).  This symbol is not an actual object in the
+ * image but resolves to the constant KERNEL_PHYS_BASE.  We declare
+ * it as an array of bytes to take its address in C.
+ */
+extern uint8_t KERNEL_PHYS_BASE[];
 
-// RAM is expected to start at 0x4000_0000 (QEMU virt / many SBCs).
-#ifndef RAM_BASE
+/* The high‑half direct map of physical memory starting at
+ * 0xFFFF800040000000.  The boot stage aliases physical addresses
+ * 0x4000_0000..0x7FFF_FFFF into this region such that
+ * va = HH_PHYS_4000_BASE + (pa - 0x4000_0000).  We use this when
+ * translating virtual addresses of objects in .bss to their
+ * corresponding physical addresses.
+ */
+#define HH_PHYS_4000_BASE 0xFFFF800040000000ULL
+
+/* Offset of the physical RAM base used by the boot mapping. */
 #define RAM_BASE 0x40000000ULL
-#endif
 
-// We currently map the first 1 GiB of RAM (0x4000_0000 .. 0x7FFF_FFFF)
-// plus the low 1 GiB device window (0x0000_0000 .. 0x3FFF_FFFF).
-#define ONE_GIB 0x40000000ULL
+/* Table entry type bits.  A table descriptor has bits[1:0] = 0b11
+ * (value 3), while a block/page descriptor has bits[1:0] = 0b01
+ * (value 1).  See the Arm ARM for details.  We use the same
+ * bit patterns as in the boot assembly code.
+ */
+#define DESC_TABLE 0x3ULL
+/* A block descriptor (levels 1 and 2) uses bits[1:0] = 0b01. */
+#define DESC_BLOCK 0x1ULL
+/* A page descriptor (level 3) also uses bits[1:0] = 0b11.  Do not
+ * confuse this with a table descriptor: the rest of the descriptor
+ * differs.  We define it explicitly for clarity. */
+#define DESC_PAGE 0x3ULL
 
-// Granule sizes for 4 KiB translation.
-#define SZ_4K  0x1000ULL
-#define SZ_2M  0x200000ULL
+/* Memory attribute fields.  AttrIndx=0 selects the normal memory
+ * attribute (write‑back, write‑allocate), AttrIndx=1 selects
+ * device‑nGnRE.  SH values: 0 = non‑shareable, 2 = outer shareable,
+ * 3 = inner shareable.  AF=1 marks the entry as accessed.  These
+ * match the boot stage values.
+ */
+#define ATTRINDX_NORMAL  (0ULL << 2)
+#define ATTRINDX_DEVICE  (1ULL << 2)
+#define SH_INNER         (3ULL << 8)
+#define SH_NON           (0ULL << 8)
+#define AF               (1ULL << 10)
 
-// -----------------------------------------------------------------------------
-// Stage-1 descriptor bits (AArch64, 4 KiB granule)
-// -----------------------------------------------------------------------------
+/* MAIR_EL1 value: Attr0 = 0xFF (normal memory, write‑back
+ * write‑allocate), Attr1 = 0x04 (device‑nGnRE).  The boot code
+ * programs MAIR_EL1 with 0x04FF, and we reuse the same value here.
+ */
+#define MAIR_DEFAULT 0x04FFULL
 
-#define DESC_INVALID 0x0ULL
-#define DESC_BLOCK   0x1ULL  // L1/L2
-#define DESC_TABLE   0x3ULL  // L0/L1/L2 table, or L3 page
+/* TCR_EL1 base value used during boot.  Bits are documented in the
+ * Arm ARM.  We take the boot value of 0xB5103510 and set bit 7
+ * (EPD0) to 1 to disable walks through TTBR0.  This tells the
+ * hardware to ignore TTBR0_EL1 entirely, implementing the
+ * default‑deny semantics.  See the comment in start.S for details.
+ */
+#define TCR_BOOT 0xB5103510ULL
 
-// Attribute index
-#define ATTRINDX(n)  (((uint64_t)(n) & 0x7ULL) << 2)
-
-// Access permissions (AP[2:1] at bits [7:6])
-#define AP_RW_EL1    (0ULL << 6)      // EL1 RW, EL0 no access
-#define AP_RO_EL1    (2ULL << 6)      // EL1 RO, EL0 no access
-
-// Shareability (SH bits [9:8])
-#define SH_NON       (0ULL << 8)
-#define SH_INNER     (3ULL << 8)
-
-// Access Flag
-#define AF           (1ULL << 10)
-
-// Execute-never
-#define PXN          (1ULL << 53)
-#define UXN          (1ULL << 54)
-
-// -----------------------------------------------------------------------------
-// Linker-provided segment boundaries (virtual addresses)
-// -----------------------------------------------------------------------------
-
-extern char __kernel_image_start[];
-//extern char __kernel_header_start[];
-//extern char __kernel_header_end[];
-//
-//extern char __text_start[];
-//extern char __text_end[];
-//
-//extern char __rodata_start[];
-//extern char __rodata_end[];
-//
-//extern char __data_start[];
-//extern char __data_end[];
-
-extern char __bss_start[];
-//extern char __bss_end[];
-
-extern void kernel_vectors(void);
-
-// -----------------------------------------------------------------------------
-// Minimal page-table allocator (early bump allocator)
-// -----------------------------------------------------------------------------
-
-// Enough for: L0 + L1 + L2 + a handful of L3 tables covering the kernel image.
-// Increase if you later split more regions.
-#define PT_POOL_PAGES 128
-
-static uint8_t g_pt_pool[PT_POOL_PAGES * SZ_4K] __attribute__((aligned(4096)));
-static size_t g_pt_pool_off = 0;
-
-static void bzero(void *ptr, size_t n) {
-  volatile uint8_t *p = (volatile uint8_t *)ptr;
-  for (size_t i = 0; i < n; i++) {
-    p[i] = 0;
-  }
-}
-
-static inline uint64_t kva_to_pa(const void *kva) {
-  return (uint64_t)kva - HH_PHYS_BASE;
-}
-
-static uint64_t *pt_alloc_table(void) {
-  if ((g_pt_pool_off + SZ_4K) > sizeof(g_pt_pool)) {
-    // If we run out, crash deterministically rather than scribbling.
-    for (;;) {
-      __asm__ volatile("wfe");
+static inline uint64_t virt_to_phys(uint64_t va)
+{
+    /*
+     * Convert a higher-half direct-mapped VA back to PA.
+     *
+     * During early boot we may still have a low identity-mapped stack
+     * (0x4000_0000+...). Accept both aliases.
+     */
+    if (va >= HH_PHYS_4000_BASE) {
+        return (va - HH_PHYS_4000_BASE) + RAM_BASE;
     }
-  }
-  uint64_t *tbl = (uint64_t *)(g_pt_pool + g_pt_pool_off);
-  g_pt_pool_off += SZ_4K;
-  bzero(tbl, SZ_4K);
-  return tbl;
+    /* Low alias: treat the VA as already being a physical address. */
+    return va;
 }
 
-// -----------------------------------------------------------------------------
-// Table helpers
-// -----------------------------------------------------------------------------
+/*
+ * Static page tables for the kernel mappings.
+ *
+ * In earlier versions we carved page tables out of the area
+ * immediately following the kernel image using a simple bump
+ * allocator.  That proved fragile when the computed end of the
+ * kernel image was wrong, leading to page tables overlapping the
+ * kernel itself.  To avoid that class of bug, we now reserve
+ * dedicated 4 KiB-aligned arrays in .bss for the L0, L1, and L2
+ * tables used by TTBR1, as well as a pool of L3 tables.  These
+ * tables are zero‑initialised by the loader and are never freed.
+ *
+ * The maximum number of L3 tables required is bounded by the size
+ * of the kernel image.  Each L3 table covers 2 MiB of virtual
+ * address space; if the kernel occupies at most 64 MiB the worst
+ * case is 32 L3 tables.  We allocate 64 to provide headroom.
+ */
+static uint64_t l0_table[512] __attribute__((aligned(4096)));
+static uint64_t l1_table[512] __attribute__((aligned(4096)));
+static uint64_t l2_table[512] __attribute__((aligned(4096)));
 
-static inline uint64_t pte_table(uint64_t next_table_pa) {
-  return (next_table_pa & 0x0000FFFFFFFFF000ULL) | DESC_TABLE;
+static uint64_t l3_pool[64][512] __attribute__((aligned(4096)));
+static size_t l3_pool_used = 0;
+
+/* Allocate a fresh L3 page table from the static pool.  Panics if
+ * exhausted.  Returns a higher‑half virtual address.  The table is
+ * zeroed on allocation.
+ */
+static uint64_t *alloc_l3(void)
+{
+    if (l3_pool_used >= (sizeof(l3_pool) / sizeof(l3_pool[0]))) {
+        /* Out of L3 tables.  In a real kernel we would handle this
+         * gracefully (e.g. recycle tables or panic with a useful
+         * message).  For now, spin forever. */
+        while (1) {
+            __asm__ volatile ("wfe");
+        }
+    }
+    uint64_t *tbl = l3_pool[l3_pool_used++];
+    /* Zero the table. */
+    for (size_t i = 0; i < 512; ++i) {
+        tbl[i] = 0;
+    }
+    return tbl;
 }
 
-static inline uint64_t pte_block(uint64_t out_pa, uint64_t attrs) {
-  return (out_pa & 0x0000FFFFFFFFF000ULL) | attrs | DESC_BLOCK;
+/* The bump allocator is retained for future use (e.g. allocating
+ * dynamic pages beyond the initial tables), but page table memory is
+ * now drawn from the static pool.  We initialise the bump
+ * allocator after setting up the static tables, in case later
+ * components need additional pages.  */
+static uint64_t alloc_phys;  /* current physical allocation pointer */
+static uint64_t alloc_virt;  /* corresponding virtual alias */
+
+static void page_alloc_init(void)
+{
+    /* Compute the end of the kernel image in virtual and physical
+     * addresses.  __kernel_image_end resides in the higher‑half
+     * mapping.  Subtract the base and add RAM_BASE to obtain the
+     * corresponding physical address.  Align both pointers up to
+     * a 4KiB boundary.
+     */
+    uint64_t end_va  = (uint64_t)__kernel_image_end;
+    uint64_t end_pa  = virt_to_phys(end_va);
+    alloc_phys = (end_pa + 0xFFFULL) & ~0xFFFULL;
+    alloc_virt = HH_PHYS_4000_BASE + (alloc_phys - RAM_BASE);
 }
 
-static inline uint64_t pte_page(uint64_t out_pa, uint64_t attrs) {
-  return (out_pa & 0x0000FFFFFFFFF000ULL) | attrs | DESC_TABLE;
+static void *page_alloc(void)
+{
+    uint64_t va = alloc_virt;
+    uint64_t pa = alloc_phys;
+    alloc_phys += 0x1000ULL;
+    alloc_virt += 0x1000ULL;
+    /* Zero memory via the direct mapping. */
+    volatile uint64_t *p = (volatile uint64_t *)va;
+    for (size_t i = 0; i < 512; ++i) {
+        p[i] = 0;
+    }
+    (void)pa;
+    return (void *)va;
 }
 
-static inline uint64_t idx_l0(uint64_t va) { return (va >> 39) & 0x1FFULL; }
-static inline uint64_t idx_l1(uint64_t va) { return (va >> 30) & 0x1FFULL; }
-static inline uint64_t idx_l2(uint64_t va) { return (va >> 21) & 0x1FFULL; }
-static inline uint64_t idx_l3(uint64_t va) { return (va >> 12) & 0x1FFULL; }
 
-// Split a 2 MiB block mapping into an L3 table with identical per-page attributes.
-static uint64_t *split_l2_block_to_l3(uint64_t l2_entry, uint64_t base_va, uint64_t default_page_attrs) {
-  uint64_t block_pa = l2_entry & 0x0000FFFFFFFFF000ULL;
-  uint64_t *l3 = pt_alloc_table();
-  uint64_t l3_pa = kva_to_pa(l3);
+void mmu_init(void *boot_info)
+{
+    (void)boot_info;
 
-  (void)base_va;
-  for (uint64_t i = 0; i < 512; i++) {
-    uint64_t pa = block_pa + i * SZ_4K;
-    l3[i] = pte_page(pa, default_page_attrs);
-  }
-  // Caller will install pte_table(l3_pa) into L2.
-  (void)l3_pa;
-  return l3;
-}
+    /* Initialise the simple page allocator.  This must be done
+     * before any allocations.  It uses __kernel_image_end to
+     * determine the end of the loaded kernel image and begins
+     * carving pages immediately afterwards.
+     */
+    page_alloc_init();
 
-// -----------------------------------------------------------------------------
-// Attribute policy (W^X)
-// -----------------------------------------------------------------------------
+    /* Exported section boundaries from the linker script.  These
+     * symbols reside in the higher‑half direct map.  We convert
+     * their virtual addresses to physical addresses so that page
+     * table entries can point at the correct physical frames.
+     */
+    extern uint8_t __text_start[], __text_end[];
+    extern uint8_t __rodata_start[], __rodata_end[];
+    extern uint8_t __data_start[], __data_end[];
+    extern uint8_t __bss_start[], __bss_end[];
+    extern uint8_t __kernel_image_start[], __kernel_image_end[];
 
-// MAIR indices: 0 = Normal, 1 = Device (nGnRE)
-static const uint64_t ATTR_NORMAL_BASE = ATTRINDX(0) | SH_INNER | AF;
-static const uint64_t ATTR_DEVICE_BASE = ATTRINDX(1) | SH_NON | AF;
+    uint64_t text_pa_start   = virt_to_phys((uint64_t)__text_start);
+    uint64_t text_pa_end     = virt_to_phys((uint64_t)__text_end);
+    uint64_t rodata_pa_start = virt_to_phys((uint64_t)__rodata_start);
+    uint64_t rodata_pa_end   = virt_to_phys((uint64_t)__rodata_end);
+    uint64_t data_pa_start   = virt_to_phys((uint64_t)__data_start);
+    uint64_t data_pa_end     = virt_to_phys((uint64_t)__data_end);
+    uint64_t bss_pa_start    = virt_to_phys((uint64_t)__bss_start);
+    uint64_t bss_pa_end      = virt_to_phys((uint64_t)__bss_end);
+    uint64_t kernel_pa_start = virt_to_phys((uint64_t)__kernel_image_start);
+    uint64_t kernel_pa_end   = virt_to_phys((uint64_t)__kernel_image_end);
 
-static const uint64_t ATTR_NORMAL_RW_XN = ATTR_NORMAL_BASE | AP_RW_EL1 | PXN | UXN;
-static const uint64_t ATTR_NORMAL_RO_XN = ATTR_NORMAL_BASE | AP_RO_EL1 | PXN | UXN;
-static const uint64_t ATTR_NORMAL_RO_RX = ATTR_NORMAL_BASE | AP_RO_EL1;  // executable
+    /* Vector table physical range.  Align the start down to a page
+     * boundary and map at least one page.  If kernel_vectors
+     * expands beyond 4 KiB in the future, adjust vec_pa_end
+     * accordingly. */
+    uint64_t vec_pa_start = virt_to_phys((uint64_t)kernel_vectors) & ~0xFFFULL;
+    uint64_t vec_pa_end   = vec_pa_start + 0x1000ULL;
 
-static const uint64_t ATTR_DEVICE_RW_XN = ATTR_DEVICE_BASE | AP_RW_EL1 | PXN | UXN;
+    /* Use the statically reserved page tables for TTBR1.  The
+     * l0_table, l1_table and l2_table arrays live in .bss and are
+     * 4KiB‑aligned.  They are zero‑initialised at load time.  The
+     * l3_pool is used for finer‑grained mappings below.
+     */
+    uint64_t *l0 = l0_table;
+    uint64_t *l1 = l1_table;
+    uint64_t *l2_ram = l2_table;
 
-static inline uint64_t va_of_pa(uint64_t pa) {
-  return HH_PHYS_BASE + pa;
-}
+    /* Fill the L0 table: entry 256 (covering 0xFFFF8000_0000_0000..)
+     * points to our L1 table.  All other entries remain zero.
+     */
+    uint64_t l1_pa = virt_to_phys((uint64_t)l1);
+    l0[256] = l1_pa | DESC_TABLE;
 
-static inline uint64_t pa_of_kva(const void *kva) {
-  return (uint64_t)kva - HH_PHYS_BASE;
-}
+    /* L1[0]: map the device/MMIO region (physical 0x0000_0000..0x3FFF_FFFF)
+     * as a 1‑GiB block of Device memory.  We mark it non‑shareable,
+     * accessed, privileged execute never and unprivileged execute
+     * never.  Device memory must never be executable.
+     */
+    uint64_t dev_desc = 0ULL;
+    dev_desc |= ATTRINDX_DEVICE;
+    dev_desc |= SH_NON;
+    dev_desc |= AF;
+    dev_desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+    dev_desc |= DESC_BLOCK;
+    l1[0] = dev_desc;
 
-static inline int in_range(uint64_t x, uint64_t a, uint64_t b) {
-  return (x >= a) && (x < b);
-}
+    /* L1[1]: map the RAM region via an L2 table.  Normal memory,
+     * inner‑shareable, accessed.  Bits[1:0]=0b11 indicate a table.
+     */
+    uint64_t l2_pa = virt_to_phys((uint64_t)l2_ram);
+    l1[1] = l2_pa | DESC_TABLE;
 
-static uint64_t attrs_for_kernel_pa(uint64_t pa,
-                                   uint64_t hdr_start_pa,
-                                   uint64_t hdr_end_pa,
-                                   uint64_t text_start_pa,
-                                   uint64_t text_end_pa,
-                                   uint64_t ro_start_pa,
-                                   uint64_t ro_end_pa,
-                                   uint64_t data_start_pa,
-                                   uint64_t bss_end_pa) {
-  // Kernel header: RO + XN.
-  if (in_range(pa, hdr_start_pa, hdr_end_pa)) {
-    return ATTR_NORMAL_RO_XN;
-  }
-  // Text: RO + executable.
-  if (in_range(pa, text_start_pa, text_end_pa)) {
-    return ATTR_NORMAL_RO_RX;
-  }
-  // Rodata: RO + XN.
-  if (in_range(pa, ro_start_pa, ro_end_pa)) {
-    return ATTR_NORMAL_RO_XN;
-  }
-  // Data/BSS: RW + XN.
-  if (in_range(pa, data_start_pa, bss_end_pa)) {
-    return ATTR_NORMAL_RW_XN;
-  }
-  // Default for kernel pages (conservative): RW + XN.
-  return ATTR_NORMAL_RW_XN;
-}
-
-// -----------------------------------------------------------------------------
-// Rebuild TTBR1 with:
-//   - L1[0] : low 1 GiB device window (device, RW, XN)
-//   - L1[1] : 1 GiB RAM window (normal, default RW XN 2 MiB blocks)
-//             with kernel image pages split to L3 and protected (W^X)
-// -----------------------------------------------------------------------------
-
-static uint64_t *build_ttbr1_wx(uint64_t *out_l0_pa) {
-  (void)out_l0_pa;
-
-  uint64_t *l0 = pt_alloc_table();
-  uint64_t *l1 = pt_alloc_table();
-  uint64_t *l2_ram = pt_alloc_table();
-
-  const uint64_t l0_pa = kva_to_pa(l0);
-  const uint64_t l1_pa = kva_to_pa(l1);
-  const uint64_t l2_ram_pa = kva_to_pa(l2_ram);
-
-  // Map the high-half 512 GiB region that starts at HH_PHYS_BASE.
-  l0[idx_l0(HH_PHYS_BASE)] = pte_table(l1_pa);
-
-  // L1[0]: device window (PA 0x0000_0000..0x3FFF_FFFF)
-  l1[0] = pte_block(0x00000000ULL, ATTR_DEVICE_RW_XN);
-
-  // L1[1]: RAM window (PA 0x4000_0000..0x7FFF_FFFF) -> L2 table.
-  l1[1] = pte_table(l2_ram_pa);
-
-  // Default-fill RAM region with 2 MiB blocks: RW + XN.
-  for (uint64_t i = 0; i < 512; i++) {
-    uint64_t pa = RAM_BASE + i * SZ_2M;
-    l2_ram[i] = pte_block(pa, ATTR_NORMAL_RW_XN);
-  }
-
-  // Compute kernel segment PA ranges (linker symbols are VAs).
-  const uint64_t hdr_start_pa = pa_of_kva(__kernel_header_start);
-  const uint64_t hdr_end_pa   = pa_of_kva(__kernel_header_end);
-
-  const uint64_t text_start_pa = pa_of_kva(__text_start);
-  const uint64_t text_end_pa   = pa_of_kva(__text_end);
-
-  const uint64_t ro_start_pa = pa_of_kva(__rodata_start);
-  const uint64_t ro_end_pa   = pa_of_kva(__rodata_end);
-
-  const uint64_t data_start_pa = pa_of_kva(__data_start);
-  const uint64_t data_end_pa   = pa_of_kva(__data_end);
-  (void)data_end_pa;
-
-  const uint64_t bss_end_pa   = pa_of_kva(__bss_end);
-
-  // Walk all pages that could belong to the kernel image.
-  // We bound this by header start .. bss end.
-  uint64_t kern_start_pa = hdr_start_pa;
-  uint64_t kern_end_pa   = bss_end_pa;
-
-  // Round to page boundaries.
-  kern_start_pa &= ~(SZ_4K - 1);
-  kern_end_pa = (kern_end_pa + SZ_4K - 1) & ~(SZ_4K - 1);
-
-  for (uint64_t pa = kern_start_pa; pa < kern_end_pa; pa += SZ_4K) {
-    // Only pages within the 1 GiB RAM window are handled here.
-    if (pa < RAM_BASE || pa >= (RAM_BASE + ONE_GIB)) {
-      continue;
+    /* Build the L2 table.  Each entry covers 2 MiB.  We iterate
+     * over the 1 GiB RAM space and create either a 2 MiB block
+     * descriptor (for pages outside the kernel image) or a pointer
+     * to a newly allocated L3 table (for pages overlapping the
+     * kernel image).  Pages in the kernel image are then mapped
+     * individually with appropriate permissions in the L3 table.
+     */
+    for (size_t i = 0; i < 512; ++i) {
+        uint64_t region_pa_start = RAM_BASE + (i * 0x200000ULL);
+        uint64_t region_pa_end   = region_pa_start + 0x200000ULL;
+        /* Check if this 2 MiB region intersects the loaded kernel. */
+        int overlaps_kernel = !(region_pa_end <= kernel_pa_start || region_pa_start >= kernel_pa_end);
+        int overlaps_vec    = !(region_pa_end <= vec_pa_start || region_pa_start >= vec_pa_end);
+        if (overlaps_kernel || overlaps_vec) {
+            /* Allocate a new L3 table from the static pool and fill
+             * entries.  Convert the virtual address to a physical
+             * address for the descriptor. */
+            uint64_t *l3 = alloc_l3();
+            uint64_t l3_pa = virt_to_phys((uint64_t)l3);
+            l2_ram[i] = l3_pa | DESC_TABLE;
+            for (size_t j = 0; j < 512; ++j) {
+                uint64_t page_pa = region_pa_start + (j * 0x1000ULL);
+                uint64_t desc = page_pa;
+                /* Assign memory attributes based on segment. */
+                if ((page_pa >= vec_pa_start && page_pa < vec_pa_end) ||
+                    (page_pa >= text_pa_start && page_pa < text_pa_end)) {
+                    /* Text: executable, read‑only. */
+                    desc |= ATTRINDX_NORMAL;
+                    desc |= SH_INNER;
+                    desc |= AF;
+                    /*
+                     * Privileged read-only, executable at EL1, not executable at EL0.
+                     * AP[2:1]=0b10 => bit7=1, bit6=0.
+                     */
+                    desc |= (1ULL << 7);              /* AP_RO_EL1 */
+                    desc |= (1ULL << 54);             /* UXN */
+                    /* PXN clear => executable at EL1. */
+                } else if (page_pa >= rodata_pa_start && page_pa < rodata_pa_end) {
+                    /* Read‑only data: non‑executable. */
+                    desc |= ATTRINDX_NORMAL;
+                    desc |= SH_INNER;
+                    desc |= AF;
+                    desc |= (1ULL << 7); /* AP_RO_EL1 */
+                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+                } else if ((page_pa >= data_pa_start && page_pa < data_pa_end) ||
+                           (page_pa >= bss_pa_start && page_pa < bss_pa_end)) {
+                    /* Writable data/BSS: non‑executable. */
+                    desc |= ATTRINDX_NORMAL;
+                    desc |= SH_INNER;
+                    desc |= AF;
+                    desc |= (0ULL << 6); /* AP_RW_EL1 */
+                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+                } else {
+                    /* Any other page in this region not part of the kernel
+                     * image is mapped as normal RW memory and XN. */
+                    desc |= ATTRINDX_NORMAL;
+                    desc |= SH_INNER;
+                    desc |= AF;
+                    desc |= (0ULL << 6); /* AP_RW_EL1 */
+                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+                }
+                /* Mark as a page descriptor (bits[1:0]=0b11). */
+                desc |= DESC_PAGE;
+                l3[j] = desc;
+            }
+        } else {
+            /* Map the 2 MiB region as a block.  Set XN on all
+             * blocks as they might not contain code.  Normal
+             * memory, inner shareable, accessed. */
+            uint64_t desc = region_pa_start;
+            desc |= ATTRINDX_NORMAL;
+            desc |= SH_INNER;
+            desc |= AF;
+            desc |= (0ULL << 6); /* AP_RW_EL1 */
+            desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+            desc |= DESC_BLOCK;
+            l2_ram[i] = desc;
+        }
     }
 
-    const uint64_t va = va_of_pa(pa);
-    const uint64_t l2i = idx_l2(va);
+    /* Compute the physical address of the L0 table. */
+    uint64_t l0_pa = virt_to_phys((uint64_t)l0);
 
-    uint64_t l2e = l2_ram[l2i];
-    uint64_t *l3;
+    /* Move the stack pointer to its high‑half alias before
+     * disabling TTBR0.  Compute the physical address of the current
+     * SP via virt_to_phys() (works for low and high aliases) and
+     * then form the high‑half alias: new_sp = HH_PHYS_4000_BASE +
+     * (sp_phys - RAM_BASE).  This ensures that further stack
+     * accesses use the higher‑half mapping which remains valid when
+     * TTBR0 is disabled. */
+    uint64_t sp_val;
+    __asm__ volatile ("mov %0, sp" : "=r"(sp_val));
+    uint64_t sp_phys = virt_to_phys(sp_val);
+    uint64_t new_sp = HH_PHYS_4000_BASE + (sp_phys - RAM_BASE);
 
-    if ((l2e & 0x3ULL) == DESC_BLOCK) {
-      // Split this 2 MiB block into an L3 table of RW+XN pages.
-      l3 = split_l2_block_to_l3(l2e, va & ~(SZ_2M - 1), ATTR_NORMAL_RW_XN);
-      l2_ram[l2i] = pte_table(kva_to_pa(l3));
-    } else {
-      // Table already present.
-      uint64_t l3_pa = l2e & 0x0000FFFFFFFFF000ULL;
-      l3 = (uint64_t *)(va_of_pa(l3_pa));
-    }
+    /* Program MAIR and TCR values.  Set EPD0=1 to disable TTBR0
+     * walks.  Reuse the boot TCR value from TCR_BOOT. */
+    uint64_t mair = MAIR_DEFAULT;
+    uint64_t tcr  = TCR_BOOT | (1ULL << 7);
 
-    const uint64_t a = attrs_for_kernel_pa(pa,
-                                           hdr_start_pa, hdr_end_pa,
-                                           text_start_pa, text_end_pa,
-                                           ro_start_pa, ro_end_pa,
-                                           data_start_pa, bss_end_pa);
-    l3[idx_l3(va)] = pte_page(pa, a);
-  }
+    /* Obtain the virtual address of the kernel’s exception vector
+     * table.  This symbol lives in the higher‑half text segment.
+     */
+    extern char kernel_vectors[];
+    uint64_t vbar = (uint64_t)kernel_vectors;
 
-  // Return L0 physical base.
-  if (out_l0_pa) {
-    *out_l0_pa = l0_pa;
-  }
-  return l0;
-}
+    asm volatile (
+        /* Switch stack to the high‑half alias. */
+        "mov sp, %[newsp]\n"
+        /* Ensure prior writes to translation tables are visible. */
+        "dsb ish\n"
+        /* Disable TTBR0 by writing zero. */
+        "msr vbar_el1, %[vbar]\n"
+        "isb\n"
+        "msr ttbr0_el1, xzr\n"
+        /* Install the new L0 table into TTBR1. */
+        "msr ttbr1_el1, %[l0pa]\n"
+        /* Program MAIR_EL1 and TCR_EL1 (with EPD0 set). */
+        "msr mair_el1, %[mair]\n"
+        "msr tcr_el1, %[tcr]\n"
+        "isb\n"
+        /* Invalidate old translations. */
+        "tlbi vmalle1is\n"
+        "dsb ish\n"
+        "isb\n"
+        /* Enable MMU (M), data cache (C), instruction cache (I) and
+         * set WXN=1 to prevent execute on writeable pages. */
+        "mrs x0, sctlr_el1\n"
+        "orr x0, x0, #1\n"
+        "orr x0, x0, #(1 << 2)\n"
+        "orr x0, x0, #(1 << 12)\n"
+        "orr x0, x0, #(1 << 19)\n" /* WXN */
+        "msr sctlr_el1, x0\n"
+        "isb\n"
+        /* Point VBAR_EL1 at the kernel exception vectors. */
+        "msr vbar_el1, %[vbar]\n"
+        "isb\n"
+        :
+        : [newsp] "r"(new_sp),
+          [l0pa]  "r"(l0_pa),
+          [mair]  "r"(mair),
+          [tcr]   "r"(tcr),
+          [vbar]  "r"(vbar)
+        : "x0", "memory"
+    );
 
-// -----------------------------------------------------------------------------
-// Public entry
-// -----------------------------------------------------------------------------
-
-void mmu_init(void *boot_info) {
-  (void)boot_info;
-  // 1) Install kernel vectors immediately (still under the boot mapping).
-  //    This prevents taking an exception through a low-VA boot VBAR after we
-  //    disable TTBR0.
-  __asm__ volatile("msr VBAR_EL1, %0\n\tisb" :: "r"((uint64_t)&kernel_vectors) : "memory");
-
-  // 2) Build new TTBR1 tables with W^X and device attributes.
-  uint64_t l0_pa = 0;
-  (void)build_ttbr1_wx(&l0_pa);
-
-  // 3) Program MAIR (AttrIndx 0 = Normal WBWA, 1 = Device-nGnRE).
-  const uint64_t mair = 0
-      | (0xFFULL << 0)   // Attr 0: Normal memory, Inner/Outer WBWA
-      | (0x04ULL << 8);  // Attr 1: Device-nGnRE
-  __asm__ volatile("msr MAIR_EL1, %0" :: "r"(mair) : "memory");
-
-  // 4) Set TCR for 4 KiB granule and disable TTBR0 walks (EPD0=1).
-  //    Keep values consistent with the boot TCR setup.
-  const uint64_t tcr =
-      (16ULL << 0) |       // T0SZ (ignored when EPD0=1)
-      (16ULL << 16) |      // T1SZ
-      (0ULL << 8) |        // IRGN0
-      (0ULL << 10) |       // ORGN0
-      (0ULL << 12) |       // SH0
-      (0ULL << 14) |       // TG0 (4 KiB)
-      (1ULL << 7) |        // EPD0 = 1
-      (3ULL << 24) |       // IRGN1 = WBWA
-      (3ULL << 26) |       // ORGN1 = WBWA
-      (3ULL << 28) |       // SH1 = Inner
-      (2ULL << 30) |       // TG1 = 4 KiB
-      (0ULL << 22);        // A1 = 0 (ASID in TTBR0, irrelevant for now)
-  __asm__ volatile("dsb ish\n\tmsr TCR_EL1, %0\n\tisb" :: "r"(tcr) : "memory");
-
-  // 5) Switch TTBR1 to the new hierarchy.
-  __asm__ volatile("dsb ishst\n\tmsr TTBR1_EL1, %0\n\tisb" :: "r"(l0_pa) : "memory");
-
-  // 6) Force W^X in hardware (SCTLR.WXN=1). This makes any writable mapping XN.
-  uint64_t sctlr;
-  __asm__ volatile("mrs %0, SCTLR_EL1" : "=r"(sctlr));
-  sctlr |= (1ULL << 19);  // WXN
-  __asm__ volatile("msr SCTLR_EL1, %0\n\tisb" :: "r"(sctlr) : "memory");
-
-  // 7) Invalidate TLB + I-cache to ensure new permissions are observed.
-  __asm__ volatile(
-      "dsb ish\n\t"
-      "tlbi vmalle1is\n\t"
-      "dsb ish\n\t"
-      "isb\n\t"
-      "ic iallu\n\t"
-      "dsb ish\n\t"
-      "isb" ::: "memory");
-
-  // 8) Disable TTBR0 explicitly (belt-and-suspenders) after the new VBAR is live.
-  __asm__ volatile("msr TTBR0_EL1, xzr\n\tisb" ::: "memory");
+    /* New translation tables are active via TTBR1_EL1.  TTBR0_EL1
+     * has been disabled, the stack resides in the high half, and
+     * the kernel exception vectors are installed.  The memory
+     * attributes for the kernel image enforce W^X at page
+     * granularity and mark device memory non‑executable.  */
 }

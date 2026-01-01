@@ -14,6 +14,35 @@
 #include "mmu.h"
 
 /*
+ * Called from the EL1 exception vectors (kernel_vectors.S).
+ * Prints minimal EL1 fault state and parks the CPU.
+ */
+__attribute__((used))
+void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
+                             uint64_t sp, const uint64_t *regs)
+{
+    uart_puts("\n*** EL1 EXCEPTION ***\n");
+    uart_puts("ESR_EL1="); uart_puthex64(esr); uart_putnl();
+    uart_puts("FAR_EL1="); uart_puthex64(far); uart_putnl();
+    uart_puts("ELR_EL1="); uart_puthex64(elr); uart_putnl();
+    uart_puts("SP_EL1 ="); uart_puthex64(sp);  uart_putnl();
+
+    /* Print a small register subset (x0-x3, x29, x30) to keep output short. */
+    if (regs) {
+        uart_puts("x0     ="); uart_puthex64(regs[0]); uart_putnl();
+        uart_puts("x1     ="); uart_puthex64(regs[1]); uart_putnl();
+        uart_puts("x2     ="); uart_puthex64(regs[2]); uart_putnl();
+        uart_puts("x3     ="); uart_puthex64(regs[3]); uart_putnl();
+        uart_puts("x29(fp)="); uart_puthex64(regs[29]); uart_putnl();
+        uart_puts("x30(lr)="); uart_puthex64(regs[30]); uart_putnl();
+    }
+
+    for (;;) {
+        __asm__ volatile("wfi");
+    }
+}
+
+/*
  * Main entry point for the kernel.  The boot stage passes a pointer
  * to a boot_info structure in x0.  The kernel currently ignores
  * this pointer but will use it in future milestones to discover
@@ -33,7 +62,7 @@ void kmain(void *boot_info)
     mmu_init(boot_info);
 
     (void)boot_info;
-    uart_puts("Kernel: 0.2.0\n");
+    uart_puts("Kernel: 0.0.2\n");
     for (;;) {
         __asm__ volatile ("wfi");
     }

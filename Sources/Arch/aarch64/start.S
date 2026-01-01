@@ -121,15 +121,6 @@ _start:
     msr     sctlr_el1, x6
     isb
 
-    /* Switch the boot stack to its high-half alias so the kernel no longer
-     * depends on low virtual addresses (required once TTBR0 is default-deny).
-     */
-    mov     x17, sp
-    ldr     x15, =0x40000000
-    sub     x17, x17, x15
-    ldr     x16, =0xFFFF800040000000
-    add     sp, x16, x17
-
     /* 7) boot_info + locate kernel:
      * kernel_pa = __boot_image_start + align_up((__boot_image_end-__boot_image_start), 2MiB)
      */
@@ -199,7 +190,7 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "Boot: 0.2.0\n"
+    .asciz "Boot: 0.0.2\n"
 
     .section .data.boot, "aw"
 uart_base:
