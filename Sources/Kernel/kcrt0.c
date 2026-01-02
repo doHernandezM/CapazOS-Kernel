@@ -1,36 +1,36 @@
 /*
  * kcrt0.c
  *
- * Freestanding C runtime entry for the Capaz kernel.  This function
- * is placed at the beginning of the kernel image and is the first
- * code executed once the boot stage has enabled the MMU and
- * branched to the loaded kernel image.  It receives a pointer to a
- * boot_info structure in x0 and forwards that pointer to kmain().
- *
- * In a more complete kernel this function would also clear the
- * kernel’s .bss section, relocate .data if necessary, and call
- * static constructors.  Those responsibilities are deferred to
- * later milestones.
+ * Freestanding C runtime entry for the Capaz kernel.
+ * First C code executed after boot stage enables MMU and jumps to kernel.
  */
 
 #include <stdint.h>
 
 /*
- * Minimal boot_info layout as produced by Sources/Arch/aarch64/start.S:
- *   [0] phys_base, [8] size, [16] entry_offset
- * Keep this local to avoid depending on project include-path setup.
+ * boot_info layout as produced by Sources/Arch/aarch64/start.S (updated):
+ *   [0]  kernel_phys_base
+ *   [8]  kernel_size
+ *   [16] kernel_entry_offset
+ *   [24] dtb_ptr   (high-half direct-map VA)
+ *   [32] dtb_size  (bytes)
+ *
+ * Keep local to avoid relying on project include-path setup.
  */
 typedef struct boot_info {
-    uint64_t phys_base;
-    uint64_t size;
-    uint64_t entry_offset;
+    uint64_t kernel_phys_base;
+    uint64_t kernel_size;
+    uint64_t kernel_entry_offset;
+    uint64_t dtb_ptr;
+    uint64_t dtb_size;
 } boot_info_t;
 
-/* Prototype for the kernel’s main entry point defined in kmain.c. */
+/* Kernel main entry point (existing signature in your tree). */
 void kmain(void *boot_info);
 
 /* Real C entry point once a high-half stack is established. */
-__attribute__((noreturn)) void _kcrt0_c(boot_info_t *boot_info);
+__attribute__((noreturn, used))
+void _kcrt0_c(const boot_info_t *boot_info);
 
 /*
  * _kcrt0 – kernel entry trampoline
@@ -38,21 +38,19 @@ __attribute__((noreturn)) void _kcrt0_c(boot_info_t *boot_info);
  * Requirements for early boot:
  *  - x0 may be a non-canonical 48-bit pointer (top 16 bits not sign-extended).
  *  - SP starts on the low identity-mapped boot stack.
- *  - We disable TTBR0 early (EPD0=1), so any further use of the low stack would
- *    immediately fault.
+ *  - If TTBR0 is disabled early (EPD0=1), any further low-stack use faults.
  *
  * This trampoline (naked, no prologue) canonicalizes x0 and moves SP into the
  * high-half direct map before tail-calling the real C entry.
  *
- * IMPORTANT: In a naked function, the body must be *only* inline asm. No C
- * statements (including (void)boot_info;) are allowed by clang.
+ * IMPORTANT: In a naked function, the body must be ONLY inline asm.
  */
 __attribute__((naked, section(".text._kcrt0"), used))
 void _kcrt0(void *boot_info) {
     __asm__ volatile(
         /* x0 already holds boot_info; do not touch it except canonicalization. */
 
-        /* Canonicalize x0 for 48-bit VA: sign-extend bit 47 into the top 16 bits. */
+        /* Canonicalize x0 for 48-bit VA: sign-extend bit 47 into top 16 bits. */
         "lsl    x0, x0, #16\n"
         "asr    x0, x0, #16\n"
 
@@ -69,8 +67,8 @@ void _kcrt0(void *boot_info) {
     );
 }
 
-void _kcrt0_c(boot_info_t *boot_info) {
-    kmain(boot_info);
+void _kcrt0_c(const boot_info_t *boot_info) {
+    kmain((void *)boot_info);
 
     /* Should not return. Enter low-power wait if it does. */
     for (;;) {

@@ -1,74 +1,61 @@
-/*
- * uart_pl011.c
- *
- * Basic polled UART routines for the ARM PrimeCell PL011 used on
- * QEMU’s virt board.  These functions are suitable for very early
- * kernel output and avoid any dependencies on a C runtime or
- * allocation.  For simplicity the driver only implements the
- * transmit path.
- */
-
 #include "uart_pl011.h"
 
 /*
- * On systems with a split virtual address space the kernel maps all
- * physical addresses into a higher-half direct map.  Once TTBR0 is
- * cleared and only TTBR1 is active, low virtual addresses will
- * generate faults.  To avoid hard‑coding low virtual MMIO addresses
- * in C code, compute the kernel virtual alias from the physical
- * address using the constant HH_PHYS_BASE defined here.  The boot
- * stage maps 0x0000_0000.. and 0x4000_0000.. regions into
- * 0xFFFF800000000000.., so MMIO like the PL011 UART at physical
- * 0x0900_0000 appears at HH_PHYS_BASE + 0x0900_0000.
+ * PL011 UART driver.
+ *
+ * In early bring-up we assume a high-half mapping exists where
+ *   VA = 0xFFFF8000_0000_0000 + PA
+ * for the first 1GiB of PA space (device/MMIO region).  The boot stage
+ * maps this, and mmu_init() preserves it.
+ *
+ * The base is configurable so we can switch to the DTB-provided UART
+ * address once DTB parsing works.
  */
+
 #define HH_PHYS_BASE 0xFFFF800000000000ULL
-#define UART0_BASE ((volatile uint32_t *)(HH_PHYS_BASE + 0x09000000ULL))
-#define UART0_DR   (UART0_BASE + 0x00 / sizeof(uint32_t))
-#define UART0_FR   (UART0_BASE + 0x18 / sizeof(uint32_t))
 
-/* Bit mask for the transmit FIFO full flag in the UARTFR register. */
-#define UARTFR_TXFF (1u << 5)
+/* QEMU virt default (fallback) */
+#define UART_FALLBACK_PHYS_BASE 0x09000000ULL
 
-void uart_send(uint8_t byte)
+/* Registers */
+#define UARTDR   0x00
+#define UARTFR   0x18
+#define UARTFR_TXFF (1 << 5)
+
+static volatile uint32_t *g_uart_base = (volatile uint32_t *)(HH_PHYS_BASE + UART_FALLBACK_PHYS_BASE);
+
+void uart_init(uint64_t uart_phys_base)
 {
-    /* Wait until there is space in the transmit FIFO. */
-    while (*UART0_FR & UARTFR_TXFF) {
-        /* spin */
-    }
-    *UART0_DR = (uint32_t)byte;
-}
-
-void uart_puts(const char *str)
-{
-    if (!str) {
-        return;
-    }
-    while (*str) {
-        uart_send((uint8_t)*str++);
+    if (uart_phys_base != 0) {
+        g_uart_base = (volatile uint32_t *)(HH_PHYS_BASE + uart_phys_base);
     }
 }
 
-void uart_putchar(char c)
-{
-    uart_send((uint8_t)c);
+void uart_putc(char c) {
+    while (g_uart_base[UARTFR / 4] & UARTFR_TXFF) {
+        __asm__ volatile("nop");
+    }
+    g_uart_base[UARTDR / 4] = (uint32_t)c;
 }
 
-void uart_putnl(void)
-{
-    uart_send((uint8_t)'\r');
-    uart_send((uint8_t)'\n');
+void uart_puts(const char *s) {
+    while (*s) {
+        if (*s == '\n') uart_putc('\r');
+        uart_putc(*s++);
+    }
 }
 
-static void uart_put_hex_nibble(uint8_t v)
-{
-    v &= 0xF;
-    uart_send((uint8_t)(v < 10 ? ('0' + v) : ('a' + (v - 10))));
+void uart_putnl(void) {
+    uart_puts("\n");
 }
 
-void uart_puthex64(uint64_t v)
-{
+void uart_puthex64(uint64_t value) {
+    static const char hex[] = "0123456789ABCDEF";
+    char buf[16];
+    for (int i = 15; i >= 0; i--) {
+        buf[i] = hex[value & 0xF];
+        value >>= 4;
+    }
     uart_puts("0x");
-    for (int shift = 60; shift >= 0; shift -= 4) {
-        uart_put_hex_nibble((uint8_t)(v >> (uint32_t)shift));
-    }
+    for (int i = 0; i < 16; i++) uart_putc(buf[i]);
 }

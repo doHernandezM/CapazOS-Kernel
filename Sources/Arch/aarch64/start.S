@@ -1,11 +1,22 @@
 /* Kernel/Sources/Arch/aarch64/start.S
  *
+ * Boot stage for Capaz.
+ *
+ * QEMU 'virt' follows the Linux AArch64 boot protocol and provides:
+ *   x0 = physical address of the DTB (FDT blob)
+ *
+ * This stage:
+ *   - sets up a temporary stack
+ *   - enables the MMU with a minimal TTBR0+TTBR1 mapping
+ *   - constructs boot_info and branches to the kernel image entry
+ *
  * Fixes included:
  *   1) Correct high-half L0 index for 0xFFFF8000_.... with 48-bit VA: L0[256]
  *   2) Map UART MMIO after MMU enable by adding L1[0] 1GiB block (0x0000_0000..0x3FFF_FFFF)
  *   3) Correct 2KiB exception vector layout (16 slots * 0x80)
  *   4) Record ESR/FAR/ELR on exception (inspectable in GDB)
- *   5) Pass boot_info pointer as high-half alias VA (safe if kernel later disables TTBR0)
+ *   5) Pass boot_info pointer as high-half direct-map VA (safe if kernel disables TTBR0)
+ *   6) Capture DTB pointer from x0 and pass DTB (VA + size) in boot_info
  */
 
     .section .text._start, "ax"
@@ -13,6 +24,9 @@
     .type _start, %function
 
 _start:
+    /* Save QEMU-provided DTB PA from x0 before clobbering it. */
+    mov     x20, x0                      /* dtb_pa */
+
     /* 1) Stack */
     adrp    x0, __boot_stack_top
     add     x0, x0, :lo12:__boot_stack_top
@@ -147,24 +161,51 @@ _start:
     ldr     x13, [x8, #8]               /* image_size */
     ldr     x14, [x8, #16]              /* entry_offset */
 
-    /* boot_info layout: [0]=phys_base [8]=size [16]=entry_offset */
+    /*
+     * boot_info layout (64-bit fields):
+     *   [0]  kernel_phys_base
+     *   [8]  kernel_size
+     *   [16] kernel_entry_offset
+     *   [24] dtb_ptr (high-half VA)
+     *   [32] dtb_size (bytes)
+     */
     str     x8,  [x7, #0]
     str     x13, [x7, #8]
     str     x14, [x7, #16]
 
-    /* Pass boot_info pointer as high-half alias VA */
-    ldr     x15, =0x40000000
-    sub     x15, x7, x15
-    ldr     x16, =0xFFFF800040000000
-    add     x0, x16, x15                /* x0 = boot_info high VA */
+    /* DTB pointer/size (from x20 = dtb_pa). */
+    mov     x21, xzr                    /* dtb_va */
+    mov     x22, xzr                    /* dtb_size */
+
+    cbz     x20, 5f
+
+    /* Validate DTB magic and read totalsize (big-endian). */
+    ldr     w23, [x20, #0]              /* magic */
+    rev     w23, w23
+    ldr     w24, =0xD00DFEED
+    cmp     w23, w24
+    b.ne    5f
+
+    ldr     w25, [x20, #4]              /* totalsize */
+    rev     w25, w25
+    uxtw    x22, w25
+
+    /* High-half direct-map VA for DTB: HH_PHYS_BASE + dtb_pa */
+    ldr     x26, =0xFFFF800000000000    /* HH_PHYS_BASE */
+    add     x21, x26, x20
+
+5:
+    str     x21, [x7, #24]
+    str     x22, [x7, #32]
+
+    /* Pass boot_info pointer as high-half direct-map VA. */
+    ldr     x16, =0xFFFF800000000000    /* HH_PHYS_BASE */
+    add     x0, x16, x7                 /* x0 = boot_info high VA */
 
     /* 8) Jump to kernel VA:
-     * kernel_va = HH_PHYS_4000_BASE + (kernel_pa - 0x4000_0000)
+     * entry_va = HH_PHYS_BASE + kernel_pa + entry_offset
      */
-    ldr     x15, =0x40000000
-    sub     x15, x8, x15
-    ldr     x16, =0xFFFF800040000000
-    add     x16, x16, x15               /* kernel_base_va */
+    add     x16, x16, x8                /* kernel_base_va */
     add     x9,  x16, x14               /* entry_va */
     br      x9
 
@@ -190,7 +231,7 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "Boot: 0.0.2\n"
+    .asciz "Boot: 0.0.3\n"
 
     .section .data.boot, "aw"
 uart_base:
@@ -207,7 +248,7 @@ boot_l1_table:
     .skip 4096
     .align 3
 boot_info:
-    .skip 24
+    .skip 40
 
     .align 3
 boot_last_esr:

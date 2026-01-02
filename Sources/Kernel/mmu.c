@@ -15,6 +15,7 @@
  * stone towards more granular mappings and W^X enforcement.
  */
 
+
 #include "mmu.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -191,7 +192,7 @@ static void *page_alloc(void)
 }
 
 
-void mmu_init(void *boot_info)
+void mmu_init(const boot_info_t *boot_info)
 {
     (void)boot_info;
 
