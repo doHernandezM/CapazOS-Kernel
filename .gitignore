@@ -1,0 +1,127 @@
+################################################################################
+# CapazOS / Xcode / Swift + freestanding kernel build artifacts
+################################################################################
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# --- Xcode / SwiftPM derived output ---
+# Primary Xcode derived products (prefer this over ignoring per-project paths)
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# User-specific settings
+xcuserdata/
+*.moved-aside
+
+# Build products
+build/
+Build/
+Derived/
+
+# Indexing / symbolication
+*.dSYM
+*.dSYM.zip
+*.dSYM.tar
+*.bcsymbolmap
+
+# Swift / compilation caches
+.swiftpm/
+Package.resolved
+*.swiftmodule
+*.swiftdoc
+*.swiftsourceinfo
+ModuleCache.noindex/
+SDKStatCaches.noindex/
+CompilationCache.noindex/
+SourcePackages/
+XCBuildData/
+
+# Xcode intermediate build dirs (when someone commits them by accident)
+*.xcbuilddata
+*.xcresult
+*.ipa
+*.app
+*.framework
+*.xcframework
+*.appex
+
+# --- Swift Development Snapshot toolchains / local overrides ---
+# If your repo has any local toolchain wrapper scripts or downloaded toolchains
+*.xctoolchain/
+.toolchains/
+
+# --- CLion / VSCode / other editors ---
+.vscode/
+.idea/
+*.iml
+
+# --- C/ASM build artifacts (kernel + boot) ---
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.lo
+*.la
+*.slo
+*.d
+*.dep
+*.map
+*.lst
+*.sym
+*.elf
+*.bin
+*.img
+*.iso
+*.hex
+*.out
+*.log
+
+# Common “output” dirs used by kernel projects
+out/
+dist/
+tmp/
+temp/
+
+# --- QEMU / debug artifacts ---
+qemu.log
+qemu-*.log
+gdb.txt
+gdb.log
+
+# --- Archives / exports ---
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# --- Coverage / profiling ---
+*.gcno
+*.gcda
+*.profraw
+*.profdata
+
+# --- Secrets / local config ---
+.env
+.env.*
+*.local
+config.local.*
+secrets.*
+*.key
+*.pem
+
+# --- If you generate DTBs/images locally ---
+*.dtb
+*.dts

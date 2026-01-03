@@ -16,4 +16,22 @@ bool dtb_find_pl011_uart(uint64_t *out_phys);
 /* Return the first RAM range found in /memory (base,size). Returns false if missing. */
 bool dtb_first_memory_range(uint64_t *out_base, uint64_t *out_size);
 
+/*
+ * A simple [base,size] range used for DTB-derived layouts.
+ * All addresses are physical addresses.
+ */
+typedef struct dtb_range {
+    uint64_t base;
+    uint64_t size;
+} dtb_range_t;
+
+/*
+ * Structured DTB results.
+ *
+ * The caller supplies an output array and its capacity in *count.
+ * On success, *count is updated to the number of ranges written.
+ */
+bool dtb_get_memory_ranges(dtb_range_t *out, uint32_t *count);
+bool dtb_get_reserved_ranges(dtb_range_t *out, uint32_t *count);
+
 #endif /* CAPAZ_DTB_H */

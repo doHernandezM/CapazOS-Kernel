@@ -27,6 +27,12 @@ COMMON_CFLAGS=(
 BOOT_CFLAGS=("${COMMON_CFLAGS[@]}" -DBOOT_STAGE=1)
 KERNEL_CFLAGS=("${COMMON_CFLAGS[@]}")
 
+# Optional: enable a deliberate fault test after mmu_init() (see kmain.c).
+# Usage: CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
+if [[ "${CAPAZ_FAULT_TEST:-0}" == "1" ]]; then
+  KERNEL_CFLAGS+=( -DCAPAZ_FAULT_TEST )
+fi
+
 BOOT_LOAD_ADDR=$((0x40080000))
 RAM_BASE=$((0x40000000))
 HH_PHYS_4000_BASE="0xFFFF800040000000"
@@ -67,13 +73,13 @@ PY
 ################################################################################
 # Build kernel (stub)
 ################################################################################
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_header.S"  -o "$OUT_DIR/obj/kernel_header.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kcrt0.c"          -o "$OUT_DIR/obj/kcrt0.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"          -o "$OUT_DIR/obj/kmain.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"            -o "$OUT_DIR/obj/mmu.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"            -o "$OUT_DIR/obj/dtb.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_header.S" -o "$OUT_DIR/obj/kernel_header.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kcrt0.c"         -o "$OUT_DIR/obj/kcrt0.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"         -o "$OUT_DIR/obj/kmain.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"           -o "$OUT_DIR/obj/mmu.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"           -o "$OUT_DIR/obj/dtb.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
-"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"        -o "$OUT_DIR/obj/uart.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
 
 "$LD" -nostdlib -T "$KERNEL_DIR/Linker/kernel.ld" \
   --defsym=KERNEL_PHYS_BASE=$KERNEL_PHYS_BASE_HEX \

@@ -63,6 +63,9 @@
 		AAE76CF52EF75FFC005230EB /* toolchain.env */ = {isa = PBXFileReference; explicitFileType = text.script; path = toolchain.env; sourceTree = "<group>"; };
 		AAE76CFB2EF76AA9005230EB /* .swift-version */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ".swift-version"; sourceTree = "<group>"; };
 		AAE76CFD2EF7791E005230EB /* run-qemu.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "run-qemu.sh"; sourceTree = "<group>"; };
+		AAE99A662F09C94000EAB13D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		AAE99A672F09C97D00EAB13D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		AAE99A682F09C97D00EAB13D /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		AAEFDF932F086718008BD428 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
 		AAEFDF942F086718008BD428 /* dtb.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dtb.h; sourceTree = "<group>"; };
 		AAEFDF952F086718008BD428 /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
@@ -73,6 +76,9 @@
 			isa = PBXGroup;
 			children = (
 				AAE76CFB2EF76AA9005230EB /* .swift-version */,
+				AAE99A662F09C94000EAB13D /* .gitignore */,
+				AAE99A672F09C97D00EAB13D /* LICENSE */,
+				AAE99A682F09C97D00EAB13D /* README.md */,
 				AAE12AF22F01CD9300870C5D /* Linker */,
 				AAE76CE32EF75EC1005230EB /* Scripts */,
 				AAE76CE02EF727C7005230EB /* Sources */,

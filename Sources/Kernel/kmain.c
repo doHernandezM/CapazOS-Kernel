@@ -42,7 +42,10 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 
 void kmain(const boot_info_t *boot_info)
 {
-    /* Ensure we have a working UART even before DTB parsing. */
+    /*
+     * UART is already initialized in _kcrt0_c() for the M2 stage marker.
+     * Re-initialize here as a harmless idempotent fallback.
+     */
     uart_init(0);
 
     
@@ -79,9 +82,20 @@ void kmain(const boot_info_t *boot_info)
     mmu_init(boot_info);
 
     uart_puts("Kernel: MMU initialized\n");
-
-    /*We are at init*/
     uart_puts("Kernel: 0.0.3\n");
+
+#ifdef CAPAZ_FAULT_TEST
+    /*
+     * Deliberate fault test (M2 acceptance aid):
+     * Must run after UART is stable and after VBAR_EL1 is set to kernel_vectors
+     * (mmu_init() installs VBAR_EL1). This proves:
+     *  - VBAR installation is correct
+     *  - ESR/FAR/ELR/SP reporting works
+     *  - Register-save path matches kernel_exception_report() expectations
+     */
+    uart_puts("Kernel: CAPAZ_FAULT_TEST enabled; triggering deliberate BRK...\n");
+    __asm__ volatile("brk #0xCA");
+#endif
 
     for (;;) {
         __asm__ volatile ("wfi");

@@ -2,33 +2,42 @@
  * kcrt0.c
  *
  * Freestanding C runtime entry for the Capaz kernel.
- * First C code executed after boot stage enables MMU and jumps to kernel.
+ *
+ * The boot stage (Sources/Arch/aarch64/start.S) enables the MMU and then
+ * branches into this file at symbol _kcrt0. x0 contains a pointer to a
+ * boot_info_t structure (in high-half direct-mapped VA space).
  */
 
 #include <stdint.h>
 
+#include "boot_info.h"
+#include "uart_pl011.h"
+
+/* Linker-provided .bss bounds from Kernel/Linker/kernel.ld */
+extern char __bss_start[];
+extern char __bss_end[];
+
+static inline void kcrt0_clear_bss(void)
+{
+    /*
+     * Explicitly clear kernel .bss so we do not rely on QEMU's initial RAM
+     * contents. This is a baseline bring-up requirement.
+     */
+    for (char *p = __bss_start; p < __bss_end; p++) {
+        *p = 0;
+    }
+}
+
+/* Prototype for the kernel’s main entry point defined in kmain.c. */
+void kmain(const boot_info_t *boot_info);
+
 /*
- * boot_info layout as produced by Sources/Arch/aarch64/start.S (updated):
- *   [0]  kernel_phys_base
- *   [8]  kernel_size
- *   [16] kernel_entry_offset
- *   [24] dtb_ptr   (high-half direct-map VA)
- *   [32] dtb_size  (bytes)
+ * Real C entry point once a high-half stack is established.
  *
- * Keep local to avoid relying on project include-path setup.
+ * IMPORTANT:
+ *  - Must NOT be static, because _kcrt0's inline asm branches to it by symbol.
+ *  - Mark noreturn to match control flow.
  */
-typedef struct boot_info {
-    uint64_t kernel_phys_base;
-    uint64_t kernel_size;
-    uint64_t kernel_entry_offset;
-    uint64_t dtb_ptr;
-    uint64_t dtb_size;
-} boot_info_t;
-
-/* Kernel main entry point (existing signature in your tree). */
-void kmain(void *boot_info);
-
-/* Real C entry point once a high-half stack is established. */
 __attribute__((noreturn, used))
 void _kcrt0_c(const boot_info_t *boot_info);
 
@@ -37,24 +46,29 @@ void _kcrt0_c(const boot_info_t *boot_info);
  *
  * Requirements for early boot:
  *  - x0 may be a non-canonical 48-bit pointer (top 16 bits not sign-extended).
- *  - SP starts on the low identity-mapped boot stack.
- *  - If TTBR0 is disabled early (EPD0=1), any further low-stack use faults.
+ *  - SP starts on the low identity-mapped boot stack in RAM (0x4000_0000+...).
+ *  - The kernel will soon disable TTBR0 (TCR.EPD0=1); any further use of the
+ *    low stack would immediately fault.
  *
  * This trampoline (naked, no prologue) canonicalizes x0 and moves SP into the
  * high-half direct map before tail-calling the real C entry.
  *
- * IMPORTANT: In a naked function, the body must be ONLY inline asm.
+ * IMPORTANT: In a naked function, the body must be *only* inline asm.
  */
 __attribute__((naked, section(".text._kcrt0"), used))
-void _kcrt0(void *boot_info) {
+void _kcrt0(void) {
     __asm__ volatile(
-        /* x0 already holds boot_info; do not touch it except canonicalization. */
-
-        /* Canonicalize x0 for 48-bit VA: sign-extend bit 47 into top 16 bits. */
+        /* Canonicalize x0 for 48-bit VA: sign-extend bit 47 into the top 16 bits. */
         "lsl    x0, x0, #16\n"
         "asr    x0, x0, #16\n"
 
-        /* Move SP from low RAM (0x4000_0000+off) to high-half alias. */
+        /*
+         * Move SP from low RAM alias (0x4000_0000+off) to high-half alias:
+         *   sp = HH_PHYS_4000_BASE + (sp - 0x4000_0000)
+         *
+         * This matches start.S which maps PA 0x4000_0000.. as
+         * VA 0xFFFF8000_4000_0000.. (direct map base for that PA window).
+         */
         "mov    x1, sp\n"
         "movz   x2, #0x4000, lsl #16\n"         /* x2 = 0x4000_0000 */
         "sub    x1, x1, x2\n"
@@ -68,7 +82,14 @@ void _kcrt0(void *boot_info) {
 }
 
 void _kcrt0_c(const boot_info_t *boot_info) {
-    kmain((void *)boot_info);
+    /* M2 acceptance: clear kernel .bss and emit an unambiguous stage marker. */
+    kcrt0_clear_bss();
+
+    /* UART fallback base is usable immediately under the bootstrap HH mapping. */
+    uart_init(0);
+    uart_puts("Kernel C Runtime: 0.0.3");
+
+    kmain(boot_info);
 
     /* Should not return. Enter low-power wait if it does. */
     for (;;) {
