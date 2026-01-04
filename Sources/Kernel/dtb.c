@@ -871,6 +871,11 @@ bool dtb_get_reserved_ranges(dtb_range_t out[], uint32_t *inout_count) {
     return true;
 }
 
+uint32_t dtb_get_totalsize(void) {
+    ensure_parsed();
+    return g_fdt_totalsize;
+}
+
 bool dtb_first_memory_range(uint64_t *out_base, uint64_t *out_size) {
     dtb_range_t r[1];
     uint32_t n = 1;

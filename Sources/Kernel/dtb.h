@@ -34,4 +34,7 @@ typedef struct dtb_range {
 bool dtb_get_memory_ranges(dtb_range_t *out, uint32_t *count);
 bool dtb_get_reserved_ranges(dtb_range_t *out, uint32_t *count);
 
+/* Return DTB header totalsize (bytes). Returns 0 if DTB is not initialized. */
+uint32_t dtb_get_totalsize(void);
+
 #endif /* CAPAZ_DTB_H */

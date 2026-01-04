@@ -10,6 +10,7 @@
 #include "boot_info.h"
 #include "dtb.h"
 #include "mmu.h"
+#include "platform.h"
 #include "uart_pl011.h"
 
 /*
@@ -69,6 +70,9 @@ void kmain(const boot_info_t *boot_info)
                 uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
                 uart_init(uart_phys);
             }
+
+            /* Derive allocator-friendly usable RAM spans (RAM - reserved - implicit). */
+            platform_dump_memory_map(boot_info);
         } else {
             uart_puts("DTB: invalid header (fallback to hardcoded UART)\n");
         }

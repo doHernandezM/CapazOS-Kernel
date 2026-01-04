@@ -70,6 +70,49 @@ static uint32_t normalize_merge(dtb_range_t *r, uint32_t n) {
     return w;
 }
 
+static bool subtract_reserved(const dtb_range_t mem[], uint32_t mem_n,
+                             const dtb_range_t rsv[], uint32_t rsv_n,
+                             dtb_range_t out[], uint32_t *inout_n) {
+    if (!out || !inout_n) return false;
+    uint32_t cap = *inout_n;
+    uint32_t out_n = 0;
+
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < mem_n; ++i) {
+        if (mem[i].size == 0) continue;
+        uint64_t m_start = mem[i].base;
+        uint64_t m_end = range_end(mem[i]);
+
+        /* Advance reserved cursor to the first range that might overlap. */
+        while (j < rsv_n && range_end(rsv[j]) <= m_start) j++;
+
+        uint64_t cur = m_start;
+        for (uint32_t k = j; k < rsv_n && rsv[k].base < m_end; ++k) {
+            uint64_t r_start = rsv[k].base;
+            uint64_t r_end = range_end(rsv[k]);
+
+            if (r_start > cur) {
+                uint64_t seg_end = (r_start < m_end) ? r_start : m_end;
+                if (seg_end > cur) {
+                    if (out_n >= cap) return false;
+                    out[out_n++] = (dtb_range_t){ .base = cur, .size = seg_end - cur };
+                }
+            }
+
+            if (r_end > cur) cur = r_end;
+            if (cur >= m_end) break;
+        }
+
+        if (cur < m_end) {
+            if (out_n >= cap) return false;
+            out[out_n++] = (dtb_range_t){ .base = cur, .size = m_end - cur };
+        }
+    }
+
+    *inout_n = out_n;
+    return true;
+}
+
 static void print_ranges(const char *title, const dtb_range_t *r, uint32_t n) {
     uart_puts(title);
     if (n == 0) {
@@ -86,9 +129,7 @@ static void print_ranges(const char *title, const dtb_range_t *r, uint32_t n) {
     }
 }
 
-bool platform_get_usable_ranges(const boot_info_t *boot_info,
-                                dtb_range_t *out, uint32_t *inout_count)
-{
+bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[], uint32_t *inout_count) {
     if (!out || !inout_count) return false;
 
     dtb_range_t mem[PLATFORM_MAX_RANGES];
@@ -99,93 +140,90 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info,
     if (!dtb_get_memory_ranges(mem, &mem_n)) return false;
     if (!dtb_get_reserved_ranges(rsv, &rsv_n)) return false;
 
-    /* Add implicit reservations: boot region, kernel image, DTB blob. */
+    // Determine lowest RAM base from DTB memory nodes.
+    uint64_t mem_min_base = UINT64_MAX;
+    for (uint32_t i = 0; i < mem_n; i++) {
+        if (mem[i].size == 0) continue;
+        if (mem[i].base < mem_min_base) mem_min_base = mem[i].base;
+    }
+
+    // Normalize DTB-provided RAM spans to whole pages.
+    uint32_t mem_w = 0;
+    for (uint32_t i = 0; i < mem_n; i++) {
+        uint64_t start = align_up_4k(mem[i].base);
+        uint64_t end = align_down_4k(mem[i].base + mem[i].size);
+        if (end <= start) continue;
+        mem[mem_w].base = start;
+        mem[mem_w].size = end - start;
+        mem_w++;
+    }
+    mem_n = mem_w;
+
+    // Build combined reserved list: DTB-provided + implicit.
+    dtb_range_t all_rsv[PLATFORM_MAX_RANGES * 2];
+    uint32_t all_rsv_n = 0;
+
+    // DTB-provided reserved ranges: cover whole pages.
+    for (uint32_t i = 0; i < rsv_n && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0])); i++) {
+        if (rsv[i].size == 0) continue;
+        uint64_t start = align_down_4k(rsv[i].base);
+        uint64_t end = align_up_4k(rsv[i].base + rsv[i].size);
+        if (end <= start) continue;
+        all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
+    }
+
+    // Implicit reservations: boot region, kernel image, DTB blob.
     if (boot_info) {
-        /* DTB blob itself (reserve *header totalsize*, not the mapped window size). */
-        if (boot_info->dtb_ptr != 0 && rsv_n < PLATFORM_MAX_RANGES) {
-            uint64_t dtb_pa = hh_virt_to_phys(boot_info->dtb_ptr);
-            uint64_t dtb_sz = (uint64_t)dtb_get_totalsize();
-            if (dtb_sz == 0) dtb_sz = boot_info->dtb_size; /* fallback */
-            if (dtb_sz != 0) {
-                rsv[rsv_n++] = (dtb_range_t){ .base = dtb_pa, .size = dtb_sz };
+        // Reserve early boot region below the kernel load.
+        if (mem_min_base != UINT64_MAX && boot_info->kernel_phys_base > mem_min_base) {
+            uint64_t start = align_down_4k(mem_min_base);
+            uint64_t end = align_up_4k(boot_info->kernel_phys_base);
+            if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
+                all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
         }
 
-        /* Kernel image. */
-        if (boot_info->kernel_size != 0 && rsv_n < PLATFORM_MAX_RANGES) {
-            rsv[rsv_n++] = (dtb_range_t){ .base = boot_info->kernel_phys_base, .size = boot_info->kernel_size };
-        }
-
-        /* DTB blob itself (boot_info carries a VA in the direct map). */
-        if (boot_info->dtb_ptr != 0 && boot_info->dtb_size != 0 && rsv_n < PLATFORM_MAX_RANGES) {
-            uint64_t dtb_pa = hh_virt_to_phys(boot_info->dtb_ptr);
-            rsv[rsv_n++] = (dtb_range_t){ .base = dtb_pa, .size = boot_info->dtb_size };
-        }
-    }
-
-    /* Sort/merge reserved ranges for subtraction. */
-    sort_ranges(rsv, rsv_n);
-    rsv_n = normalize_merge(rsv, rsv_n);
-
-    /* Sort/merge memory ranges too (for stable output). */
-    sort_ranges(mem, mem_n);
-    mem_n = normalize_merge(mem, mem_n);
-
-    /* Subtract reserved ranges from memory ranges. */
-    dtb_range_t usable[PLATFORM_MAX_RANGES];
-    uint32_t usable_n = 0;
-
-    for (uint32_t mi = 0; mi < mem_n; ++mi) {
-        uint64_t cur = mem[mi].base;
-        uint64_t end = range_end(mem[mi]);
-
-        for (uint32_t ri = 0; ri < rsv_n; ++ri) {
-            uint64_t rb = rsv[ri].base;
-            uint64_t re = range_end(rsv[ri]);
-
-            if (re <= cur) continue;
-            if (rb >= end) break;
-
-            if (rb > cur) {
-                /* Emit [cur, rb) */
-                if (usable_n < PLATFORM_MAX_RANGES) {
-                    usable[usable_n++] = (dtb_range_t){ .base = cur, .size = rb - cur };
-                }
+        // Reserve the kernel image.
+        {
+            uint64_t start = align_down_4k(boot_info->kernel_phys_base);
+            uint64_t end = align_up_4k(boot_info->kernel_phys_base + boot_info->kernel_size);
+            if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
+                all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
-
-            /* Advance cur past this reserved range. */
-            if (re > cur) cur = re;
-            if (cur >= end) break;
         }
 
-        if (cur < end) {
-            if (usable_n < PLATFORM_MAX_RANGES) {
-                usable[usable_n++] = (dtb_range_t){ .base = cur, .size = end - cur };
+        // Reserve the DTB blob at its physical address.
+        {
+            uint64_t dtb_phys = hh_virt_to_phys((uint64_t)boot_info->dtb_ptr);
+            uint64_t dtb_sz = dtb_get_totalsize();
+            if (dtb_sz == 0) dtb_sz = boot_info->dtb_size;
+            if (boot_info->dtb_size && dtb_sz > boot_info->dtb_size) dtb_sz = boot_info->dtb_size;
+
+            uint64_t start = align_down_4k(dtb_phys);
+            uint64_t end = align_up_4k(dtb_phys + dtb_sz);
+            if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
+                all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
         }
     }
 
-    sort_ranges(usable, usable_n);
-    usable_n = normalize_merge(usable, usable_n);
+    all_rsv_n = normalize_merge(all_rsv, all_rsv_n);
 
-    /* Page-align usable ranges for a future PMM (4KiB pages). */
-    for (uint32_t i = 0; i < usable_n; ++i) {
-        uint64_t b = align_up_4k(usable[i].base);
-        uint64_t e = align_down_4k(range_end(usable[i]));
-        if (e <= b) {
-            usable[i].size = 0; /* drop */
-        } else {
-            usable[i].base = b;
-            usable[i].size = e - b;
-        }
+    // Subtract reserved from memory.
+    if (!subtract_reserved(mem, mem_n, all_rsv, all_rsv_n, out, inout_count)) return false;
+
+    // Ensure output is page-aligned and non-empty.
+    uint32_t out_n = *inout_count;
+    uint32_t out_w = 0;
+    for (uint32_t i = 0; i < out_n; i++) {
+        uint64_t start = align_up_4k(out[i].base);
+        uint64_t end = align_down_4k(out[i].base + out[i].size);
+        if (end <= start) continue;
+        out[out_w].base = start;
+        out[out_w].size = end - start;
+        out_w++;
     }
-    
-    usable_n = normalize_merge(usable, usable_n);
-    
-    uint32_t cap = *inout_count;
-    uint32_t n = (usable_n < cap) ? usable_n : cap;
-    for (uint32_t i = 0; i < n; ++i) out[i] = usable[i];
-    *inout_count = n;
+    *inout_count = out_w;
 
     return true;
 }

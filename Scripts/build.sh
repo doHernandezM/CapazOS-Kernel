@@ -70,6 +70,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_header.S" -o "$OUT_DIR/obj/kernel_header.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kcrt0.c"         -o "$OUT_DIR/obj/kcrt0.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"         -o "$OUT_DIR/obj/kmain.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/platform.c"      -o "$OUT_DIR/obj/platform.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"           -o "$OUT_DIR/obj/mmu.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"           -o "$OUT_DIR/obj/dtb.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mem.c"           -o "$OUT_DIR/obj/mem.o"
@@ -82,7 +83,8 @@ PY
   "$OUT_DIR/obj/kernel_header.o" \
   "$OUT_DIR/obj/kcrt0.o" \
   "$OUT_DIR/obj/kmain.o" \
-  "$OUT_DIR/obj/mmu.o" \
+   "$OUT_DIR/obj/platform.o" \
+   "$OUT_DIR/obj/mmu.o" \
   "$OUT_DIR/obj/dtb.o" \
   "$OUT_DIR/obj/mem.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
