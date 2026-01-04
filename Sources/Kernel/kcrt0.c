@@ -87,7 +87,7 @@ void _kcrt0_c(const boot_info_t *boot_info) {
 
     /* UART fallback base is usable immediately under the bootstrap HH mapping. */
     uart_init(0);
-    uart_puts("Kernel C Runtime: 0.0.3");
+    uart_puts("Kernel C Runtime: 0.0.3\n");
 
     kmain(boot_info);
 

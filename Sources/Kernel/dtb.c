@@ -118,6 +118,10 @@ bool dtb_init(const void *fdt, uint64_t fdt_size) {
     return true;
 }
 
+uint32_t dtb_get_totalsize(void) {
+    return g_fdt_totalsize;
+}
+
 /* Parse a "reg" blob as (addr,size) using given cell counts (1 or 2). */
 static bool parse_reg_first(const uint8_t *data, uint32_t len,
                             uint32_t addr_cells, uint32_t size_cells,
@@ -202,7 +206,7 @@ typedef struct {
 
 #define MAX_DEPTH 32
 
-static bool walk_struct_find(bool want_mem, bool want_uart,
+static __attribute__((unused)) bool walk_struct_find(bool want_mem, bool want_uart,
                              uint64_t *mem_base, uint64_t *mem_size,
                              uint64_t *uart_phys)
 {
@@ -570,15 +574,399 @@ bool dtb_first_memory_range(uint64_t *out_base, uint64_t *out_size) {
     return true;
 }
 
-bool dtb_find_pl011_uart(uint64_t *out_phys) {
-    uint64_t uart = 0;
-    bool ok = walk_struct_find(false, true, NULL, NULL, &uart);
-    if (!ok) return false;
-    if (out_phys) *out_phys = uart;
+
+/* -----------------------------
+ * /chosen stdout-path UART resolution (DTB-derived)
+ * ----------------------------- */
+
+static void strlcpy0(char *dst, uint32_t cap, const char *src) {
+    if (!dst || cap == 0) return;
+    uint32_t i = 0;
+    if (src) {
+        for (; i + 1 < cap && src[i] != '\0'; ++i) dst[i] = src[i];
+    }
+    dst[i] = '\0';
+}
+
+static bool streq(const char *a, const char *b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+    while (*a && *b) {
+        if (*a != *b) return false;
+        ++a; ++b;
+    }
+    return (*a == '\0' && *b == '\0');
+}
+
+/* Truncate string at first ':' (baud/options suffix). */
+static void strip_after_colon(char *s) {
+    if (!s) return;
+    for (uint32_t i = 0; s[i] != '\0'; ++i) {
+        if (s[i] == ':') { s[i] = '\0'; return; }
+    }
+}
+
+/* Read /chosen stdout-path (or linux,stdout-path). Returns stripped value. */
+static bool dtb_read_chosen_stdout(char *out, uint32_t out_cap,
+                                   char *out_key, uint32_t key_cap)
+{
+    if (!g_struct || !g_strings || !out || out_cap == 0) return false;
+
+    node_ctx_t stack[64];
+    int depth = -1;
+    int chosen_depth = -1;
+    const uint8_t *p = g_struct;
+
+    /* Root defaults. */
+    uint32_t cur_addr_cells = 2, cur_size_cells = 2;
+
+    while (true) {
+        uint32_t token = be32(p); p += 4;
+
+        if (token == FDT_BEGIN_NODE) {
+            const char *name = (const char *)p;
+            uint32_t nlen = 0;
+            while (p[nlen] != '\0') nlen++;
+            p += (nlen + 1);
+            p = align4(p);
+
+            depth++;
+            if (depth >= (int)(sizeof(stack)/sizeof(stack[0]))) return false;
+
+            node_ctx_t *ctx = &stack[depth];
+            uint32_t parent_addr = (depth == 0) ? cur_addr_cells : stack[depth - 1].addr_cells;
+            uint32_t parent_size = (depth == 0) ? cur_size_cells : stack[depth - 1].size_cells;
+            ctx->parent_addr_cells = parent_addr;
+            ctx->parent_size_cells = parent_size;
+            ctx->addr_cells = parent_addr;
+            ctx->size_cells = parent_size;
+            ctx->is_memory = false;
+            ctx->is_uart_candidate = false;
+
+            /* Detect /chosen (root child named "chosen"). */
+            if (depth == 1 && streq(name, "chosen")) {
+                chosen_depth = depth;
+            }
+            continue;
+        }
+
+        if (token == FDT_END_NODE) {
+            if (depth == chosen_depth) chosen_depth = -1;
+            if (depth >= 0) depth--;
+            continue;
+        }
+
+        if (token == FDT_NOP) continue;
+        if (token == FDT_END) break;
+
+        if (token == FDT_PROP) {
+            uint32_t len = be32(p); p += 4;
+            uint32_t nameoff = be32(p); p += 4;
+            const uint8_t *data = p;
+            p += len;
+            p = align4(p);
+
+            if (depth < 0) continue;
+            node_ctx_t *ctx = &stack[depth];
+            const char *pname = str_at(nameoff);
+
+            /* Track cell sizes. */
+            if (pname[0] == '#' && pname[1] == 'a') {
+                if (len == 4) ctx->addr_cells = be32(data);
+                continue;
+            }
+            if (pname[0] == '#' && pname[1] == 's') {
+                if (len == 4) ctx->size_cells = be32(data);
+                continue;
+            }
+
+            if (depth == chosen_depth) {
+                /* Property values are NUL-terminated strings. */
+                if (streq(pname, "stdout-path") || streq(pname, "linux,stdout-path")) {
+                    strlcpy0(out, out_cap, (const char *)data);
+                    strip_after_colon(out);
+                    if (out_key && key_cap) strlcpy0(out_key, key_cap, pname);
+                    return (out[0] != '\0');
+                }
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    return false;
+}
+
+/* Resolve an alias name (e.g. "serial0") via /aliases. */
+static bool dtb_resolve_alias(const char *alias, char *out, uint32_t out_cap) {
+    if (!g_struct || !g_strings || !alias || !out || out_cap == 0) return false;
+
+    node_ctx_t stack[64];
+    int depth = -1;
+    int aliases_depth = -1;
+    const uint8_t *p = g_struct;
+
+    uint32_t cur_addr_cells = 2, cur_size_cells = 2;
+
+    while (true) {
+        uint32_t token = be32(p); p += 4;
+
+        if (token == FDT_BEGIN_NODE) {
+            const char *name = (const char *)p;
+            uint32_t nlen = 0;
+            while (p[nlen] != '\0') nlen++;
+            p += (nlen + 1);
+            p = align4(p);
+
+            depth++;
+            if (depth >= (int)(sizeof(stack)/sizeof(stack[0]))) return false;
+
+            node_ctx_t *ctx = &stack[depth];
+            uint32_t parent_addr = (depth == 0) ? cur_addr_cells : stack[depth - 1].addr_cells;
+            uint32_t parent_size = (depth == 0) ? cur_size_cells : stack[depth - 1].size_cells;
+            ctx->parent_addr_cells = parent_addr;
+            ctx->parent_size_cells = parent_size;
+            ctx->addr_cells = parent_addr;
+            ctx->size_cells = parent_size;
+            ctx->is_memory = false;
+            ctx->is_uart_candidate = false;
+
+            if (depth == 1 && streq(name, "aliases")) {
+                aliases_depth = depth;
+            }
+            continue;
+        }
+
+        if (token == FDT_END_NODE) {
+            if (depth == aliases_depth) aliases_depth = -1;
+            if (depth >= 0) depth--;
+            continue;
+        }
+
+        if (token == FDT_NOP) continue;
+        if (token == FDT_END) break;
+
+        if (token == FDT_PROP) {
+            uint32_t len = be32(p); p += 4;
+            uint32_t nameoff = be32(p); p += 4;
+            const uint8_t *data = p;
+            p += len;
+            p = align4(p);
+
+            if (depth < 0) continue;
+            node_ctx_t *ctx = &stack[depth];
+            const char *pname = str_at(nameoff);
+
+            if (pname[0] == '#' && pname[1] == 'a') {
+                if (len == 4) ctx->addr_cells = be32(data);
+                continue;
+            }
+            if (pname[0] == '#' && pname[1] == 's') {
+                if (len == 4) ctx->size_cells = be32(data);
+                continue;
+            }
+
+            if (depth == aliases_depth) {
+                if (streq(pname, alias)) {
+                    strlcpy0(out, out_cap, (const char *)data);
+                    return (out[0] == '/'); /* aliases typically provide absolute paths */
+                }
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    return false;
+}
+
+static bool split_path_components(const char *path, const char *comps[], uint32_t *io_n, uint32_t max) {
+    if (!path || !io_n) return false;
+    uint32_t n = 0;
+    const char *p = path;
+    if (*p != '/') return false;
+    p++; /* skip leading slash */
+
+    while (*p) {
+        if (n >= max) return false;
+        const char *start = p;
+        while (*p && *p != '/') p++;
+        /* Empty component not allowed. */
+        if (p == start) return false;
+        comps[n++] = start;
+        if (*p == '/') p++;
+    }
+    *io_n = n;
     return true;
 }
 
-static void dump_rsvmap(void) {
+static bool comp_eq(const char *node_name, const char *comp, uint32_t comp_len) {
+    if (!node_name || !comp) return false;
+    uint32_t i = 0;
+    for (; i < comp_len; ++i) {
+        if (node_name[i] != comp[i]) return false;
+    }
+    return (node_name[i] == '\0');
+}
+
+/* Find a node by absolute path and decode its first reg tuple address. */
+static bool dtb_find_node_reg_addr_by_path(const char *abs_path, uint64_t *out_addr) {
+    if (!g_struct || !g_strings || !abs_path || abs_path[0] != '/' || !out_addr) return false;
+
+    const char *comps[32];
+    uint32_t comp_count = 0;
+    if (!split_path_components(abs_path, comps, &comp_count, 32)) return false;
+
+    node_ctx_t stack[64];
+    const char *names[64];
+    int depth = -1;
+    int target_depth = -1;
+    const uint8_t *p = g_struct;
+
+    uint32_t cur_addr_cells = 2, cur_size_cells = 2;
+
+    while (true) {
+        uint32_t token = be32(p); p += 4;
+
+        if (token == FDT_BEGIN_NODE) {
+            const char *name = (const char *)p;
+            uint32_t nlen = 0;
+            while (p[nlen] != '\0') nlen++;
+            p += (nlen + 1);
+            p = align4(p);
+
+            depth++;
+            if (depth >= (int)(sizeof(stack)/sizeof(stack[0]))) return false;
+
+            names[depth] = name;
+
+            node_ctx_t *ctx = &stack[depth];
+            uint32_t parent_addr = (depth == 0) ? cur_addr_cells : stack[depth - 1].addr_cells;
+            uint32_t parent_size = (depth == 0) ? cur_size_cells : stack[depth - 1].size_cells;
+            ctx->parent_addr_cells = parent_addr;
+            ctx->parent_size_cells = parent_size;
+            ctx->addr_cells = parent_addr;
+            ctx->size_cells = parent_size;
+            ctx->is_memory = false;
+            ctx->is_uart_candidate = false;
+
+            /* Determine if current node matches the target path. Root depth==0 has empty name. */
+            if (depth == (int)comp_count) {
+                bool match = true;
+                for (uint32_t i = 0; i < comp_count; ++i) {
+                    const char *c = comps[i];
+                    uint32_t clen = 0; while (c[clen] && c[clen] != '/') clen++;
+                    if (!comp_eq(names[i + 1], c, clen)) { match = false; break; }
+                }
+                if (match) target_depth = depth;
+            }
+            continue;
+        }
+
+        if (token == FDT_END_NODE) {
+            if (depth == target_depth) target_depth = -1;
+            if (depth >= 0) depth--;
+            continue;
+        }
+
+        if (token == FDT_NOP) continue;
+        if (token == FDT_END) break;
+
+        if (token == FDT_PROP) {
+            uint32_t len = be32(p); p += 4;
+            uint32_t nameoff = be32(p); p += 4;
+            const uint8_t *data = p;
+            p += len;
+            p = align4(p);
+
+            if (depth < 0) continue;
+            node_ctx_t *ctx = &stack[depth];
+            const char *pname = str_at(nameoff);
+
+            if (pname[0] == '#' && pname[1] == 'a') {
+                if (len == 4) ctx->addr_cells = be32(data);
+                continue;
+            }
+            if (pname[0] == '#' && pname[1] == 's') {
+                if (len == 4) ctx->size_cells = be32(data);
+                continue;
+            }
+
+            if (depth == target_depth && streq(pname, "reg")) {
+                /* Decode first tuple address using parent's cell sizes. */
+                uint32_t addr_cells = ctx->parent_addr_cells;
+                uint32_t size_cells = ctx->parent_size_cells;
+                if (addr_cells == 0 || addr_cells > 2) return false;
+                uint32_t tuple_bytes = 4u * (addr_cells + size_cells);
+                if (len < tuple_bytes) return false;
+
+                uint64_t addr = 0;
+                const uint8_t *q = data;
+                if (addr_cells == 1) {
+                    addr = be32(q);
+                } else {
+                    addr = be64(q);
+                }
+                *out_addr = addr;
+                return true;
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    return false;
+}
+
+/* Full resolution: /chosen stdout-path -> alias -> node path -> reg address. */
+static bool dtb_resolve_stdout_uart(uint64_t *out_uart_phys,
+                                    char *out_chosen, uint32_t chosen_cap,
+                                    char *out_node_path, uint32_t node_cap,
+                                    char *out_key, uint32_t key_cap)
+{
+    if (!out_uart_phys) return false;
+    *out_uart_phys = 0;
+    if (out_chosen && chosen_cap) out_chosen[0] = '\0';
+    if (out_node_path && node_cap) out_node_path[0] = '\0';
+    if (out_key && key_cap) out_key[0] = '\0';
+
+    char chosen[128] = {0};
+    char key[32] = {0};
+    if (!dtb_read_chosen_stdout(chosen, sizeof(chosen), key, sizeof(key))) return false;
+
+    if (out_chosen && chosen_cap) strlcpy0(out_chosen, chosen_cap, chosen);
+    if (out_key && key_cap) strlcpy0(out_key, key_cap, key);
+
+    char path[128] = {0};
+    if (chosen[0] == '/') {
+        strlcpy0(path, sizeof(path), chosen);
+    } else {
+        /* alias */
+        if (!dtb_resolve_alias(chosen, path, sizeof(path))) return false;
+    }
+
+    if (out_node_path && node_cap) strlcpy0(out_node_path, node_cap, path);
+
+    uint64_t uart_phys = 0;
+    if (!dtb_find_node_reg_addr_by_path(path, &uart_phys)) return false;
+    *out_uart_phys = uart_phys;
+    return true;
+}
+
+bool dtb_find_pl011_uart(uint64_t *out_phys) {
+    /* Prefer /chosen stdout-path resolution. */
+    uint64_t uart_phys = 0;
+    if (!dtb_resolve_stdout_uart(&uart_phys, NULL, 0, NULL, 0, NULL, 0)) {
+        return false;
+    }
+    if (out_phys) *out_phys = uart_phys;
+    return true;
+}
+
+static __attribute__((unused)) void dump_rsvmap(void) {
     uart_puts("DTB: memreserve map\n");
     if (!g_rsvmap) {
         uart_puts("  (none)\n");
@@ -598,7 +986,7 @@ static void dump_rsvmap(void) {
 }
 
 
-static void dump_reserved_memory_node(void) {
+static __attribute__((unused)) void dump_reserved_memory_node(void) {
     uart_puts("DTB: /reserved-memory\n");
 
     if (!g_struct || !g_strings) {
@@ -748,13 +1136,28 @@ void dtb_dump_summary(void) {
         }
     }
 
-    /* UART */
+    /* UART (DTB-derived via /chosen stdout-path + /aliases) */
     {
+        char chosen[128] = {0};
+        char node_path[128] = {0};
+        char key[32] = {0};
         uint64_t uart_phys = 0;
-        if (dtb_find_pl011_uart(&uart_phys)) {
-            uart_puts("DTB: pl011 uart phys="); uart_puthex64(uart_phys); uart_putnl();
+
+        if (dtb_resolve_stdout_uart(&uart_phys,
+                                   chosen, (uint32_t)sizeof(chosen),
+                                   node_path, (uint32_t)sizeof(node_path),
+                                   key, (uint32_t)sizeof(key)))
+        {
+            uart_puts("DTB: chosen "); uart_puts(key); uart_puts("=\""); uart_puts(chosen); uart_puts("\"\n");
+            uart_puts("DTB: chosen resolved path=\""); uart_puts(node_path); uart_puts("\"\n");
+            uart_puts("DTB: chosen uart phys="); uart_puthex64(uart_phys); uart_putnl();
         } else {
-            uart_puts("DTB: pl011 uart not found\n");
+            if (dtb_read_chosen_stdout(chosen, (uint32_t)sizeof(chosen), key, (uint32_t)sizeof(key))) {
+                uart_puts("DTB: chosen "); uart_puts(key); uart_puts("=\""); uart_puts(chosen); uart_puts("\"\n");
+                uart_puts("DTB: chosen uart resolve failed; fallback 0x09000000\n");
+            } else {
+                uart_puts("DTB: chosen stdout-path missing; fallback 0x09000000\n");
+            }
         }
     }
 }

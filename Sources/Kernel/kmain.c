@@ -10,6 +10,7 @@
 #include "boot_info.h"
 #include "dtb.h"
 #include "mmu.h"
+#include "platform.h"
 #include "uart_pl011.h"
 
 /*
@@ -60,28 +61,35 @@ void kmain(const boot_info_t *boot_info)
         uart_putnl();
     }
 
-    /* DTB bring-up: validate and print what we can. */
+        /* DTB bring-up: validate and print what we can. */
     if (boot_info && boot_info->dtb_ptr != 0) {
         if (dtb_init((const void *)(uintptr_t)boot_info->dtb_ptr, boot_info->dtb_size)) {
             dtb_dump_summary();
 
-            /* If DTB gives us a UART base, switch to it (fallback otherwise). */
+            /* Preferred UART discovery: /chosen stdout-path -> /aliases -> reg[0].addr */
             uint64_t uart_phys = 0;
             if (dtb_find_pl011_uart(&uart_phys)) {
-                uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
+                uart_puts("UART: switching to DTB stdout base "); uart_puthex64(uart_phys); uart_putnl();
                 uart_init(uart_phys);
+            } else {
+                uart_puts("UART: DTB stdout-path resolution failed; using fallback 0x09000000\n");
+                uart_init(0x09000000ULL);
             }
+
+            /* Derive usable RAM map (memory - reserved - kernel/dtb/boot). */
+            platform_dump_memory_map(boot_info);
         } else {
             uart_puts("DTB: invalid header (fallback to hardcoded UART)\n");
+            uart_init(0x09000000ULL);
         }
     } else {
         uart_puts("DTB: no pointer provided (fallback to hardcoded UART)\n");
+        uart_init(0x09000000ULL);
     }
 
-    /* Install kernel page tables (TTBR1) and disable TTBR0. */
+/* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
 
-    uart_puts("Kernel: MMU initialized\n");
     uart_puts("Kernel: 0.0.3\n");
 
 #ifdef CAPAZ_FAULT_TEST

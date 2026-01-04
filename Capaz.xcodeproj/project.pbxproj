@@ -48,15 +48,8 @@
 
 /* Begin PBXFileReference section */
 		AAE12AED2F01CD6900870C5D /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
-		AAE12AEE2F01CD7C00870C5D /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
 		AAE12AF02F01CD9300870C5D /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
 		AAE12AF12F01CD9300870C5D /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
-		AAE12AF82F032A8200870C5D /* mmu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu.h; sourceTree = "<group>"; };
-		AAE12AF92F032A8200870C5D /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
-		AAE12AFA2F034CEF00870C5D /* kcrt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kcrt0.c; sourceTree = "<group>"; };
-		AAE12AFB2F034CEF00870C5D /* kernel_header.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_header.S; sourceTree = "<group>"; };
-		AAE12AFC2F034CEF00870C5D /* kernel_image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_image.h; sourceTree = "<group>"; };
-		AAE12AFD2F034CEF00870C5D /* kernel_vectors.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_vectors.S; sourceTree = "<group>"; };
 		AAE76CE42EF75EDC005230EB /* start.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = start.S; sourceTree = "<group>"; };
 		AAE76CEA2EF75F27005230EB /* uart_pl011.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uart_pl011.c; sourceTree = "<group>"; };
 		AAE76CEB2EF75F2F005230EB /* uart_pl011.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = uart_pl011.h; sourceTree = "<group>"; };
@@ -66,9 +59,18 @@
 		AAE99A662F09C94000EAB13D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		AAE99A672F09C97D00EAB13D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		AAE99A682F09C97D00EAB13D /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		AAEFDF932F086718008BD428 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
-		AAEFDF942F086718008BD428 /* dtb.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dtb.h; sourceTree = "<group>"; };
-		AAEFDF952F086718008BD428 /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
+		AAE99A692F09E7BF00EAB13D /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
+		AAE99A6A2F09E7BF00EAB13D /* dtb.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dtb.h; sourceTree = "<group>"; };
+		AAE99A6B2F09E7BF00EAB13D /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
+		AAE99A6C2F09E7BF00EAB13D /* kcrt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kcrt0.c; sourceTree = "<group>"; };
+		AAE99A6D2F09E7BF00EAB13D /* kernel_header.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_header.S; sourceTree = "<group>"; };
+		AAE99A6E2F09E7BF00EAB13D /* kernel_image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_image.h; sourceTree = "<group>"; };
+		AAE99A6F2F09E7BF00EAB13D /* kernel_vectors.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_vectors.S; sourceTree = "<group>"; };
+		AAE99A702F09E7BF00EAB13D /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
+		AAE99A712F09E7BF00EAB13D /* mmu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu.h; sourceTree = "<group>"; };
+		AAE99A722F09E7BF00EAB13D /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
+		AAE99A732F09E7BF00EAB13D /* platform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = platform.h; sourceTree = "<group>"; };
+		AAE99A742F09E7BF00EAB13D /* platform.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = platform.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -88,16 +90,18 @@
 		AAE12AEF2F01CD7C00870C5D /* Kernel */ = {
 			isa = PBXGroup;
 			children = (
-				AAEFDF932F086718008BD428 /* boot_info.h */,
-				AAEFDF942F086718008BD428 /* dtb.h */,
-				AAEFDF952F086718008BD428 /* dtb.c */,
-				AAE12AEE2F01CD7C00870C5D /* kmain.c */,
-				AAE12AFA2F034CEF00870C5D /* kcrt0.c */,
-				AAE12AF82F032A8200870C5D /* mmu.h */,
-				AAE12AF92F032A8200870C5D /* mmu.c */,
-				AAE12AFB2F034CEF00870C5D /* kernel_header.S */,
-				AAE12AFC2F034CEF00870C5D /* kernel_image.h */,
-				AAE12AFD2F034CEF00870C5D /* kernel_vectors.S */,
+				AAE99A692F09E7BF00EAB13D /* boot_info.h */,
+				AAE99A6A2F09E7BF00EAB13D /* dtb.h */,
+				AAE99A6B2F09E7BF00EAB13D /* dtb.c */,
+				AAE99A6C2F09E7BF00EAB13D /* kcrt0.c */,
+				AAE99A6D2F09E7BF00EAB13D /* kernel_header.S */,
+				AAE99A6E2F09E7BF00EAB13D /* kernel_image.h */,
+				AAE99A6F2F09E7BF00EAB13D /* kernel_vectors.S */,
+				AAE99A702F09E7BF00EAB13D /* kmain.c */,
+				AAE99A712F09E7BF00EAB13D /* mmu.h */,
+				AAE99A722F09E7BF00EAB13D /* mmu.c */,
+				AAE99A732F09E7BF00EAB13D /* platform.h */,
+				AAE99A742F09E7BF00EAB13D /* platform.c */,
 			);
 			path = Kernel;
 			sourceTree = "<group>";
