@@ -280,6 +280,10 @@ void pmm_dump_summary(void) {
     uart_puts(" meta_pages="); uart_puthex64(st->meta_pages);
     uart_puts("\n");
 #else
-    
+    uart_puts("PMM(free/total): ");
+    uart_putu64_dec(st->free_pages);
+    uart_putc('/');
+    uart_putu64_dec(st->total_pages);
+    uart_puts("\n");
 #endif
 }

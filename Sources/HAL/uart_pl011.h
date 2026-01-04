@@ -10,5 +10,6 @@ void uart_putc(char c);
 void uart_puts(const char *s);
 void uart_putnl(void);
 void uart_puthex64(uint64_t value);
+void uart_putu64_dec(uint64_t value);
 
 #endif

@@ -59,3 +59,28 @@ void uart_puthex64(uint64_t value) {
     uart_puts("0x");
     for (int i = 0; i < 16; i++) uart_putc(buf[i]);
 }
+
+// uart_pl011.c (add implementation, e.g. after uart_puthex64)
+
+void uart_putu64_dec(uint64_t value) {
+    /* Max uint64_t is 18446744073709551615 (20 digits) */
+    char buf[21];
+    int i = 0;
+
+    if (value == 0) {
+        uart_putc('0');
+        return;
+    }
+
+    while (value != 0) {
+        uint64_t q = value / 10ULL;
+        uint64_t r = value - (q * 10ULL);
+        buf[i++] = (char)('0' + (char)r);
+        value = q;
+    }
+
+    while (i--) {
+        uart_putc(buf[i]);
+    }
+}
+
