@@ -11,7 +11,8 @@
  */
 typedef struct boot_info {
     uint64_t kernel_phys_base;      /* Physical address where the kernel image starts. */
-    uint64_t kernel_size;           /* Size of the kernel image in bytes. */
+    uint64_t kernel_loaded_size;    /* Size of the kernel image bytes (through .data). */
+    uint64_t kernel_runtime_size;   /* Size of the kernel runtime footprint (through .bss). */
     uint64_t kernel_entry_offset;   /* Entry point offset from kernel_phys_base. */
 
     uint64_t dtb_ptr;               /* High-half VA of the DTB blob (0 if none). */

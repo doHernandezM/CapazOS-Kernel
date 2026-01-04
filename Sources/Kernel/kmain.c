@@ -96,7 +96,8 @@ void kmain(const boot_info_t *boot_info)
 #if KMAIN_DEBUG
     if (boot_info) {
         uart_puts("boot_info: kernel_pa="); uart_puthex64(boot_info->kernel_phys_base);
-        uart_puts(" size="); uart_puthex64(boot_info->kernel_size);
+        uart_puts(" loaded_size="); uart_puthex64(boot_info->kernel_loaded_size);
+        uart_puts(" runtime_size="); uart_puthex64(boot_info->kernel_runtime_size);
         uart_puts(" entry_off="); uart_puthex64(boot_info->kernel_entry_offset);
         uart_putnl();
 
@@ -143,8 +144,6 @@ void kmain(const boot_info_t *boot_info)
     
     uart_putnl();
     
-
-
     for (;;) {
         __asm__ volatile ("wfi");
     }

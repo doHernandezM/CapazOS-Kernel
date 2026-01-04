@@ -22,10 +22,11 @@
 #include <stddef.h>
 
 /* Symbols exported by the linker marking the end of the loaded
- * kernel image.  We use this to place the page‑table allocator just
- * after the kernel in physical memory.  See kernel.ld.
+ * image and the end of the runtime footprint (through .bss). We
+ * use the runtime end for any "allocate-after-kernel" decisions
+ * so that .bss pages are treated as kernel-owned.
  */
-extern uint8_t __kernel_image_end[];
+extern uint8_t __kernel_runtime_end[];
 
 /*
  * The kernel’s exception vector table lives in kernel_vectors.S.
@@ -171,12 +172,12 @@ static uint64_t alloc_virt;  /* corresponding virtual alias */
 static void page_alloc_init(void)
 {
     /* Compute the end of the kernel image in virtual and physical
-     * addresses.  __kernel_image_end resides in the higher‑half
+     * addresses.  __kernel_runtime_end resides in the higher‑half
      * mapping.  Subtract the base and add RAM_BASE to obtain the
      * corresponding physical address.  Align both pointers up to
      * a 4KiB boundary.
      */
-    uint64_t end_va  = (uint64_t)__kernel_image_end;
+    uint64_t end_va  = (uint64_t)__kernel_runtime_end;
     uint64_t end_pa  = virt_to_phys(end_va);
     alloc_phys = (end_pa + 0xFFFULL) & ~0xFFFULL;
     alloc_virt = HH_PHYS_4000_BASE + (alloc_phys - RAM_BASE);
@@ -203,9 +204,9 @@ void mmu_init(const boot_info_t *boot_info)
     (void)boot_info;
 
     /* Initialise the simple page allocator.  This must be done
-     * before any allocations.  It uses __kernel_image_end to
-     * determine the end of the loaded kernel image and begins
-     * carving pages immediately afterwards.
+     * before any allocations.  It uses __kernel_runtime_end (end
+     * of runtime footprint, through .bss) to avoid overlap with
+     * kernel-owned pages.
      */
     page_alloc_init();
 
@@ -218,7 +219,7 @@ void mmu_init(const boot_info_t *boot_info)
     extern uint8_t __rodata_start[], __rodata_end[];
     extern uint8_t __data_start[], __data_end[];
     extern uint8_t __bss_start[], __bss_end[];
-    extern uint8_t __kernel_image_start[], __kernel_image_end[];
+    extern uint8_t __kernel_image_start[], __kernel_runtime_end[];
 
     uint64_t text_pa_start   = virt_to_phys((uint64_t)__text_start);
     uint64_t text_pa_end     = virt_to_phys((uint64_t)__text_end);
@@ -229,7 +230,7 @@ void mmu_init(const boot_info_t *boot_info)
     uint64_t bss_pa_start    = virt_to_phys((uint64_t)__bss_start);
     uint64_t bss_pa_end      = virt_to_phys((uint64_t)__bss_end);
     uint64_t kernel_pa_start = virt_to_phys((uint64_t)__kernel_image_start);
-    uint64_t kernel_pa_end   = virt_to_phys((uint64_t)__kernel_image_end);
+    uint64_t kernel_pa_end   = virt_to_phys((uint64_t)__kernel_runtime_end);
 
     /* Vector table physical range.  Align the start down to a page
      * boundary and map at least one page.  If kernel_vectors

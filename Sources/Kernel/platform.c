@@ -183,10 +183,10 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
             }
         }
 
-        // Reserve the kernel image.
+        // Reserve the kernel runtime footprint (through .bss).
         {
             uint64_t start = align_down_4k(boot_info->kernel_phys_base);
-            uint64_t end = align_up_4k(boot_info->kernel_phys_base + boot_info->kernel_size);
+            uint64_t end = align_up_4k(boot_info->kernel_phys_base + boot_info->kernel_runtime_size);
             if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
                 all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
