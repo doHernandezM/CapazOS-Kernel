@@ -124,9 +124,6 @@ void kmain(const boot_info_t *boot_info)
                 uart_init(uart_phys);
             }
 
-            /* Always print a short, stable summary. */
-            print_total_memory_from_dtb();
-
             /* Derive allocator-friendly usable RAM spans (RAM - reserved - implicit). */
 #if KMAIN_DEBUG
             platform_dump_memory_map(boot_info);
@@ -140,7 +137,10 @@ void kmain(const boot_info_t *boot_info)
 
     /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
-    uart_puts("Kernel: Up\n");
+    
+    /* Always print a short, stable summary. */
+    print_total_memory_from_dtb();
+    
     uart_putnl();
     
 
