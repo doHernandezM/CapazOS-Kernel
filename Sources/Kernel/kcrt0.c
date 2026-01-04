@@ -11,22 +11,6 @@
 #include <stdint.h>
 
 #include "boot_info.h"
-#include "uart_pl011.h"
-
-/* Linker-provided .bss bounds from Kernel/Linker/kernel.ld */
-extern char __bss_start[];
-extern char __bss_end[];
-
-static inline void kcrt0_clear_bss(void)
-{
-    /*
-     * Explicitly clear kernel .bss so we do not rely on QEMU's initial RAM
-     * contents. This is a baseline bring-up requirement.
-     */
-    for (char *p = __bss_start; p < __bss_end; p++) {
-        *p = 0;
-    }
-}
 
 /* Prototype for the kernel’s main entry point defined in kmain.c. */
 void kmain(const boot_info_t *boot_info);
@@ -82,13 +66,6 @@ void _kcrt0(void) {
 }
 
 void _kcrt0_c(const boot_info_t *boot_info) {
-    /* M2 acceptance: clear kernel .bss and emit an unambiguous stage marker. */
-    kcrt0_clear_bss();
-
-    /* UART fallback base is usable immediately under the bootstrap HH mapping. */
-    uart_init(0);
-    uart_puts("Kernel C Runtime: 0.0.3\n");
-
     kmain(boot_info);
 
     /* Should not return. Enter low-power wait if it does. */

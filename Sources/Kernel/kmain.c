@@ -10,7 +10,6 @@
 #include "boot_info.h"
 #include "dtb.h"
 #include "mmu.h"
-#include "platform.h"
 #include "uart_pl011.h"
 
 /*
@@ -43,13 +42,11 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 
 void kmain(const boot_info_t *boot_info)
 {
-    /*
-     * UART is already initialized in _kcrt0_c() for the M2 stage marker.
-     * Re-initialize here as a harmless idempotent fallback.
-     */
+    /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    
+    uart_puts("Kernel: 0.0.3\n");
+
     if (boot_info) {
         uart_puts("boot_info: kernel_pa="); uart_puthex64(boot_info->kernel_phys_base);
         uart_puts(" size="); uart_puthex64(boot_info->kernel_size);
@@ -61,49 +58,28 @@ void kmain(const boot_info_t *boot_info)
         uart_putnl();
     }
 
-        /* DTB bring-up: validate and print what we can. */
+    /* DTB bring-up: validate and print what we can. */
     if (boot_info && boot_info->dtb_ptr != 0) {
         if (dtb_init((const void *)(uintptr_t)boot_info->dtb_ptr, boot_info->dtb_size)) {
             dtb_dump_summary();
 
-            /* Preferred UART discovery: /chosen stdout-path -> /aliases -> reg[0].addr */
+            /* If DTB gives us a UART base, switch to it (fallback otherwise). */
             uint64_t uart_phys = 0;
             if (dtb_find_pl011_uart(&uart_phys)) {
-                uart_puts("UART: switching to DTB stdout base "); uart_puthex64(uart_phys); uart_putnl();
+                uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
                 uart_init(uart_phys);
-            } else {
-                uart_puts("UART: DTB stdout-path resolution failed; using fallback 0x09000000\n");
-                uart_init(0x09000000ULL);
             }
-
-            /* Derive usable RAM map (memory - reserved - kernel/dtb/boot). */
-            platform_dump_memory_map(boot_info);
         } else {
             uart_puts("DTB: invalid header (fallback to hardcoded UART)\n");
-            uart_init(0x09000000ULL);
         }
     } else {
         uart_puts("DTB: no pointer provided (fallback to hardcoded UART)\n");
-        uart_init(0x09000000ULL);
     }
 
-/* Install kernel page tables (TTBR1) and disable TTBR0. */
+    /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
 
-    uart_puts("Kernel: 0.0.3\n");
-
-#ifdef CAPAZ_FAULT_TEST
-    /*
-     * Deliberate fault test (M2 acceptance aid):
-     * Must run after UART is stable and after VBAR_EL1 is set to kernel_vectors
-     * (mmu_init() installs VBAR_EL1). This proves:
-     *  - VBAR installation is correct
-     *  - ESR/FAR/ELR/SP reporting works
-     *  - Register-save path matches kernel_exception_report() expectations
-     */
-    uart_puts("Kernel: CAPAZ_FAULT_TEST enabled; triggering deliberate BRK...\n");
-    __asm__ volatile("brk #0xCA");
-#endif
+    uart_puts("Kernel: MMU initialized\n");
 
     for (;;) {
         __asm__ volatile ("wfi");

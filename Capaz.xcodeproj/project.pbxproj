@@ -71,6 +71,7 @@
 		AAE99A722F09E7BF00EAB13D /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
 		AAE99A732F09E7BF00EAB13D /* platform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = platform.h; sourceTree = "<group>"; };
 		AAE99A742F09E7BF00EAB13D /* platform.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = platform.c; sourceTree = "<group>"; };
+		AAE99A752F0A06FE00EAB13D /* mem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mem.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -102,6 +103,7 @@
 				AAE99A722F09E7BF00EAB13D /* mmu.c */,
 				AAE99A732F09E7BF00EAB13D /* platform.h */,
 				AAE99A742F09E7BF00EAB13D /* platform.c */,
+				AAE99A752F0A06FE00EAB13D /* mem.c */,
 			);
 			path = Kernel;
 			sourceTree = "<group>";

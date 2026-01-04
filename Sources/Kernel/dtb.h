@@ -7,9 +7,6 @@
 /* Validate and cache a DTB blob. fdt must be a kernel VA. */
 bool dtb_init(const void *fdt, uint64_t fdt_size);
 
-/* Returns the DTB header totalsize (0 if dtb_init() has not succeeded). */
-uint32_t dtb_get_totalsize(void);
-
 /* Print DTB-derived information to UART (memory, reserved, uart). */
 void dtb_dump_summary(void);
 
