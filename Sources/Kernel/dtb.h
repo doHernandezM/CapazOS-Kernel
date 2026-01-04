@@ -26,6 +26,18 @@ typedef struct dtb_range {
 } dtb_range_t;
 
 /*
+ * Upper bounds used by early-boot code when requesting DTB ranges without
+ * dynamic allocation.
+ */
+#ifndef DTB_MAX_MEMORY_RANGES
+#define DTB_MAX_MEMORY_RANGES 16
+#endif
+
+#ifndef DTB_MAX_RESERVED_RANGES
+#define DTB_MAX_RESERVED_RANGES 64
+#endif
+
+/*
  * Structured DTB results.
  *
  * The caller supplies an output array and its capacity in *count.

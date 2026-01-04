@@ -231,8 +231,8 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "Boot: 0.0.3\n"
-
+    .asciz "Boot: 0.0.3\nAArch64 Virt\n"
+    
     .section .data.boot, "aw"
 uart_base:
     .quad 0x09000000

@@ -31,7 +31,7 @@ static inline uint64_t align_down_4k(uint64_t x) {
     return x & ~(PAGE_SIZE - 1);
 }
 
-static void sort_ranges(dtb_range_t *r, uint32_t n) {
+static void __attribute__((unused)) sort_ranges(dtb_range_t *r, uint32_t n) {
     /* Selection sort (small N, no libc). */
     for (uint32_t i = 0; i < n; ++i) {
         uint32_t min = i;

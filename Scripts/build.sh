@@ -73,6 +73,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/platform.c"      -o "$OUT_DIR/obj/platform.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"           -o "$OUT_DIR/obj/mmu.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"           -o "$OUT_DIR/obj/dtb.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/MathHelper.c"   -o "$OUT_DIR/obj/math_helper.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mem.c"           -o "$OUT_DIR/obj/mem.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
@@ -86,6 +87,7 @@ PY
    "$OUT_DIR/obj/platform.o" \
    "$OUT_DIR/obj/mmu.o" \
   "$OUT_DIR/obj/dtb.o" \
+  "$OUT_DIR/obj/math_helper.o" \
   "$OUT_DIR/obj/mem.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
   "$OUT_DIR/obj/uart.o" \

@@ -45,8 +45,7 @@ static const uint8_t *g_strings;
 static const uint8_t *g_rsvmap;
 
 /* Parsed results (bounded; no allocator yet). */
-#define DTB_MAX_MEMORY_RANGES   16
-#define DTB_MAX_RESERVED_RANGES 64
+/* DTB_MAX_MEMORY_RANGES / DTB_MAX_RESERVED_RANGES are defined in dtb.h */
 
 static dtb_range_t g_mem_ranges[DTB_MAX_MEMORY_RANGES];
 static uint32_t    g_mem_count;

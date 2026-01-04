@@ -17,6 +17,7 @@
 
 
 #include "mmu.h"
+#include "dtb.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -54,6 +55,11 @@ extern uint8_t KERNEL_PHYS_BASE[];
 /* Offset of the physical RAM base used by the boot mapping. */
 #define RAM_BASE 0x40000000ULL
 
+#define RAM_BLOCK_SIZE (2ULL * 1024 * 1024)
+#define RAM_DIRECTMAP_SIZE (512ULL * RAM_BLOCK_SIZE)
+
+static inline uint64_t align_down_2m(uint64_t x) { return x & ~(RAM_BLOCK_SIZE - 1); }
+static inline uint64_t align_up_2m(uint64_t x) { return (x + (RAM_BLOCK_SIZE - 1)) & ~(RAM_BLOCK_SIZE - 1); }
 /* Table entry type bits.  A table descriptor has bits[1:0] = 0b11
  * (value 3), while a block/page descriptor has bits[1:0] = 0b01
  * (value 1).  See the Arm ARM for details.  We use the same
@@ -230,8 +236,6 @@ void mmu_init(const boot_info_t *boot_info)
      * expands beyond 4 KiB in the future, adjust vec_pa_end
      * accordingly. */
     uint64_t vec_pa_start = virt_to_phys((uint64_t)kernel_vectors) & ~0xFFFULL;
-    uint64_t vec_pa_end   = vec_pa_start + 0x1000ULL;
-
     /* Use the statically reserved page tables for TTBR1.  The
      * l0_table, l1_table and l2_table arrays live in .bss and are
      * 4KiB‑aligned.  They are zero‑initialised at load time.  The
@@ -239,7 +243,7 @@ void mmu_init(const boot_info_t *boot_info)
      */
     uint64_t *l0 = l0_table;
     uint64_t *l1 = l1_table;
-    uint64_t *l2_ram = l2_table;
+    uint64_t *l2 = l2_table;
 
     /* Fill the L0 table: entry 256 (covering 0xFFFF8000_0000_0000..)
      * points to our L1 table.  All other entries remain zero.
@@ -263,7 +267,7 @@ void mmu_init(const boot_info_t *boot_info)
     /* L1[1]: map the RAM region via an L2 table.  Normal memory,
      * inner‑shareable, accessed.  Bits[1:0]=0b11 indicate a table.
      */
-    uint64_t l2_pa = virt_to_phys((uint64_t)l2_ram);
+    uint64_t l2_pa = virt_to_phys((uint64_t)l2);
     l1[1] = l2_pa | DESC_TABLE;
 
     /* Build the L2 table.  Each entry covers 2 MiB.  We iterate
@@ -273,68 +277,93 @@ void mmu_init(const boot_info_t *boot_info)
      * kernel image).  Pages in the kernel image are then mapped
      * individually with appropriate permissions in the L3 table.
      */
-    for (size_t i = 0; i < 512; ++i) {
-        uint64_t region_pa_start = RAM_BASE + (i * 0x200000ULL);
-        uint64_t region_pa_end   = region_pa_start + 0x200000ULL;
-        /* Check if this 2 MiB region intersects the loaded kernel. */
-        int overlaps_kernel = !(region_pa_end <= kernel_pa_start || region_pa_start >= kernel_pa_end);
-        int overlaps_vec    = !(region_pa_end <= vec_pa_start || region_pa_start >= vec_pa_end);
-        if (overlaps_kernel || overlaps_vec) {
-            /* Allocate a new L3 table from the static pool and fill
-             * entries.  Convert the virtual address to a physical
-             * address for the descriptor. */
+    /* Map RAM blocks using DTB-provided memory ranges (fallback to legacy RAM_BASE/RAM_DIRECTMAP_SIZE). */
+    // Clear the L2 table. Keep this local to mmu.c to avoid depending on
+    // arch-specific header constants.
+    for (size_t i = 0; i < (sizeof(l2_table) / sizeof(l2_table[0])); i++) {
+        l2_table[i] = 0;
+    }
+
+    enum { MMU_MAX_MEMORY_RANGES = 64 };
+    dtb_range_t mem_ranges[MMU_MAX_MEMORY_RANGES];
+    uint32_t mem_count = MMU_MAX_MEMORY_RANGES;
+    bool have_ranges = dtb_get_memory_ranges(mem_ranges, &mem_count);
+    if (!have_ranges || mem_count == 0) {
+        mem_ranges[0].base = RAM_BASE;
+        mem_ranges[0].size = RAM_DIRECTMAP_SIZE;
+        mem_count = 1;
+    }
+
+for (size_t r = 0; r < mem_count; r++) {
+    uint64_t range_start = mem_ranges[r].base;
+    uint64_t range_end   = mem_ranges[r].base + mem_ranges[r].size;
+
+    /* Clamp to the legacy direct-map window we currently support (RAM_BASE .. RAM_BASE+RAM_DIRECTMAP_SIZE). */
+    if (range_end <= RAM_BASE || range_start >= (RAM_BASE + RAM_DIRECTMAP_SIZE)) continue;
+    if (range_start < RAM_BASE) range_start = RAM_BASE;
+    if (range_end > (RAM_BASE + RAM_DIRECTMAP_SIZE)) range_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+
+    uint64_t pa = align_down_2m(range_start);
+    uint64_t pa_end = align_up_2m(range_end);
+
+    for (; pa < pa_end; pa += RAM_BLOCK_SIZE) {
+        size_t i = (size_t)((pa - RAM_BASE) / RAM_BLOCK_SIZE);
+
+        uint64_t region_pa_start = pa;
+        uint64_t region_pa_end = pa + RAM_BLOCK_SIZE;
+
+        /* Determine overlap with kernel image. */
+        bool overlaps_kernel = !(region_pa_end <= kernel_pa_start || region_pa_start >= kernel_pa_end);
+
+        if (overlaps_kernel) {
+            /* Allocate an L3 table and map each 4KB page with correct permissions. */
             uint64_t *l3 = alloc_l3();
-            uint64_t l3_pa = virt_to_phys((uint64_t)l3);
-            l2_ram[i] = l3_pa | DESC_TABLE;
-            for (size_t j = 0; j < 512; ++j) {
-                uint64_t page_pa = region_pa_start + (j * 0x1000ULL);
-                uint64_t desc = page_pa;
-                /* Assign memory attributes based on segment. */
-                if ((page_pa >= vec_pa_start && page_pa < vec_pa_end) ||
-                    (page_pa >= text_pa_start && page_pa < text_pa_end)) {
-                    /* Text: executable, read‑only. */
-                    desc |= ATTRINDX_NORMAL;
-                    desc |= SH_INNER;
-                    desc |= AF;
-                    /*
-                     * Privileged read-only, executable at EL1, not executable at EL0.
-                     * AP[2:1]=0b10 => bit7=1, bit6=0.
-                     */
-                    desc |= (1ULL << 7);              /* AP_RO_EL1 */
-                    desc |= (1ULL << 54);             /* UXN */
-                    /* PXN clear => executable at EL1. */
-                } else if (page_pa >= rodata_pa_start && page_pa < rodata_pa_end) {
-                    /* Read‑only data: non‑executable. */
-                    desc |= ATTRINDX_NORMAL;
-                    desc |= SH_INNER;
-                    desc |= AF;
-                    desc |= (1ULL << 7); /* AP_RO_EL1 */
-                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
-                } else if ((page_pa >= data_pa_start && page_pa < data_pa_end) ||
-                           (page_pa >= bss_pa_start && page_pa < bss_pa_end)) {
-                    /* Writable data/BSS: non‑executable. */
-                    desc |= ATTRINDX_NORMAL;
-                    desc |= SH_INNER;
-                    desc |= AF;
-                    desc |= (0ULL << 6); /* AP_RW_EL1 */
-                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+            
+            uint64_t pa4 = region_pa_start;
+            for (size_t p = 0; p < 512; p++) {
+                uint64_t desc = pa4;
+
+                /* Common: Normal memory, inner-shareable, accessed. */
+                desc |= ATTRINDX_NORMAL;
+                desc |= SH_INNER;
+                desc |= AF;
+
+                /* Default permissions: RW in EL1, XN. */
+                desc |= (0ULL << 6); /* AP_RW_EL1 */
+                desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+
+                /* Determine which segment this belongs to and apply perms. */
+                    if (pa4 == vec_pa_start) {
+                        /* Exception vectors: RO, executable. */
+                        desc &= ~((1ULL << 53) | (1ULL << 54)); /* clear XN */
+                        desc &= ~(3ULL << 6);
+                        desc |= (2ULL << 6); /* AP_RO_EL1 */
+                    } else if (pa4 >= text_pa_start && pa4 < text_pa_end) {
+                    /* Text: RO, executable. */
+                    desc &= ~((1ULL << 53) | (1ULL << 54)); /* clear XN */
+                    desc &= ~(3ULL << 6);
+                    desc |= (2ULL << 6); /* AP_RO_EL1 */
+                } else if (pa4 >= rodata_pa_start && pa4 < rodata_pa_end) {
+                    /* Rodata: RO, XN. */
+                    desc &= ~(3ULL << 6);
+                    desc |= (2ULL << 6); /* AP_RO_EL1 */
+                } else if (pa4 >= data_pa_start && pa4 < data_pa_end) {
+                    /* Data: RW, XN (default). */
+                } else if (pa4 >= bss_pa_start && pa4 < bss_pa_end) {
+                    /* BSS: RW, XN (default). */
                 } else {
-                    /* Any other page in this region not part of the kernel
-                     * image is mapped as normal RW memory and XN. */
-                    desc |= ATTRINDX_NORMAL;
-                    desc |= SH_INNER;
-                    desc |= AF;
-                    desc |= (0ULL << 6); /* AP_RW_EL1 */
-                    desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
+                    /* Outside known segments but still within kernel image: RW, XN. */
                 }
-                /* Mark as a page descriptor (bits[1:0]=0b11). */
+
                 desc |= DESC_PAGE;
-                l3[j] = desc;
+                l3[p] = desc;
+                pa4 += 0x1000;
             }
+
+            uint64_t l3_pa = virt_to_phys((uint64_t)l3);
+            l2_table[i] = l3_pa | DESC_TABLE;
         } else {
-            /* Map the 2 MiB region as a block.  Set XN on all
-             * blocks as they might not contain code.  Normal
-             * memory, inner shareable, accessed. */
+            /* Non-kernel RAM: map as a 2MiB block, RW, XN (via WXN in SCTLR). */
             uint64_t desc = region_pa_start;
             desc |= ATTRINDX_NORMAL;
             desc |= SH_INNER;
@@ -342,9 +371,12 @@ void mmu_init(const boot_info_t *boot_info)
             desc |= (0ULL << 6); /* AP_RW_EL1 */
             desc |= (1ULL << 53) | (1ULL << 54); /* PXN|UXN */
             desc |= DESC_BLOCK;
-            l2_ram[i] = desc;
+            l2_table[i] = desc;
         }
     }
+}
+
+
 
     /* Compute the physical address of the L0 table. */
     uint64_t l0_pa = virt_to_phys((uint64_t)l0);
