@@ -9,8 +9,17 @@
 /* QEMU virt baseline RAM starts at 0x4000_0000. */
 #define RAM_BASE 0x40000000ULL
 
+/* TTBR1 direct-map window size (must match mmu.c). */
+#define RAM_DIRECTMAP_SIZE 0x40000000ULL /* 1 GiB */
+
 /* High-half direct map base for RAM_BASE. Must match boot + mmu.c. */
 #define HH_PHYS_4000_BASE 0xFFFF800040000000ULL
+
+/* Fixed PMM metadata reservation (pages) immediately after kernel runtime end. */
+#define PMM_METADATA_PAGES 16ULL
+
+/* Linker-provided end of kernel .bss (kernel runtime footprint end). */
+extern uint8_t __bss_end[];
 
 static inline uint64_t hh_virt_to_phys(uint64_t va) {
     if (va >= HH_PHYS_4000_BASE) {
@@ -146,12 +155,19 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
         if (mem[i].size == 0) continue;
         if (mem[i].base < mem_min_base) mem_min_base = mem[i].base;
     }
+    /* Clamp to the TTBR1 direct-map window we actually map. */
+    if (mem_min_base == UINT64_MAX || mem_min_base < RAM_BASE) mem_min_base = RAM_BASE;
 
     // Normalize DTB-provided RAM spans to whole pages.
     uint32_t mem_w = 0;
     for (uint32_t i = 0; i < mem_n; i++) {
         uint64_t start = align_up_4k(mem[i].base);
         uint64_t end = align_down_4k(mem[i].base + mem[i].size);
+        /* Clamp to the direct-mapped RAM window (TTBR1). */
+        uint64_t win_start = RAM_BASE;
+        uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+        if (start < win_start) start = win_start;
+        if (end > win_end) end = win_end;
         if (end <= start) continue;
         mem[mem_w].base = start;
         mem[mem_w].size = end - start;
@@ -183,16 +199,33 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
             }
         }
 
-        // Reserve the kernel runtime footprint (through .bss).
+        // Reserve the kernel runtime footprint (.bss included), not just loaded bytes.
         {
             uint64_t start = align_down_4k(boot_info->kernel_phys_base);
-            uint64_t end = align_up_4k(boot_info->kernel_phys_base + boot_info->kernel_runtime_size);
+            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__bss_end);
+            uint64_t end = align_up_4k(runtime_end_pa);
             if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
                 all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
         }
 
-        // Reserve the DTB blob at its physical address.
+        
+        // Reserve PMM metadata pages placed immediately after the kernel runtime end.
+        {
+            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__bss_end);
+            uint64_t start = align_up_4k(runtime_end_pa);
+            uint64_t end = start + (PMM_METADATA_PAGES * PAGE_SIZE);
+            /* Clamp to the TTBR1 direct-map window. */
+            uint64_t window_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+            if (start < window_end) {
+                if (end > window_end) end = window_end;
+                if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
+                    all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
+                }
+            }
+        }
+
+// Reserve the DTB blob at its physical address.
         {
             uint64_t dtb_phys = hh_virt_to_phys((uint64_t)boot_info->dtb_ptr);
             uint64_t dtb_sz = dtb_get_totalsize();

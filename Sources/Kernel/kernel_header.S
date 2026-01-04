@@ -21,11 +21,10 @@
     .type   __kernel_image_header, %object
 
 /*
- * Layout must match kernel_image_header_t in kernel_image.h (v2):
+ * Layout must match kernel_image_header_t in kernel_image.h:
  *   uint32_t magic;
  *   uint32_t version;
  *   uint64_t image_size;
- *   uint64_t runtime_size;
  *   uint64_t entry_offset;
  *   uint64_t flags;
  *   uint64_t reserved[3];
@@ -33,12 +32,10 @@
 __kernel_image_header:
     /* magic = 'KIMG' (0x474D494B little-endian) */
     .word   0x474D494B
-    /* version = 2 */
-    .word   2
-    /* image_size = __kernel_loaded_end - __kernel_image_start */
-    .quad   __kernel_loaded_size
-    /* runtime_size = __kernel_runtime_end - __kernel_image_start */
-    .quad   __kernel_runtime_size
+    /* version = 1 */
+    .word   1
+    /* image_size = __kernel_image_end - __kernel_image_start */
+    .quad   __kernel_image_size
     /* entry_offset = _kcrt0 - __kernel_image_start */
     .quad   __kernel_entry_offset
     /* flags */

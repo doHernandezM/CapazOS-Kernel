@@ -74,6 +74,8 @@
 		AAE99A752F0A06FE00EAB13D /* mem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mem.c; sourceTree = "<group>"; };
 		AAE99A762F0A319500EAB13D /* MathHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MathHelper.h; sourceTree = "<group>"; };
 		AAE99A772F0A319500EAB13D /* MathHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MathHelper.c; sourceTree = "<group>"; };
+		AAE99A782F0B2C1900EAB13D /* pmm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pmm.h; sourceTree = "<group>"; };
+		AAE99A792F0B2C1900EAB13D /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -93,6 +95,8 @@
 		AAE12AEF2F01CD7C00870C5D /* Kernel */ = {
 			isa = PBXGroup;
 			children = (
+				AAE99A782F0B2C1900EAB13D /* pmm.h */,
+				AAE99A792F0B2C1900EAB13D /* pmm.c */,
 				AAE99A692F09E7BF00EAB13D /* boot_info.h */,
 				AAE99A6A2F09E7BF00EAB13D /* dtb.h */,
 				AAE99A6B2F09E7BF00EAB13D /* dtb.c */,

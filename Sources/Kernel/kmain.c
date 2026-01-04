@@ -10,19 +10,20 @@
 #include "boot_info.h"
 #include "dtb.h"
 #include "mmu.h"
+#include "pmm.h"
 #include "platform.h"
 #include "uart_pl011.h"
 
 #include "MathHelper.h"
 
-/* Set by kcrt0.c (after .bss is cleared, before entering kmain). */
-extern volatile uint32_t g_kernel_stage;
-
 /*
  * Enable/disable noisy early-boot diagnostics.
  * - Default follows the build's DEBUG macro.
  * - Override with -DKMAIN_DEBUG=0/1.
+ *
+ *#define DEBUG = 0
  */
+ 
 #ifndef KMAIN_DEBUG
 #  ifdef DEBUG
 #    define KMAIN_DEBUG 1
@@ -85,19 +86,13 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    /*
-     * Explicit early stage markers (stable, not behind KMAIN_DEBUG).
-     * This gives us a consistent breadcrumb trail in UART output.
-     */
-    uart_putnl();
     uart_puts("Kernel: 0.0.3\n");
-    
+
     
 #if KMAIN_DEBUG
     if (boot_info) {
         uart_puts("boot_info: kernel_pa="); uart_puthex64(boot_info->kernel_phys_base);
-        uart_puts(" loaded_size="); uart_puthex64(boot_info->kernel_loaded_size);
-        uart_puts(" runtime_size="); uart_puthex64(boot_info->kernel_runtime_size);
+        uart_puts(" size="); uart_puthex64(boot_info->kernel_size);
         uart_puts(" entry_off="); uart_puthex64(boot_info->kernel_entry_offset);
         uart_putnl();
 
@@ -112,7 +107,6 @@ void kmain(const boot_info_t *boot_info)
         if (dtb_init((const void *)(uintptr_t)boot_info->dtb_ptr, boot_info->dtb_size)) {
 
 #if KMAIN_DEBUG
-            uart_puts("Kernel: stage: DTB parsed\n");
             dtb_dump_summary();
 #endif
 
@@ -123,6 +117,7 @@ void kmain(const boot_info_t *boot_info)
                 uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
 #endif
                 uart_init(uart_phys);
+                uart_puts("UART: "); uart_puthex64(uart_phys); uart_putnl();
             }
 
             /* Derive allocator-friendly usable RAM spans (RAM - reserved - implicit). */
@@ -139,11 +134,12 @@ void kmain(const boot_info_t *boot_info)
     /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
     
+    /* Initialize bitmap PMM using TTBR1 high-half direct map. */
+    pmm_init(boot_info);
+    
     /* Always print a short, stable summary. */
     print_total_memory_from_dtb();
-    
-    uart_putnl();
-    
+
     for (;;) {
         __asm__ volatile ("wfi");
     }

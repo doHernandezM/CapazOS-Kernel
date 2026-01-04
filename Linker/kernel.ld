@@ -71,18 +71,12 @@ SECTIONS
     *(COMMON)
     __bss_end = .;
 
-    /*
-     * Export both the end of the *loaded* image (through .data) and the
-     * end of the *runtime* footprint (through .bss). Many subsystems
-     * (PMM, page-table allocators, etc.) must treat .bss as kernel-owned.
-     */
-    __kernel_image_end      = __kernel_loaded_end;
-    __kernel_runtime_end    = ALIGN(__bss_end, 0x1000);
+    /* Page-aligned end of the kernel runtime footprint (.bss included). */
+    . = ALIGN(0x1000);
+    __kernel_runtime_end = .;
 
-    __kernel_loaded_size    = __kernel_loaded_end  - __kernel_image_start;
-    __kernel_runtime_size   = __kernel_runtime_end - __kernel_image_start;
-
-    __kernel_image_size     = __kernel_loaded_size;
-    __kernel_entry_offset   = _kcrt0 - __kernel_image_start;
+    __kernel_image_end     = __kernel_loaded_end;
+    __kernel_image_size    = __kernel_image_end - __kernel_image_start;
+    __kernel_entry_offset  = _kcrt0 - __kernel_image_start;
   } >KVIRT :data
 }

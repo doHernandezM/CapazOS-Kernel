@@ -12,27 +12,14 @@
 
 #include "boot_info.h"
 
-/* Provided by the linker script (Linker/kernel.ld). */
+/* Linker-provided .bss bounds (see Linker/kernel.ld). */
 extern uint8_t __bss_start[];
 extern uint8_t __bss_end[];
 
-/*
- * Early stage marker for bring-up.
- * Kept in .data so it survives .bss clearing.
- *
- * Stages:
- *   0 = not set (should not happen once _kcrt0_c runs)
- *   1 = entered _kcrt0_c
- *   2 = .bss cleared (C runtime ready)
- *   3 = about to enter kmain
- */
-__attribute__((used, section(".data")))
-volatile uint32_t g_kernel_stage = 0;
-
-static void zero_bss(void)
-{
-    for (uint8_t *p = __bss_start; p < __bss_end; ++p) {
-        *p = 0;
+static void zero_bss(void) {
+    uint8_t *p = __bss_start;
+    while (p < __bss_end) {
+        *p++ = 0;
     }
 }
 
@@ -87,16 +74,12 @@ void _kcrt0(void) {
         /* Tail-call into the real C entry. */
         "b      _kcrt0_c\n"
     );
-    
 }
 
 void _kcrt0_c(const boot_info_t *boot_info) {
-    g_kernel_stage = 1;
+    /* Deterministic zero-init for globals and allocator state. */
     zero_bss();
-    g_kernel_stage = 2;
 
-    /* From this point, global/static variables in .bss are reliably zeroed. */
-    g_kernel_stage = 3;
     kmain(boot_info);
 
     /* Should not return. Enter low-power wait if it does. */

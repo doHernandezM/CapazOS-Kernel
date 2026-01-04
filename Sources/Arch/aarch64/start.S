@@ -104,6 +104,29 @@ _start:
     orr     x6, x6, #1                   /* valid block */
     str     x6, [x5, #8]                 /* L1[1] */
 
+    /* Map additional RAM GiB blocks to widen early TTBR1 coverage.
+     * This avoids failures if the DTB or early kernel data structures are placed
+     * above the first GiB of RAM. The kernel will rebuild TTBR1 in mmu_init()
+     * using DTB memory ranges. */
+    mov     x9, #2                      /* start at L1[2] (0x8000_0000) */
+    mov     x10, #8                     /* map through L1[8] (8GiB total from RAM_BASE) */
+1:
+    cmp     x9, x10
+    b.gt    2f
+
+    /* OA = (index * 1GiB) */
+    mov     x6, x9
+    lsl     x6, x6, #30
+    orr     x6, x6, #(3 << 8)           /* SH=3 */
+    orr     x6, x6, #(1 << 10)          /* AF=1 */
+    orr     x6, x6, #1                  /* valid block */
+    str     x6, [x5, x9, lsl #3]        /* L1[index] */
+
+    add     x9, x9, #1
+    b       1b
+2:
+
+
     dsb     ishst
 
     /* 6) MMU on (TTBR0 + TTBR1 both active during bring-up) */
@@ -158,36 +181,20 @@ _start:
     cmp     w11, w12
     b.ne    .Lbad_kernel_header
 
-    /* Verify header version (v2+) */
-    ldr     w11, [x8, #4]               /* version */
-    cmp     w11, #2
-    b.lt    .Lbad_kernel_header
-
-    /*
-     * kernel_image_header_t v2 layout:
-     *   [0]  magic (u32)
-     *   [4]  version (u32)
-     *   [8]  image_size (u64)
-     *   [16] runtime_size (u64)
-     *   [24] entry_offset (u64)
-     */
-    ldr     x13, [x8, #8]               /* image_size (loaded bytes) */
-    ldr     x15, [x8, #16]              /* runtime_size (through .bss) */
-    ldr     x14, [x8, #24]              /* entry_offset */
+    ldr     x13, [x8, #8]               /* image_size */
+    ldr     x14, [x8, #16]              /* entry_offset */
 
     /*
      * boot_info layout (64-bit fields):
      *   [0]  kernel_phys_base
-     *   [8]  kernel_loaded_size
-     *   [16] kernel_runtime_size
-     *   [24] kernel_entry_offset
-     *   [32] dtb_ptr (high-half VA)
-     *   [40] dtb_size (bytes)
+     *   [8]  kernel_size
+     *   [16] kernel_entry_offset
+     *   [24] dtb_ptr (high-half VA)
+     *   [32] dtb_size (bytes)
      */
     str     x8,  [x7, #0]
     str     x13, [x7, #8]
-    str     x15, [x7, #16]
-    str     x14, [x7, #24]
+    str     x14, [x7, #16]
 
     /* DTB pointer/size (from x20 = dtb_pa). */
     mov     x21, xzr                    /* dtb_va */
@@ -211,8 +218,8 @@ _start:
     add     x21, x26, x20
 
 5:
-    str     x21, [x7, #32]
-    str     x22, [x7, #40]
+    str     x21, [x7, #24]
+    str     x22, [x7, #32]
 
     /* Pass boot_info pointer as high-half direct-map VA. */
     ldr     x16, =0xFFFF800000000000    /* HH_PHYS_BASE */
@@ -247,7 +254,7 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "\nBoot: 0.0.3\nPlatform: AArch64\nMachine: Virt\n"
+    .asciz "\nBoot: 0.0.3\nPlatform: AArch64\nMachine: Virt\n\n"
 
     .section .data.boot, "aw"
 uart_base:
@@ -264,7 +271,7 @@ boot_l1_table:
     .skip 4096
     .align 3
 boot_info:
-    .skip 48
+    .skip 40
 
     .align 3
 boot_last_esr:
