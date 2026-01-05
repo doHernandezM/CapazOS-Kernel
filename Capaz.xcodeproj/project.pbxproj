@@ -76,8 +76,8 @@
 		AAE99A772F0A319500EAB13D /* MathHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MathHelper.c; sourceTree = "<group>"; };
 		AAE99A782F0B2C1900EAB13D /* pmm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pmm.h; sourceTree = "<group>"; };
 		AAE99A792F0B2C1900EAB13D /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
-		AAE99A7A2F0B418300EAB13D /* kheap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kheap.h; sourceTree = "<group>"; };
-		AAE99A7B2F0B418300EAB13D /* kheap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kheap.c; sourceTree = "<group>"; };
+		AAE99A7C2F0B456C00EAB13D /* kheap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kheap.h; sourceTree = "<group>"; };
+		AAE99A7D2F0B456C00EAB13D /* kheap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kheap.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -114,8 +114,8 @@
 				AAE99A752F0A06FE00EAB13D /* mem.c */,
 				AAE99A762F0A319500EAB13D /* MathHelper.h */,
 				AAE99A772F0A319500EAB13D /* MathHelper.c */,
-				AAE99A7A2F0B418300EAB13D /* kheap.h */,
-				AAE99A7B2F0B418300EAB13D /* kheap.c */,
+				AAE99A7C2F0B456C00EAB13D /* kheap.h */,
+				AAE99A7D2F0B456C00EAB13D /* kheap.c */,
 			);
 			path = Kernel;
 			sourceTree = "<group>";

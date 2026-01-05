@@ -11,7 +11,6 @@
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"
-#include "kheap.h"
 #include "platform.h"
 #include "uart_pl011.h"
 
@@ -53,6 +52,74 @@ static void print_total_memory_from_dtb(void)
     uart_puts(buf);
     uart_putnl();
 }
+
+#if KMAIN_DEBUG
+static void pmm_print_free_total(const char *label) {
+    uint64_t free_pages = 0, total_pages = 0;
+    if (!pmm_get_stats(&free_pages, &total_pages)) {
+        uart_puts(label);
+        uart_puts("(free/total): <uninitialized>\n");
+        return;
+    }
+    uart_puts(label);
+    uart_puts("(free/total): ");
+    uart_putu64_dec(free_pages);
+    uart_putc('/');
+    uart_putu64_dec(total_pages);
+    uart_putnl();
+}
+
+static void pmm_quick_alloc_test(void) {
+    uart_puts("PMM\n");
+    pmm_print_free_total("Start");
+
+    /* Simple allocate/free cycles using a fixed stack buffer of PAs. */
+    enum { N = 1024 };
+    uint64_t pages[N];
+    uint32_t allocated = 0;
+
+    /* Cycle 1: allocate up to N pages. */
+    for (uint32_t i = 0; i < (uint32_t)N; i++) {
+        if (!pmm_alloc_page(&pages[i])) break;
+        allocated++;
+    }
+    uart_puts("Alloc1: "); uart_putu64_dec(allocated); uart_puts(" pages\n");
+    pmm_print_free_total("AfterAlloc1");
+
+    /* Free every other page. */
+    uint32_t freed = 0;
+    for (uint32_t i = 0; i < allocated; i += 2) {
+        pmm_free_page(pages[i]);
+        freed++;
+        pages[i] = 0;
+    }
+    uart_puts("Free1: "); uart_putu64_dec(freed); uart_puts(" pages\n");
+    pmm_print_free_total("AfterFree1");
+
+    /* Cycle 2: try a contiguous allocation (64 pages = 256KiB). */
+    uint64_t run_pa = 0;
+    if (pmm_alloc_pages(64, &run_pa)) {
+        uart_puts("Alloc2: contiguous 64 pages at "); uart_puthex64(run_pa); uart_putnl();
+    } else {
+        uart_puts("Alloc2: contiguous 64 pages failed\n");
+    }
+    pmm_print_free_total("AfterAlloc2");
+
+    if (run_pa) {
+        for (uint32_t i = 0; i < 64; i++) {
+            pmm_free_page(run_pa + ((uint64_t)i * 0x1000ULL));
+        }
+        uart_puts("Free2: contiguous 64 pages\n");
+        pmm_print_free_total("AfterFree2");
+    }
+
+    /* Free remaining pages from cycle 1. */
+    for (uint32_t i = 0; i < allocated; i++) {
+        if (pages[i]) pmm_free_page(pages[i]);
+    }
+    pmm_print_free_total("End");
+}
+#endif
 
 /*
  * Called from the EL1 exception vectors (kernel_vectors.S).
@@ -138,11 +205,14 @@ void kmain(const boot_info_t *boot_info)
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);
 
-    /* Kernel heap layered on PMM (page allocator + small-object buckets). */
-    kheap_init();
+#if KMAIN_DEBUG
+    /* Quick sanity test: allocate/free cycles and print free/total. */
+    pmm_quick_alloc_test();
+#endif
     
     /* Always print a short, stable summary. */
     print_total_memory_from_dtb();
+
 
     for (;;) {
         __asm__ volatile ("wfi");
