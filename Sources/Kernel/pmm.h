@@ -18,13 +18,19 @@
  * TTBR1 high-half direct map.
  */
 
-void pmm_init(const boot_info_t *boot_info);
+void pmm_init(const boot_info_t *bi);
 
-/* Allocate a single 4KiB physical page. Returns 0 on OOM. */
-uint64_t pmm_alloc_page(void);
+/* Allocate a single 4KiB physical page. Returns true on success. */
+bool pmm_alloc_page(uint64_t *out_pa);
+
+/* Allocate `count` contiguous 4KiB physical pages. Returns true on success. */
+bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa);
 
 /* Free a previously allocated page (must be within PMM window). */
 void pmm_free_page(uint64_t pa);
+
+/* Optional: allocate a page and return its high-half direct-mapped VA (NULL on OOM). */
+void *pmm_alloc_page_va(uint64_t *out_pa);
 
 /* Debug: print PMM summary to UART. */
 void pmm_dump_summary(void);

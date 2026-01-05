@@ -19,7 +19,7 @@
 #define PMM_METADATA_PAGES 16ULL
 
 /* Linker-provided end of kernel .bss (kernel runtime footprint end). */
-extern uint8_t __bss_end[];
+extern uint8_t __kernel_runtime_end[];
 
 static inline uint64_t hh_virt_to_phys(uint64_t va) {
     if (va >= HH_PHYS_4000_BASE) {
@@ -148,16 +148,6 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
 
     if (!dtb_get_memory_ranges(mem, &mem_n)) return false;
     if (!dtb_get_reserved_ranges(rsv, &rsv_n)) return false;
-
-    // Determine lowest RAM base from DTB memory nodes.
-    uint64_t mem_min_base = UINT64_MAX;
-    for (uint32_t i = 0; i < mem_n; i++) {
-        if (mem[i].size == 0) continue;
-        if (mem[i].base < mem_min_base) mem_min_base = mem[i].base;
-    }
-    /* Clamp to the TTBR1 direct-map window we actually map. */
-    if (mem_min_base == UINT64_MAX || mem_min_base < RAM_BASE) mem_min_base = RAM_BASE;
-
     // Normalize DTB-provided RAM spans to whole pages.
     uint32_t mem_w = 0;
     for (uint32_t i = 0; i < mem_n; i++) {
@@ -175,6 +165,13 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
     }
     mem_n = mem_w;
 
+    /* Sort and merge normalized memory ranges. */
+    sort_ranges(mem, mem_n);
+    mem_n = normalize_merge(mem, mem_n);
+
+    /* Determine lowest RAM base from normalized memory ranges. */
+    uint64_t mem_min_base = (mem_n > 0) ? mem[0].base : RAM_BASE;
+
     // Build combined reserved list: DTB-provided + implicit.
     dtb_range_t all_rsv[PLATFORM_MAX_RANGES * 2];
     uint32_t all_rsv_n = 0;
@@ -184,6 +181,11 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
         if (rsv[i].size == 0) continue;
         uint64_t start = align_down_4k(rsv[i].base);
         uint64_t end = align_up_4k(rsv[i].base + rsv[i].size);
+        /* Clamp to the direct-mapped RAM window (TTBR1). */
+        uint64_t win_start = RAM_BASE;
+        uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+        if (start < win_start) start = win_start;
+        if (end > win_end) end = win_end;
         if (end <= start) continue;
         all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
     }
@@ -194,6 +196,11 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
         if (mem_min_base != UINT64_MAX && boot_info->kernel_phys_base > mem_min_base) {
             uint64_t start = align_down_4k(mem_min_base);
             uint64_t end = align_up_4k(boot_info->kernel_phys_base);
+            /* Clamp to the direct-mapped RAM window (TTBR1). */
+            uint64_t win_start = RAM_BASE;
+            uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+            if (start < win_start) start = win_start;
+            if (end > win_end) end = win_end;
             if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
                 all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
@@ -202,8 +209,13 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
         // Reserve the kernel runtime footprint (.bss included), not just loaded bytes.
         {
             uint64_t start = align_down_4k(boot_info->kernel_phys_base);
-            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__bss_end);
+            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__kernel_runtime_end);
             uint64_t end = align_up_4k(runtime_end_pa);
+            /* Clamp to the direct-mapped RAM window (TTBR1). */
+            uint64_t win_start = RAM_BASE;
+            uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+            if (start < win_start) start = win_start;
+            if (end > win_end) end = win_end;
             if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
                 all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
             }
@@ -212,7 +224,7 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
         
         // Reserve PMM metadata pages placed immediately after the kernel runtime end.
         {
-            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__bss_end);
+            uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__kernel_runtime_end);
             uint64_t start = align_up_4k(runtime_end_pa);
             uint64_t end = start + (PMM_METADATA_PAGES * PAGE_SIZE);
             /* Clamp to the TTBR1 direct-map window. */
@@ -227,35 +239,52 @@ bool platform_get_usable_ranges(const boot_info_t *boot_info, dtb_range_t out[],
 
 // Reserve the DTB blob at its physical address.
         {
-            uint64_t dtb_phys = hh_virt_to_phys((uint64_t)boot_info->dtb_ptr);
+            if (boot_info->dtb_ptr == 0) {
+                /* no DTB */
+            } else {
+                uint64_t dtb_phys = hh_virt_to_phys((uint64_t)boot_info->dtb_ptr);
             uint64_t dtb_sz = dtb_get_totalsize();
             if (dtb_sz == 0) dtb_sz = boot_info->dtb_size;
             if (boot_info->dtb_size && dtb_sz > boot_info->dtb_size) dtb_sz = boot_info->dtb_size;
 
             uint64_t start = align_down_4k(dtb_phys);
             uint64_t end = align_up_4k(dtb_phys + dtb_sz);
+            /* Clamp to the direct-mapped RAM window (TTBR1). */
+            uint64_t win_start = RAM_BASE;
+            uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+            if (start < win_start) start = win_start;
+            if (end > win_end) end = win_end;
             if (end > start && all_rsv_n < (uint32_t)(sizeof(all_rsv) / sizeof(all_rsv[0]))) {
                 all_rsv[all_rsv_n++] = (dtb_range_t){ .base = start, .size = end - start };
+            }
             }
         }
     }
 
-    all_rsv_n = normalize_merge(all_rsv, all_rsv_n);
+        sort_ranges(all_rsv, all_rsv_n);
+all_rsv_n = normalize_merge(all_rsv, all_rsv_n);
 
     // Subtract reserved from memory.
     if (!subtract_reserved(mem, mem_n, all_rsv, all_rsv_n, out, inout_count)) return false;
 
-    // Ensure output is page-aligned and non-empty.
+    /* Ensure output is page-aligned, sorted, merged, and non-empty. */
     uint32_t out_n = *inout_count;
     uint32_t out_w = 0;
     for (uint32_t i = 0; i < out_n; i++) {
         uint64_t start = align_up_4k(out[i].base);
         uint64_t end = align_down_4k(out[i].base + out[i].size);
+        /* Clamp defensively to the direct-mapped RAM window (TTBR1). */
+        uint64_t win_start = RAM_BASE;
+        uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+        if (start < win_start) start = win_start;
+        if (end > win_end) end = win_end;
         if (end <= start) continue;
         out[out_w].base = start;
         out[out_w].size = end - start;
         out_w++;
     }
+    sort_ranges(out, out_w);
+    out_w = normalize_merge(out, out_w);
     *inout_count = out_w;
 
     return true;
