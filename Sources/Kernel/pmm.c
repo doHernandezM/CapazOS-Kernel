@@ -8,6 +8,10 @@
 #include "dtb.h"
 #include "uart_pl011.h"
 
+#ifndef KMAIN_DEBUG
+#define KMAIN_DEBUG 0
+#endif
+
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
 #define RAM_BASE 0x40000000ULL
@@ -75,6 +79,10 @@ static void pmm_panic(const char *msg) {
     }
 }
 
+bool pmm_is_initialized(void) {
+    return g_pmm != 0;
+}
+
 /* Mark all pages reserved (1). */
 static void bitmap_mark_all_reserved(pmm_state_t *st) {
     memset(st->bitmap, 0xFF, (size_t)st->bitmap_bytes);
@@ -122,80 +130,77 @@ static void bitmap_mark_range_reserved(pmm_state_t *st, uint64_t start_pa, uint6
     }
 }
 
-/* Compute the max end of clamped DTB memory ranges, or fall back to RAM_DIRECTMAP_SIZE. */
-static uint64_t compute_limit_from_dtb(void) {
+static uint64_t dtb_lowest_ram_base_clamped(void) {
     dtb_range_t mem[64];
     uint32_t mem_n = (uint32_t)(sizeof(mem) / sizeof(mem[0]));
     if (!dtb_get_memory_ranges(mem, &mem_n) || mem_n == 0) {
-        return RAM_BASE + RAM_DIRECTMAP_SIZE;
+        return RAM_BASE;
     }
 
-    uint64_t max_end = RAM_BASE;
+    uint64_t min_base = UINT64_MAX;
+    const uint64_t win_start = RAM_BASE;
+    const uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+
     for (uint32_t i = 0; i < mem_n; i++) {
         uint64_t start = mem[i].base;
         uint64_t end = mem[i].base + mem[i].size;
-        /* Clamp to our direct-map window. */
-        if (end <= RAM_BASE) continue;
-        if (start < RAM_BASE) start = RAM_BASE;
-        uint64_t window_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
-        if (start >= window_end) continue;
-        if (end > window_end) end = window_end;
-        if (end > max_end) max_end = end;
+
+        if (end <= win_start) continue;
+        if (start < win_start) start = win_start;
+        if (start >= win_end) continue;
+        if (end > win_end) end = win_end;
+        if (end <= start) continue;
+        if (start < min_base) min_base = start;
     }
 
-    if (max_end <= RAM_BASE) {
-        max_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
-    }
-    return max_end;
+    if (min_base == UINT64_MAX) return RAM_BASE;
+    return min_base;
 }
 
-void pmm_init(const boot_info_t *boot_info) {
-    if (!boot_info) {
+void pmm_init(const boot_info_t *bi) {
+    if (!bi) {
         pmm_panic("boot_info is NULL");
     }
 
-    /* Query PMM-usable ranges from the platform layer (already page-aligned, clamped, non-overlapping). */
+    /* Get PMM-usable spans (already: RAM - reserved - implicit, clamped to TTBR1 window). */
     dtb_range_t usable[64];
     uint32_t usable_n = (uint32_t)(sizeof(usable) / sizeof(usable[0]));
-    if (!platform_get_usable_ranges(boot_info, usable, &usable_n) || usable_n == 0) {
-        pmm_panic("platform_get_usable_ranges failed or returned empty");
+    if (!platform_get_usable_ranges(bi, usable, &usable_n) || usable_n == 0) {
+        pmm_panic("platform_get_usable_ranges failed");
     }
 
-    /* Determine managed window: base_pa = min(usable), limit_pa = max_end(usable). */
-    uint64_t base_pa = 0;
+    /* Determine the PMM-managed window from the usable spans. */
+    uint64_t base_pa = UINT64_MAX;
     uint64_t limit_pa = 0;
     for (uint32_t i = 0; i < usable_n; i++) {
-        uint64_t start = align_up_4k(usable[i].base);
-        uint64_t end = align_down_4k(usable[i].base + usable[i].size);
-        if (end <= start) continue;
-        if (base_pa == 0 || start < base_pa) base_pa = start;
+        if (usable[i].size == 0) continue;
+        if (usable[i].base < base_pa) base_pa = usable[i].base;
+        uint64_t end = usable[i].base + usable[i].size;
         if (end > limit_pa) limit_pa = end;
     }
 
-    if (base_pa == 0 || limit_pa <= base_pa) {
-        pmm_panic("invalid PMM window from usable ranges");
+    if (base_pa == UINT64_MAX || limit_pa <= base_pa) {
+        pmm_panic("no usable memory after reservations");
     }
 
-    /* Clamp to our TTBR1 direct-map window for short-term correctness. */
-    const uint64_t win_start = RAM_BASE;
-    const uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
-    if (base_pa < win_start) base_pa = win_start;
+    base_pa = align_down_4k(base_pa);
+    limit_pa = align_up_4k(limit_pa);
+
+    /* Defensive clamp to the TTBR1 direct-map window. */
+    if (base_pa < RAM_BASE) base_pa = RAM_BASE;
+    uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
     if (limit_pa > win_end) limit_pa = win_end;
-    base_pa = align_up_4k(base_pa);
-    limit_pa = align_down_4k(limit_pa);
-
     if (limit_pa <= base_pa) {
-        pmm_panic("PMM window empty after clamp");
+        pmm_panic("PMM window outside direct-map window");
     }
 
-    /* Metadata region: fixed reservation immediately after kernel runtime end. */
+    /* Metadata region: immediately after kernel runtime end. */
     uint64_t runtime_end_pa = hh_virt_to_phys((uint64_t)__kernel_runtime_end);
     uint64_t meta_base_pa = align_up_4k(runtime_end_pa);
     uint64_t meta_bytes = PMM_METADATA_PAGES * PAGE_SIZE;
     uint64_t meta_end_pa = meta_base_pa + meta_bytes;
 
-    /* Metadata must live in the mapped direct-map window (TTBR1). */
-    if (meta_base_pa < win_start || meta_end_pa > win_end) {
+    if (meta_base_pa < RAM_BASE || meta_end_pa > win_end) {
         pmm_panic("metadata region outside mapped RAM window");
     }
 
@@ -224,121 +229,111 @@ void pmm_init(const boot_info_t *boot_info) {
 
     /* Initialize: everything reserved, then clear bits for usable ranges. */
     bitmap_mark_all_reserved(st);
+
     for (uint32_t i = 0; i < usable_n; i++) {
         uint64_t start = usable[i].base;
         uint64_t end = usable[i].base + usable[i].size;
         bitmap_mark_range_free(st, start, end);
     }
 
-    /*
-     * Defensive reservation pass (even though platform_get_usable_ranges should already subtract these).
-     * Subtract implicit reservations:
-     *  - boot region [lowest_ram_base, kernel_phys_base)
-     *  - kernel runtime footprint [kernel_phys_base, runtime_end_pa)
-     *  - DTB blob range
-     *  - PMM metadata pages
-     */
-    /* Boot region: derive lowest RAM base from DTB memory ranges (clamped). */
+    /* Defensive reservation pass (correct even if usable spans were buggy). */
+
+    /* boot region [lowest_ram_base, kernel_phys_base) */
     {
-        dtb_range_t mem[64];
-        uint32_t mem_n = (uint32_t)(sizeof(mem) / sizeof(mem[0]));
-        uint64_t lowest = win_end;
-        if (dtb_get_memory_ranges(mem, &mem_n) && mem_n != 0) {
-            for (uint32_t i = 0; i < mem_n; i++) {
-                uint64_t start = mem[i].base;
-                uint64_t end = mem[i].base + mem[i].size;
-                if (end <= win_start) continue;
-                if (start < win_start) start = win_start;
-                if (start >= win_end) continue;
-                if (end > win_end) end = win_end;
-                start = align_up_4k(start);
-                end = align_down_4k(end);
-                if (end <= start) continue;
-                if (start < lowest) lowest = start;
-            }
-        }
-        if (lowest == win_end) lowest = win_start;
-        bitmap_mark_range_reserved(st, lowest, boot_info->kernel_phys_base);
+        uint64_t lowest = dtb_lowest_ram_base_clamped();
+        uint64_t start = align_down_4k(lowest);
+        uint64_t end = align_up_4k(bi->kernel_phys_base);
+        bitmap_mark_range_reserved(st, start, end);
     }
 
-    /* Kernel runtime footprint. */
-    bitmap_mark_range_reserved(
-        st,
-        boot_info->kernel_phys_base,
-        align_up_4k(runtime_end_pa)
-    );
-
-    /* DTB blob range (boot_info->dtb_ptr is a high-half VA). */
-    if (boot_info->dtb_ptr != 0) {
-        uint64_t dtb_phys = hh_virt_to_phys(boot_info->dtb_ptr);
-        uint64_t dtb_sz = dtb_get_totalsize();
-        if (dtb_sz == 0) dtb_sz = boot_info->dtb_size;
-        if (boot_info->dtb_size && dtb_sz > boot_info->dtb_size) dtb_sz = boot_info->dtb_size;
-        if (dtb_sz) {
-            bitmap_mark_range_reserved(
-                st,
-                align_down_4k(dtb_phys),
-                align_up_4k(dtb_phys + dtb_sz)
-            );
-        }
+    /* kernel runtime footprint [kernel_phys_base, kernel_runtime_end_pa) */
+    {
+        uint64_t start = align_down_4k(bi->kernel_phys_base);
+        uint64_t end = align_up_4k(runtime_end_pa);
+        bitmap_mark_range_reserved(st, start, end);
     }
 
-    /* PMM metadata pages. */
+    /* DTB blob range */
+    if (bi->dtb_ptr != 0) {
+        uint64_t dtb_pa = hh_virt_to_phys(bi->dtb_ptr);
+        uint64_t dtb_sz = (uint64_t)dtb_get_totalsize();
+        if (dtb_sz == 0) dtb_sz = bi->dtb_size;
+        if (bi->dtb_size != 0 && dtb_sz > bi->dtb_size) dtb_sz = bi->dtb_size;
+
+        uint64_t start = align_down_4k(dtb_pa);
+        uint64_t end = align_up_4k(dtb_pa + dtb_sz);
+        bitmap_mark_range_reserved(st, start, end);
+    }
+
+    /* PMM metadata pages */
     bitmap_mark_range_reserved(st, meta_base_pa, meta_end_pa);
 
     g_pmm = st;
+
     pmm_dump_summary();
 }
 
-bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa) {
-    pmm_state_t *st = g_pmm;
-    if (!st || !out_pa || count == 0) return false;
-    if (st->free_pages < (uint64_t)count) return false;
-
-    uint64_t n = st->total_pages;
-    if ((uint64_t)count > n) return false;
-
-    uint64_t start = st->next_hint;
-    if (start >= n) start = 0;
-
-    for (uint64_t pass = 0; pass < 2; pass++) {
-        uint64_t i0 = (pass == 0) ? start : 0;
-        uint64_t i1 = (pass == 0) ? n : start;
-
-        if (i1 < (uint64_t)count) continue;
-
-        for (uint64_t i = i0; i + (uint64_t)count <= i1; i++) {
-            /* Check for a run of `count` free bits. */
-            bool ok = true;
-            for (uint32_t j = 0; j < count; j++) {
-                if (bit_test(st->bitmap, i + (uint64_t)j)) { ok = false; break; }
-            }
-            if (!ok) continue;
-
-            /* Commit: mark all bits reserved. */
-            for (uint32_t j = 0; j < count; j++) {
-                bit_set(st->bitmap, i + (uint64_t)j);
-            }
-
-            st->free_pages -= (uint64_t)count;
-            st->next_hint = i + (uint64_t)count;
-            *out_pa = st->base_pa + (i * PAGE_SIZE);
-            return true;
-        }
-    }
-
-    return false;
+static bool is_page_free(const pmm_state_t *st, uint64_t idx) {
+    return !bit_test(st->bitmap, idx);
 }
 
 bool pmm_alloc_page(uint64_t *out_pa) {
     return pmm_alloc_pages(1, out_pa);
 }
 
+bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa) {
+    pmm_state_t *st = g_pmm;
+    if (!st || !out_pa || count == 0) return false;
+
+    if (st->free_pages < (uint64_t)count) {
+        return false;
+    }
+
+    uint64_t n = st->total_pages;
+    uint64_t start = st->next_hint;
+    if (start >= n) start = 0;
+
+    for (uint64_t pass = 0; pass < 2; pass++) {
+        uint64_t i = (pass == 0) ? start : 0;
+        uint64_t end_i = (pass == 0) ? n : start;
+
+        while (i < end_i) {
+            if (i + (uint64_t)count > end_i) break;
+
+            /* Check for a free run of length count starting at i. */
+            uint32_t j = 0;
+            for (; j < count; j++) {
+                if (!is_page_free(st, i + (uint64_t)j)) {
+                    break;
+                }
+            }
+
+            if (j == count) {
+                /* Found run. Mark allocated. */
+                for (uint32_t k = 0; k < count; k++) {
+                    bit_set(st->bitmap, i + (uint64_t)k);
+                }
+                st->free_pages -= (uint64_t)count;
+                st->next_hint = i + (uint64_t)count;
+                *out_pa = st->base_pa + (i * PAGE_SIZE);
+                return true;
+            }
+
+            /* Skip past the first allocated page we hit. */
+            i += (uint64_t)j + 1ULL;
+        }
+    }
+
+    return false;
+}
+
 void *pmm_alloc_page_va(uint64_t *out_pa) {
     uint64_t pa = 0;
-    if (!pmm_alloc_page(&pa)) return (void *)0;
+    if (!pmm_alloc_page(&pa)) {
+        return 0;
+    }
     if (out_pa) *out_pa = pa;
-    return (void *)(uintptr_t)phys_to_hh_virt(pa);
+    return (void *)(uintptr_t)pmm_phys_to_virt(pa);
 }
 
 void pmm_free_page(uint64_t pa) {
@@ -352,13 +347,13 @@ void pmm_free_page(uint64_t pa) {
         return;
     }
 
-    uint64_t idx = (pa - st->base_pa) / PAGE_SIZE;
-    if (idx >= st->total_pages) return;
-
     /* Do not allow freeing metadata pages. */
     if (pa >= st->meta_base_pa && pa < (st->meta_base_pa + st->meta_pages * PAGE_SIZE)) {
         return;
     }
+
+    uint64_t idx = (pa - st->base_pa) / PAGE_SIZE;
+    if (idx >= st->total_pages) return;
 
     if (bit_test(st->bitmap, idx)) {
         bit_clear(st->bitmap, idx);
@@ -374,21 +369,17 @@ void pmm_dump_summary(void) {
         return;
     }
 
-    /* Always emit a stable, human-readable summary; add details under KMAIN_DEBUG. */
+#if KMAIN_DEBUG
     uart_puts("PMM(free/total): ");
     uart_putu64_dec(st->free_pages);
     uart_putc('/');
     uart_putu64_dec(st->total_pages);
     uart_puts("\n");
 
-#if KMAIN_DEBUG
     uart_puts("PMM: base_pa="); uart_puthex64(st->base_pa);
     uart_puts(" limit_pa="); uart_puthex64(st->limit_pa);
-    uart_puts(" total_pages="); uart_puthex64(st->total_pages);
-    uart_puts(" free_pages="); uart_puthex64(st->free_pages);
     uart_puts(" meta_pa="); uart_puthex64(st->meta_base_pa);
     uart_puts(" meta_pages="); uart_puthex64(st->meta_pages);
-    uart_puts(" bitmap_bytes="); uart_puthex64(st->bitmap_bytes);
     uart_puts("\n");
 #endif
 }

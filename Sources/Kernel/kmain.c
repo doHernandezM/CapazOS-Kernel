@@ -11,6 +11,7 @@
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"
+#include "kheap.h"
 #include "platform.h"
 #include "uart_pl011.h"
 
@@ -136,6 +137,9 @@ void kmain(const boot_info_t *boot_info)
     
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);
+
+    /* Kernel heap layered on PMM (page allocator + small-object buckets). */
+    kheap_init();
     
     /* Always print a short, stable summary. */
     print_total_memory_from_dtb();

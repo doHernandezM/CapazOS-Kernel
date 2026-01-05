@@ -18,6 +18,7 @@
 
 #include "mmu.h"
 #include "dtb.h"
+#include "pmm.h"
 #include "uart_pl011.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -149,6 +150,33 @@ static uint64_t *l2_for_l1[512];
 static uint64_t l3_pool[64][512] __attribute__((aligned(4096)));
 static size_t l3_pool_used = 0;
 
+static uint64_t *alloc_table_page_from_pmm(const char *what)
+{
+    if (!pmm_is_initialized()) {
+        uart_puts("MMU: out of ");
+        uart_puts(what);
+        uart_puts(" tables before PMM init\n");
+        while (1) { __asm__ volatile ("wfe"); }
+    }
+
+    uint64_t pa = 0;
+    void *va = pmm_alloc_page_va(&pa);
+    if (!va) {
+        uart_puts("MMU: PMM OOM allocating ");
+        uart_puts(what);
+        uart_puts(" table\n");
+        while (1) { __asm__ volatile ("wfe"); }
+    }
+
+    /* pmm_alloc_page_va returns zeroed pages today; keep this defensive. */
+    uint64_t *tbl = (uint64_t *)va;
+    for (size_t i = 0; i < 512; ++i) {
+        tbl[i] = 0;
+    }
+
+    return tbl;
+}
+
 /* Allocate a fresh L3 page table from the static pool.  Panics if
  * exhausted.  Returns a higher‑half virtual address.  The table is
  * zeroed on allocation.
@@ -156,12 +184,8 @@ static size_t l3_pool_used = 0;
 static uint64_t *alloc_l3(void)
 {
     if (l3_pool_used >= (sizeof(l3_pool) / sizeof(l3_pool[0]))) {
-        /* Out of L3 tables.  In a real kernel we would handle this
-         * gracefully (e.g. recycle tables or panic with a useful
-         * message).  For now, spin forever. */
-        while (1) {
-            __asm__ volatile ("wfe");
-        }
+        /* After PMM is up, allocate any extra tables from PMM. */
+        return alloc_table_page_from_pmm("L3");
     }
     uint64_t *tbl = l3_pool[l3_pool_used++];
     /* Zero the table. */
@@ -177,8 +201,8 @@ static uint64_t *alloc_l3(void)
 static uint64_t *alloc_l2(void)
 {
     if (l2_tables_used >= (sizeof(l2_tables) / sizeof(l2_tables[0]))) {
-        uart_puts("MMU: out of L2 tables\n");
-        while (1) { __asm__ volatile ("wfe"); }
+        /* After PMM is up, allocate any extra tables from PMM. */
+        return alloc_table_page_from_pmm("L2");
     }
     uint64_t *tbl = l2_tables[l2_tables_used++];
     for (size_t i = 0; i < 512; ++i) {
@@ -201,54 +225,9 @@ static uint64_t *get_l2_for_l1(uint64_t *l1, size_t l1_index)
 }
 
 
-/* The bump allocator is retained for future use (e.g. allocating
- * dynamic pages beyond the initial tables), but page table memory is
- * now drawn from the static pool.  We initialise the bump
- * allocator after setting up the static tables, in case later
- * components need additional pages.  */
-static uint64_t alloc_phys;  /* current physical allocation pointer */
-static uint64_t alloc_virt;  /* corresponding virtual alias */
-
-static void page_alloc_init(void)
-{
-    /* Compute the end of the kernel runtime footprint (.bss included) in virtual and physical
-     * addresses.  __kernel_runtime_end resides in the higher‑half
-     * mapping.  Subtract the base and add RAM_BASE to obtain the
-     * corresponding physical address.  Align both pointers up to
-     * a 4KiB boundary.
-     */
-    uint64_t end_va  = (uint64_t)__kernel_runtime_end;
-    uint64_t end_pa  = virt_to_phys(end_va);
-    alloc_phys = ((end_pa + 0xFFFULL) & ~0xFFFULL) + (PMM_METADATA_PAGES * 0x1000ULL);
-    alloc_virt = HH_PHYS_4000_BASE + (alloc_phys - RAM_BASE);
-}
-
-static void *page_alloc(void)
-{
-    uint64_t va = alloc_virt;
-    uint64_t pa = alloc_phys;
-    alloc_phys += 0x1000ULL;
-    alloc_virt += 0x1000ULL;
-    /* Zero memory via the direct mapping. */
-    volatile uint64_t *p = (volatile uint64_t *)va;
-    for (size_t i = 0; i < 512; ++i) {
-        p[i] = 0;
-    }
-    (void)pa;
-    return (void *)va;
-}
-
-
 void mmu_init(const boot_info_t *boot_info)
 {
     (void)boot_info;
-
-    /* Initialise the simple page allocator.  This must be done
-     * before any allocations.  It uses __kernel_runtime_end to
-     * determine the end of the kernel runtime footprint and begins
-     * carving pages immediately afterwards.
-     */
-    page_alloc_init();
 
     /* Exported section boundaries from the linker script.  These
      * symbols reside in the higher‑half direct map.  We convert

@@ -72,6 +72,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kmain.c"         -o "$OUT_DIR/obj/kmain.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/platform.c"      -o "$OUT_DIR/obj/platform.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/pmm.c"           -o "$OUT_DIR/obj/pmm.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kheap.c"         -o "$OUT_DIR/obj/kheap.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mmu.c"           -o "$OUT_DIR/obj/mmu.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"           -o "$OUT_DIR/obj/dtb.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/MathHelper.c"   -o "$OUT_DIR/obj/math_helper.o"
@@ -89,6 +90,7 @@ PY
    "$OUT_DIR/obj/mmu.o" \
   "$OUT_DIR/obj/dtb.o" \
   "$OUT_DIR/obj/pmm.o" \
+  "$OUT_DIR/obj/kheap.o" \
   "$OUT_DIR/obj/math_helper.o" \
   "$OUT_DIR/obj/mem.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
