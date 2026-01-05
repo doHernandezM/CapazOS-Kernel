@@ -165,7 +165,7 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.5\nMachine: Virt\n");
+    uart_puts("Kernel: 0.0.6\nMachine: Virt\n");
 
     
 #if KMAIN_DEBUG
@@ -237,8 +237,11 @@ void kmain(const boot_info_t *boot_info)
 
     /* Register and enable the architected timer interrupt. */
     (void)irq_register(TIMER_PPI_IRQ, timer_irq_handler, 0);
-    /* QEMU can otherwise present timer wakeups as spurious IDs; latch them as edge-triggered. */
-    gicv2_config_irq(TIMER_PPI_IRQ, true);
+    /*
+     * Generic timer PPIs are level-sensitive. Configuring them as edge can
+     * cause missed acks / repeated wakeups depending on the model.
+     */
+    gicv2_config_irq(TIMER_PPI_IRQ, false);
     gicv2_enable_irq(TIMER_PPI_IRQ);
 
     /* 100Hz tick (10ms). */
@@ -253,7 +256,7 @@ void kmain(const boot_info_t *boot_info)
         uint64_t t = timer_ticks_read();
         if (t - last >= 100) { /* ~1s */
             last = t;
-            uart_puts("tick="); uart_putu64_dec(t); uart_puts("\n");
+            uart_puts("tick:"); uart_putu64_dec(t / 100); uart_puts("\n");
         }
     }
 }

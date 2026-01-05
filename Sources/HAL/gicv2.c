@@ -53,24 +53,27 @@ void gicv2_init(void)
     dsb_sy(); isb();
 
     /*
-     * Put PPIs (16..31) into Group 1 (non-secure). Avoid touching SGIs (0..15)
-     * for now.
+     * IMPORTANT (GICv2 w/ Security Extensions):
+     * If the CPU is running in Secure state, and an interrupt is configured as
+     * Non-secure (IGROUPR bit = 1), then a secure read of ICCIAR can return the
+     * special INTID 1022 (0x3FE) instead of acknowledging the interrupt.
+     *
+     * Your trace shows iar==0x3FE, which matches this exact condition.
+     *
+     * CapazOS currently runs entirely in one world, so keep interrupts in Group 0
+     * (Secure) by default.
      */
     uint32_t ig0 = mmio_read32(GICD_BASE, GICD_IGROUPR(0));
-    ig0 |= 0xFFFF0000u;
+    ig0 &= ~0xFFFF0000u;               /* PPIs 16..31 -> Group 0 */
     mmio_write32(GICD_BASE, GICD_IGROUPR(0), ig0);
 
     /* Set a permissive priority mask (allow all). */
     mmio_write32(GICC_BASE, GICC_PMR, 0xFFu);
     mmio_write32(GICC_BASE, GICC_BPR, 0u);
 
-    /*
-     * Enable Group 1 interrupts.
-     * In the non-secure view used by QEMU virt, the enable bit for Group 1 is
-     * bit 0 for both GICD_CTLR and GICC_CTLR.
-     */
-    mmio_write32(GICD_BASE, GICD_CTLR, (1u << 0) | (1u << 1));
-    mmio_write32(GICC_BASE, GICC_CTLR, (1u << 0) | (1u << 1));
+    /* Enable the distributor + CPU interface (Group 0). */
+    mmio_write32(GICD_BASE, GICD_CTLR, (1u << 0));
+    mmio_write32(GICC_BASE, GICC_CTLR, (1u << 0));
     dsb_sy(); isb();
 }
 

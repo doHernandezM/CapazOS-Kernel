@@ -254,7 +254,7 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "\nBoot: 0.0.5\nPlatform: AArch64\n\n"
+    .asciz "\nBoot: 0.0.6\nPlatform: AArch64\n\n"
 
     .section .data.boot, "aw"
 uart_base:
