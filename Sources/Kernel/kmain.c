@@ -13,6 +13,9 @@
 #include "pmm.h"
 #include "platform.h"
 #include "uart_pl011.h"
+#include "irq.h"
+#include "gicv2.h"
+#include "timer_generic.h"
 
 #include "MathHelper.h"
 
@@ -149,12 +152,20 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
     }
 }
 
+
+/* M6: Timer IRQ handler (allocation-free). */
+static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
+{
+    (void)irq; (void)ctx; (void)tf;
+    timer_handle_irq();
+}
+
 void kmain(const boot_info_t *boot_info)
 {
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.4\nMachine: Virt\n");
+    uart_puts("Kernel: 0.0.5\nMachine: Virt\n");
 
     
 #if KMAIN_DEBUG
@@ -219,7 +230,30 @@ void kmain(const boot_info_t *boot_info)
     print_total_memory_from_dtb();
 
 
+    
+    /* M6: Bring up interrupts + timer tick after core init. */
+    irq_global_disable();
+    gicv2_init();
+
+    /* Register and enable the architected timer interrupt. */
+    (void)irq_register(TIMER_PPI_IRQ, timer_irq_handler, 0);
+    /* QEMU can otherwise present timer wakeups as spurious IDs; latch them as edge-triggered. */
+    gicv2_config_irq(TIMER_PPI_IRQ, true);
+    gicv2_enable_irq(TIMER_PPI_IRQ);
+
+    /* 100Hz tick (10ms). */
+    timer_init_hz(100);
+
+    irq_global_enable();
+
+    /* Report tick progress from the idle loop (not from ISR). */
+    uint64_t last = 0;
     for (;;) {
         __asm__ volatile ("wfi");
+        uint64_t t = timer_ticks_read();
+        if (t - last >= 100) { /* ~1s */
+            last = t;
+            uart_puts("tick="); uart_putu64_dec(t); uart_puts("\n");
+        }
     }
 }

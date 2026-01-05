@@ -86,6 +86,9 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mem.c"           -o "$OUT_DIR/obj/mem.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/panic.c"         -o "$OUT_DIR/obj/panic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/irq.c"           -o "$OUT_DIR/obj/irq.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/gicv2.c"           -o "$OUT_DIR/obj/gicv2.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/timer_generic.c"   -o "$OUT_DIR/obj/timer_generic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
 
 "$LD" -nostdlib -T "$KERNEL_DIR/Linker/kernel.ld" \
@@ -102,6 +105,9 @@ PY
   "$OUT_DIR/obj/math_helper.o" \
   "$OUT_DIR/obj/mem.o" \
   "$OUT_DIR/obj/panic.o" \
+  "$OUT_DIR/obj/irq.o" \
+  "$OUT_DIR/obj/gicv2.o" \
+  "$OUT_DIR/obj/timer_generic.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
   "$OUT_DIR/obj/uart.o" \
   -o "$OUT_DIR/kernel.elf"

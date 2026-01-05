@@ -21,7 +21,7 @@ fi
 DEBUG_PORT="${DEBUG_PORT:-}" # set DEBUG_PORT=1234 to enable gdb
 
 exec qemu-system-aarch64 \
-  -machine virt \
+  -machine virt,gic-version=2 \
   -cpu cortex-a72 \
   -m 128M \
   -nographic \
