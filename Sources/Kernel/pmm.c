@@ -7,6 +7,7 @@
 #include "platform.h"
 #include "dtb.h"
 #include "uart_pl011.h"
+#include "panic.h"
 
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
@@ -67,12 +68,7 @@ static inline bool bit_test(const uint8_t *bm, uint64_t idx) {
 }
 
 static void pmm_panic(const char *msg) {
-    uart_puts("PMM PANIC: ");
-    uart_puts(msg);
-    uart_puts("\n");
-    for (;;) {
-        __asm__ volatile("wfe");
-    }
+    panic_with_prefix("PMM PANIC: ", msg);
 }
 
 /* Mark all pages reserved (1). */

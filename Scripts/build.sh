@@ -27,6 +27,13 @@ COMMON_CFLAGS=(
 BOOT_CFLAGS=("${COMMON_CFLAGS[@]}" -DBOOT_STAGE=1)
 KERNEL_CFLAGS=("${COMMON_CFLAGS[@]}")
 
+# Optional: compile-time deliberate fault for exception-dump smoke testing.
+# Usage: CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
+if [[ "${CAPAZ_FAULT_TEST:-0}" != "0" ]]; then
+  KERNEL_CFLAGS+=("-DCAPAZ_FAULT_TEST=${CAPAZ_FAULT_TEST}")
+fi
+
+
 BOOT_LOAD_ADDR=$((0x40080000))
 RAM_BASE=$((0x40000000))
 HH_PHYS_4000_BASE="0xFFFF800040000000"
@@ -77,6 +84,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/dtb.c"           -o "$OUT_DIR/obj/dtb.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/MathHelper.c"   -o "$OUT_DIR/obj/math_helper.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/mem.c"           -o "$OUT_DIR/obj/mem.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/panic.c"         -o "$OUT_DIR/obj/panic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
 
@@ -93,6 +101,7 @@ PY
   "$OUT_DIR/obj/kheap.o" \
   "$OUT_DIR/obj/math_helper.o" \
   "$OUT_DIR/obj/mem.o" \
+  "$OUT_DIR/obj/panic.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
   "$OUT_DIR/obj/uart.o" \
   -o "$OUT_DIR/kernel.elf"

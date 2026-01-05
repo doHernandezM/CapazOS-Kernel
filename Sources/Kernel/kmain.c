@@ -154,7 +154,7 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.4\n");
+    uart_puts("Kernel: 0.0.4\nMachine: Virt\n");
 
     
 #if KMAIN_DEBUG
@@ -201,6 +201,11 @@ void kmain(const boot_info_t *boot_info)
 
     /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
+#if defined(CAPAZ_FAULT_TEST) && (CAPAZ_FAULT_TEST)
+    uart_puts("CAPAZ_FAULT_TEST: triggering deliberate exception (BRK)\n");
+    __asm__ volatile("brk #0");
+#endif
+
     
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);

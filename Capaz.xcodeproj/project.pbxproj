@@ -78,6 +78,8 @@
 		AAE99A792F0B2C1900EAB13D /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
 		AAE99A7C2F0B456C00EAB13D /* kheap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kheap.h; sourceTree = "<group>"; };
 		AAE99A7D2F0B456C00EAB13D /* kheap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kheap.c; sourceTree = "<group>"; };
+		AAE99A7E2F0B4F2900EAB13D /* panic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = panic.h; sourceTree = "<group>"; };
+		AAE99A7F2F0B4F2900EAB13D /* panic.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = panic.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -116,6 +118,8 @@
 				AAE99A772F0A319500EAB13D /* MathHelper.c */,
 				AAE99A7C2F0B456C00EAB13D /* kheap.h */,
 				AAE99A7D2F0B456C00EAB13D /* kheap.c */,
+				AAE99A7E2F0B4F2900EAB13D /* panic.h */,
+				AAE99A7F2F0B4F2900EAB13D /* panic.c */,
 			);
 			path = Kernel;
 			sourceTree = "<group>";
