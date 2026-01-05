@@ -154,7 +154,7 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.3\n");
+    uart_puts("Kernel: 0.0.4\n");
 
     
 #if KMAIN_DEBUG

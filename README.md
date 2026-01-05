@@ -43,27 +43,55 @@ Artifacts are written to `build/` at the repo root:
 
 ## Current status
 
-As of **Boot/Kernel 0.0.3**:
+As of **Boot/Kernel 0.0.4**:
 
 - Stable bring-up to the kernel stage (MMU enabled, vectors installed).
-- `boot_info` includes:
-  - kernel physical base, kernel image size, entry offset
-  - **DTB virtual address** (in the higher-half direct map) and DTB size
-- DTB parsing currently:
-  - reads the DTB header and prints a summary
-  - extracts at least one RAM range (QEMU commonly reports `0x4000_0000` + size)
-  - reserved ranges are not yet fully collected
-  - UART discovery via DTB is **not finished** (hardcoded PL011 base is used as fallback)
+- Higher-half direct map is active early; TTBR0 is default-deny (disabled) in kernel runtime.
+- Kernel C runtime now zeroes `.bss` deterministically before `kmain()`.
+- DTB parsing provides `/memory` ranges and reserved regions; results are used to build a correct usable-page view.
 
-Work in progress (next milestone) is to make DTB results *actionable* by kernel subsystems:
-- resolve `/chosen/stdout-path` → `/aliases` → UART node → `reg` → MMIO base
-- collect reserved ranges (`memreserve`, `/reserved-memory`, plus implicit reservations like kernel + DTB)
-- compute **usable RAM ranges** = memory ranges minus reserved ranges
-- map only DTB-reported RAM spans in `mmu_init()` (instead of a fixed window)
+### Milestone: PMM online (bitmap)
 
-Once usable RAM ranges are reliable, it becomes appropriate to introduce early memory management:
-- a small **physical page allocator (PMM)** seeded from usable ranges
-- later, a higher-level allocator (slab/heap) built on top of PMM
+We now have a working **bitmap physical memory manager (PMM)** suitable for QEMU `virt` bring-up:
+
+- **Usable ranges are correct-by-construction for PMM**
+  - Start from DTB `/memory` ranges (page-aligned)
+  - Subtract DTB reserved ranges (page-aligned)
+  - Subtract implicit reservations (page-aligned):
+    - boot region `[lowest_ram_base, kernel_phys_base)`
+    - kernel runtime footprint `[kernel_phys_base, kernel_runtime_end_pa)` (includes `.bss`)
+    - DTB blob range
+    - PMM metadata pages
+  - Clamp output to the TTBR1 direct-map window (short-term correctness)
+  - Output spans are sorted, merged, non-overlapping, and page-aligned.
+
+- **PMM metadata placement (bootstrap, option B)**
+  - A fixed number of pages immediately after the kernel runtime footprint are reserved for:
+    - `struct pmm_state`
+    - the bitmap
+  - The bitmap is accessed via the high-half direct map:
+    - `phys_to_virt(pa) = HH_PHYS_4000_BASE + (pa - RAM_BASE)`
+
+- **Minimal PMM API (single-core)**
+  - `pmm_init(const boot_info_t*)`
+  - `pmm_alloc_page(uint64_t *out_pa)`
+  - `pmm_alloc_pages(uint32_t count, uint64_t *out_pa)` (contiguous)
+  - `pmm_free_page(uint64_t pa)`
+  - Optional: `pmm_alloc_page_va(uint64_t *out_pa)` for direct-map VA
+
+- **Debug validation**
+  - With `KMAIN_DEBUG=1`, `kmain()` runs a quick allocation/free test and prints:
+    - `PMM(free/total): free/total`
+    - start/end counters plus intermediate cycles (single-page + contiguous allocations)
+
+### Next steps
+
+- Integrate PMM into page table growth (keep static `.bss` base tables; allocate any additional tables from PMM).
+- Replace/retire any remaining early bump allocation once PMM is initialized.
+- Layer a kernel heap on PMM:
+  - Phase A: page-granularity allocations
+  - Phase B: small-object allocator (slab / bucketed freelists) backed by PMM pages
+- Add locking (spinlock) around PMM for SMP, once secondary cores are enabled.
 
 ## Build prerequisites (macOS)
 
