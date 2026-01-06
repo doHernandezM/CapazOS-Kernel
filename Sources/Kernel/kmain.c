@@ -17,6 +17,8 @@
 #include "gicv2.h"
 #include "timer_generic.h"
 
+#include "config.h"
+
 #include "MathHelper.h"
 
 /*
@@ -245,18 +247,30 @@ void kmain(const boot_info_t *boot_info)
     gicv2_enable_irq(TIMER_PPI_IRQ);
 
     /* 100Hz tick (10ms). */
-    timer_init_hz(100);
+    /*
+     * Start the periodic tick (unless built in tickless mode).
+     * Timer IRQ handling remains registered for one-shot deadlines.
+     */
+    timer_init_hz(CONFIG_TICK_HZ);
 
     irq_global_enable();
 
     /* Report tick progress from the idle loop (not from ISR). */
+#if (CONFIG_TICKLESS == 0)
     uint64_t last = 0;
     for (;;) {
         __asm__ volatile ("wfi");
         uint64_t t = timer_ticks_read();
-        if (t - last >= 100) { /* ~1s */
+        if (t - last >= (uint64_t)CONFIG_TICK_HZ) { /* ~1s */
             last = t;
-            uart_puts("tick:"); uart_putu64_dec(t / 100); uart_puts("\n");
+            uart_puts("tick:");
+            uart_putu64_dec(t / (uint64_t)CONFIG_TICK_HZ);
+            uart_puts("\n");
         }
     }
+#else
+    for (;;) {
+        __asm__ volatile ("wfi");
+    }
+#endif
 }

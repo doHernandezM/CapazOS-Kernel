@@ -22,10 +22,22 @@ COMMON_CFLAGS=(
   -target aarch64-none-none-elf
   -g -O0
   -I"$KERNEL_DIR/Sources/HAL"
+  -I"$KERNEL_DIR/Sources/Kernel"
 )
 
 BOOT_CFLAGS=("${COMMON_CFLAGS[@]}" -DBOOT_STAGE=1)
 KERNEL_CFLAGS=("${COMMON_CFLAGS[@]}")
+
+# Timer/tick configuration (optional overrides).
+# Usage examples:
+#   CONFIG_TICKLESS=1 ./Kernel/Scripts/build.sh
+#   CONFIG_TICK_HZ=250 ./Kernel/Scripts/build.sh
+if [[ -n "${CONFIG_TICK_HZ:-}" ]]; then
+  KERNEL_CFLAGS+=("-DCONFIG_TICK_HZ=${CONFIG_TICK_HZ}")
+fi
+if [[ -n "${CONFIG_TICKLESS:-}" ]]; then
+  KERNEL_CFLAGS+=("-DCONFIG_TICKLESS=${CONFIG_TICKLESS}")
+fi
 
 # Optional: compile-time deliberate fault for exception-dump smoke testing.
 # Usage: CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
@@ -87,6 +99,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/panic.c"         -o "$OUT_DIR/obj/panic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/irq.c"           -o "$OUT_DIR/obj/irq.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/deadline_queue.c" -o "$OUT_DIR/obj/deadline_queue.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/gicv2.c"           -o "$OUT_DIR/obj/gicv2.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/timer_generic.c"   -o "$OUT_DIR/obj/timer_generic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
@@ -106,6 +119,7 @@ PY
   "$OUT_DIR/obj/mem.o" \
   "$OUT_DIR/obj/panic.o" \
   "$OUT_DIR/obj/irq.o" \
+  "$OUT_DIR/obj/deadline_queue.o" \
   "$OUT_DIR/obj/gicv2.o" \
   "$OUT_DIR/obj/timer_generic.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \

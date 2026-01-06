@@ -86,6 +86,9 @@
 		AAE99ABD2F0B603400EAB13D /* platform.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = platform.c; sourceTree = "<group>"; };
 		AAE99ABE2F0B603400EAB13D /* pmm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pmm.h; sourceTree = "<group>"; };
 		AAE99ABF2F0B603400EAB13D /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
+		AAE99AC52F0C73BB00EAB13D /* config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = "<group>"; };
+		AAE99AC62F0C73BB00EAB13D /* deadline_queue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = deadline_queue.h; sourceTree = "<group>"; };
+		AAE99AC72F0C73BB00EAB13D /* deadline_queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = deadline_queue.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -164,6 +167,9 @@
 			isa = PBXGroup;
 			children = (
 				AAE99AA92F0B603400EAB13D /* boot_info.h */,
+				AAE99AC52F0C73BB00EAB13D /* config.h */,
+				AAE99AC62F0C73BB00EAB13D /* deadline_queue.h */,
+				AAE99AC72F0C73BB00EAB13D /* deadline_queue.c */,
 				AAE99AAA2F0B603400EAB13D /* dtb.h */,
 				AAE99AAB2F0B603400EAB13D /* dtb.c */,
 				AAE99AAC2F0B603400EAB13D /* irq.h */,
