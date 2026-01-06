@@ -25,4 +25,22 @@ void irq_dispatch(trap_frame_t *tf);
 void irq_global_enable(void);
 void irq_global_disable(void);
 
+/*
+ * Robust IRQ masking helpers for critical sections.
+ *
+ * - irq_save() masks IRQs and returns the previous DAIF value.
+ * - irq_restore(prev_daif) restores the IRQ mask bit to the previous state.
+ *
+ * These are safe to use in nested critical sections:
+ *
+ *   uint64_t flags = irq_save();
+ *   ... critical section ...
+ *   irq_restore(flags);
+ */
+uint64_t irq_save(void);
+void irq_restore(uint64_t prev_daif);
+
+/* True if IRQs are currently masked (DAIF.I == 1). */
+bool irq_irqs_disabled(void);
+
 #endif /* IRQ_H */

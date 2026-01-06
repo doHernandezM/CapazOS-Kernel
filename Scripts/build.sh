@@ -144,7 +144,26 @@ if [[ -f "$BOOT_BIN" && -f "$KERNEL_BIN" ]]; then
   rm -f "$BOOT_PAD"
 fi
 
+################################################################################
+# Package Kernel directory into ROOT/Kernel.zip (macOS-friendly)
+################################################################################
+KERNEL_ZIP="$ROOT/Kernel.zip"
+
+if ! command -v zip >/dev/null 2>&1; then
+  echo "Error: 'zip' not found. Install it or ensure it's available in PATH." >&2
+  exit 1
+fi
+
+rm -f "$KERNEL_ZIP"
+(
+  cd "$KERNEL_DIR"
+  # Zip the *contents* of Kernel/ (not the absolute path).
+  # -r: recursive, -q: quiet
+  zip -rq "$KERNEL_ZIP" .
+)
+
 echo "Built boot and kernel images."
 echo "BOOT_LOAD_ADDR = $(printf "0x%X" "$BOOT_LOAD_ADDR")"
 echo "KERNEL_PHYS_BASE = $KERNEL_PHYS_BASE_HEX"
 echo "KERNEL_VA_BASE   = $KERNEL_VA_BASE"
+echo "Packaged Kernel directory: $KERNEL_ZIP"

@@ -37,6 +37,12 @@ void irq_dispatch(trap_frame_t *tf)
         return;
     }
 
+    /* Defensive: ignore out-of-range IDs while still EOIR'ing. */
+    if (id >= IRQ_MAX) {
+        gicv2_end_interrupt(iar);
+        return;
+    }
+
     irq_handler_t h = s_handlers[id];
     if (h) {
         h(id, s_ctx[id], tf);
@@ -49,11 +55,53 @@ void irq_dispatch(trap_frame_t *tf)
 void irq_global_enable(void)
 {
     /* daifclr #2 clears the IRQ mask bit (I). */
-    __asm__ volatile("msr daifclr, #2" ::: "memory");
+    __asm__ volatile("msr daifclr, #2\n\tisb" ::: "memory");
 }
 
 void irq_global_disable(void)
 {
     /* daifset #2 sets the IRQ mask bit (I). */
-    __asm__ volatile("msr daifset, #2" ::: "memory");
+    __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
+}
+
+uint64_t irq_save(void)
+{
+    /*
+     * Read current DAIF and mask IRQs.
+     *
+     * The ISB ensures subsequent instructions execute with the updated PSTATE.
+     */
+    uint64_t daif;
+    __asm__ volatile(
+        "mrs %0, daif\n\t"
+        "msr daifset, #2\n\t"
+        "isb\n\t"
+        : "=r"(daif)
+        :
+        : "memory");
+    return daif;
+}
+
+void irq_restore(uint64_t prev_daif)
+{
+    /*
+     * Only restore the IRQ mask bit based on the saved DAIF.I value.
+     *
+     * This makes nested usage safe:
+     *  - If IRQs were already masked, keep them masked.
+     *  - If IRQs were unmasked, unmask them.
+     */
+    const uint64_t DAIF_I_BIT = (1ull << 7);
+    if (prev_daif & DAIF_I_BIT) {
+        __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
+    } else {
+        __asm__ volatile("msr daifclr, #2\n\tisb" ::: "memory");
+    }
+}
+
+bool irq_irqs_disabled(void)
+{
+    uint64_t daif;
+    __asm__ volatile("mrs %0, daif" : "=r"(daif) :: "memory");
+    return (daif & (1ull << 7)) != 0;
 }

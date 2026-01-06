@@ -21,6 +21,14 @@ The long-term design intent is:
   - DTB-driven hardware discovery (UART, RAM, interrupts, timers)
   - incremental transition to real drivers, interrupts, and a scheduler
 
+## Platform status
+
+| AArch64 Platform | Status | Signal |
+|---|---|---|
+| QEMU `virt` | Builds | 🟢 green |
+| Raspberry Pi | Roadmap | 🟠 orange |
+| Apple Silicon | Long term | 🔴 red |
+
 ## Repository layout
 
 This repo builds **two images**:
@@ -34,7 +42,7 @@ This repo builds **two images**:
 - **Kernel stage** (C + assembly)
   - `_kcrt0` trampoline moves the stack into the higher-half direct map and tail-calls C
   - `kmain()` installs kernel vectors, initializes the kernel MMU tables, initializes UART, and prints status
-  - DTB parsing is being brought up to feed platform data into subsystems
+  - DTB parsing feeds platform data into subsystems
 
 Artifacts are written to `build/` at the repo root:
 - `build/boot.elf`, `build/boot.bin`
@@ -43,16 +51,16 @@ Artifacts are written to `build/` at the repo root:
 
 ## Current status
 
-As of **Boot/Kernel 0.0.4**:
+As of **Boot/Kernel 0.0.6**:
 
-- Stable bring-up to the kernel stage (MMU enabled, vectors installed).
+- Stable bring-up to the kernel stage (MMU enabled, kernel vectors installed).
 - Higher-half direct map is active early; TTBR0 is default-deny (disabled) in kernel runtime.
-- Kernel C runtime now zeroes `.bss` deterministically before `kmain()`.
+- Kernel C runtime zeroes `.bss` deterministically before `kmain()`.
 - DTB parsing provides `/memory` ranges and reserved regions; results are used to build a correct usable-page view.
 
 ### Milestone: PMM online (bitmap)
 
-We now have a working **bitmap physical memory manager (PMM)** suitable for QEMU `virt` bring-up:
+We have a working **bitmap physical memory manager (PMM)** suitable for QEMU `virt` bring-up:
 
 - **Usable ranges are correct-by-construction for PMM**
   - Start from DTB `/memory` ranges (page-aligned)
@@ -84,18 +92,42 @@ We now have a working **bitmap physical memory manager (PMM)** suitable for QEMU
     - `PMM(free/total): free/total`
     - start/end counters plus intermediate cycles (single-page + contiguous allocations)
 
+### Milestone: M6 — Interrupts + timer tick (GIC + ARM generic timer)
+
+We now have a stable interrupt + timer baseline under QEMU `virt`:
+
+- **Vector split: sync vs IRQ**
+  - Synchronous exceptions stay on the existing “dump and park” path.
+  - IRQs enter a distinct handler, dispatch, restore registers, and `eret` back to the interrupted context.
+
+- **GICv2 bring-up**
+  - `HAL/gicv2.*` initializes the distributor + CPU interface.
+  - IRQ dispatch acknowledges the interrupt (IAR), routes to a registered handler, and EOIs it.
+
+- **ARM Generic Timer (CNTV) periodic tick**
+  - `HAL/timer_generic.*` programs CNTV for a periodic interrupt (default 100 Hz in `kmain()`).
+  - The kernel maintains a `ticks` counter; `kmain()` prints a “Tick: N” line at a low rate (once per second) to avoid UART reentrancy/perf issues.
+
 ### Next steps
 
-- Integrate PMM into page table growth (keep static `.bss` base tables; allocate any additional tables from PMM).
-- Replace/retire any remaining early bump allocation once PMM is initialized.
-- Layer a kernel heap on PMM:
-  - Phase A: page-granularity allocations
-  - Phase B: small-object allocator (slab / bucketed freelists) backed by PMM pages
-- Add locking (spinlock) around PMM for SMP, once secondary cores are enabled.
+Recommended next milestones:
 
-## Build prerequisites (macOS)
+- **M7 — Cooperative threads**
+  - context switch + thread structs
+  - `thread_create(entry, arg)`, `yield()`, minimal round-robin run queue
 
-Install dependencies (Homebrew examples):
+- **M8 — Preemption (timer-driven)**
+  - set a `need_resched` flag in the timer ISR
+  - schedule-on-return / deferred reschedule path
+
+- **M9 — Basic synchronization**
+  - spinlocks, IRQ masking discipline, per-CPU scaffolding
+
+## Build prerequisites
+
+### macOS
+
+Homebrew examples:
 
 - LLVM + lld:
   - `brew install llvm lld`
@@ -105,13 +137,25 @@ Install dependencies (Homebrew examples):
   - macOS typically ships a usable `python3`, or use `brew install python`
 - Optional for debugging:
   - `brew install gdb` (or `gdb-multiarch` if you use it)
-  - You can also use LLDB + QEMU remote gdbserver in some setups, but the docs below assume GDB.
 
 The build scripts default to Homebrew paths:
 - LLVM tools: `/opt/homebrew/opt/llvm/bin`
 - LLD: `/opt/homebrew/opt/lld/bin`
 
 If you are on an Intel Mac or have different install paths, update `Kernel/Scripts/toolchain.env`.
+
+### Linux
+
+Debian/Ubuntu examples:
+
+- `sudo apt-get update`
+- `sudo apt-get install -y clang lld llvm make python3 qemu-system-aarch64 gdb-multiarch`
+
+Notes:
+- If your distro installs LLVM tools without versioned paths, you can typically use:
+  - `LLVM_BIN=/usr/bin`
+  - `LLD_BIN=/usr/bin`
+  by editing `Kernel/Scripts/toolchain.env` (or by exporting `CC`, `LD`, etc. in your shell).
 
 ## Build
 
@@ -125,8 +169,6 @@ This produces `build/kernel.img` and prints the computed kernel physical/virtual
 
 ### Optional: enable a deliberate fault test
 
-The build supports an optional macro used by some debugging paths:
-
 ```bash
 CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
 ```
@@ -136,43 +178,67 @@ CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
 From the repo root:
 
 ```bash
-./Kernel/Scripts/run-qemu.sh
+QEMU_MACHINE="virt,gic-version=2" ./Kernel/Scripts/run-qemu.sh
 ```
 
-Defaults:
-- machine: `virt`
+Defaults (see `Kernel/Scripts/run-qemu.sh`):
+- machine: `virt` (override to `virt,gic-version=2` for GICv2)
 - CPU: `cortex-a72`
 - memory: `512M`
 - serial: `stdio`
 
+### Manual run command (equivalent)
+
+```bash
+qemu-system-aarch64 \
+  -machine virt,gic-version=2 \
+  -cpu cortex-a72 -smp 1 \
+  -m 128M \
+  -nographic \
+  -serial mon:stdio \
+  -kernel build/kernel.img
+```
+
 ### Run with a GDB stub
 
 ```bash
-DEBUG_PORT=1234 ./Kernel/Scripts/run-qemu.sh
+qemu-system-aarch64 \
+  -machine virt,gic-version=2 \
+  -cpu cortex-a72 -smp 1 \
+  -m 128M \
+  -nographic \
+  -serial mon:stdio \
+  -kernel build/kernel.img \
+  -S -gdb tcp::1234
 ```
-
-This adds `-S -gdb tcp::1234` so QEMU halts at reset and waits for a debugger.
 
 ## Debug with GDB
 
 In one terminal (QEMU, halted):
 
 ```bash
-DEBUG_PORT=1234 ./Kernel/Scripts/run-qemu.sh
+qemu-system-aarch64 \
+  -machine virt,gic-version=2 \
+  -cpu cortex-a72 -smp 1 \
+  -m 128M \
+  -nographic \
+  -serial mon:stdio \
+  -kernel build/kernel.img \
+  -S -gdb tcp::1234
 ```
 
 In another terminal:
 
 ```bash
-gdb-multiarch build/boot.elf
+gdb-multiarch build/kernel.elf
 (gdb) target remote :1234
-(gdb) b _start
+(gdb) b kmain
 (gdb) c
 ```
 
 Notes:
-- The earliest breakpoint is typically `_start` in `start.S`.
-- You can also break on `_kcrt0` and `kmain` once the kernel stage is reached.
+- If you want the earliest breakpoint, load `build/boot.elf` instead and break on `_start`.
+- When QEMU is started with `-S`, the CPU is halted at reset; you must `continue` from the debugger for anything (including timer ticks) to run.
 
 ## Long-term goals
 
