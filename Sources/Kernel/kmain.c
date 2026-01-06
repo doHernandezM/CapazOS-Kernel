@@ -11,11 +11,14 @@
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"
+#include "kheap.h"
 #include "platform.h"
 #include "uart_pl011.h"
 #include "irq.h"
 #include "gicv2.h"
 #include "timer_generic.h"
+
+#include "sched.h"
 
 #include "config.h"
 
@@ -222,6 +225,12 @@ void kmain(const boot_info_t *boot_info)
     
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);
+
+    /* Initialize kernel heap (kmalloc/kfree) now that PMM is live. */
+    kheap_init();
+
+    /* Initialize cooperative scheduler bootstrap context (kmain thread). */
+    sched_init_bootstrap();
 
 #if KMAIN_DEBUG
     /* Quick sanity test: allocate/free cycles and print free/total. */

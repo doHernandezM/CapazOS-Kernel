@@ -21,14 +21,6 @@ The long-term design intent is:
   - DTB-driven hardware discovery (UART, RAM, interrupts, timers)
   - incremental transition to real drivers, interrupts, and a scheduler
 
-## Platform status
-
-| AArch64 Platform | Status | Signal |
-|---|---|---|
-| QEMU `virt` | Builds | 🟢 green |
-| Raspberry Pi | Roadmap | 🟠 orange |
-| Apple Silicon | Long term | 🔴 red |
-
 ## Repository layout
 
 This repo builds **two images**:
@@ -260,6 +252,14 @@ The “north star” is a small, capability-oriented kernel that can evolve into
   - structured idle states, tickless scheduling (later)
   - timer coalescing and interrupt discipline
   - hooks for DVFS/governors on real hardware (later)
+
+## Platform status
+
+| AArch64 Platform | Status |  |
+|---|---|---|
+| QEMU `virt` | Currently Builds | 🟢 |
+| Raspberry Pi | Short-term Roadmap | 🟠 |
+| Apple Silicon | Long-term Roadmap | 🔴 |
 
 ## License
 

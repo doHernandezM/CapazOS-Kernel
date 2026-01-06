@@ -100,6 +100,10 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/kernel_vectors.S" -o "$OUT_DIR/obj/kernel_vectors.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/irq.c"           -o "$OUT_DIR/obj/irq.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/deadline_queue.c" -o "$OUT_DIR/obj/deadline_queue.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Arch/aarch64/context_switch.S" -o "$OUT_DIR/obj/context_switch.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/thread.c"        -o "$OUT_DIR/obj/thread.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/sched.c"         -o "$OUT_DIR/obj/sched.o"
+
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/gicv2.c"           -o "$OUT_DIR/obj/gicv2.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/timer_generic.c"   -o "$OUT_DIR/obj/timer_generic.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/uart_pl011.c"       -o "$OUT_DIR/obj/uart.o"
@@ -120,6 +124,9 @@ PY
   "$OUT_DIR/obj/panic.o" \
   "$OUT_DIR/obj/irq.o" \
   "$OUT_DIR/obj/deadline_queue.o" \
+  "$OUT_DIR/obj/context_switch.o" \
+  "$OUT_DIR/obj/thread.o" \
+  "$OUT_DIR/obj/sched.o" \
   "$OUT_DIR/obj/gicv2.o" \
   "$OUT_DIR/obj/timer_generic.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \
