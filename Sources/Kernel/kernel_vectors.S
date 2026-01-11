@@ -66,19 +66,27 @@ __kernel_vectors_end:
 
     .extern kernel_exception_report
     .extern irq_dispatch
+    .extern sched_irq_exit
 
     .global kernel_sync_entry
     .type   kernel_sync_entry, %function
     .global kernel_irq_entry
     .type   kernel_irq_entry, %function
 
-    /* Save/restore GPRs. Layout matches trap_frame_t in irq.h:
-     *   sp[0..30]  = x0..x30
-     *   sp[31]     = padding
-     * Total: 32*8 bytes, 16B aligned.
-     */
+    // Trap frame layout (must match trap_frame_t in irq.h)
+    .equ TF_GPRS_SIZE,  (32 * 8)       // x0..x30 + pad
+    .equ TF_SP_OFF,     (32 * 8)       // original SP (before PUSH_GPRS)
+    .equ TF_ELR_OFF,    (33 * 8)
+    .equ TF_SPSR_OFF,   (34 * 8)
+    .equ TF_ESR_OFF,    (35 * 8)
+    .equ TF_FAR_OFF,    (36 * 8)
+    .equ TF_SP_EL0_OFF, (37 * 8)
+    .equ TF_SIZE,       (38 * 8)       // total, 16-byte aligned
+
+    /* Save/restore trap frame. Layout matches trap_frame_t in irq.h. */
     .macro PUSH_GPRS
-        sub sp, sp, #(32 * 8)
+        // Keep SP 16-byte aligned (AArch64 ABI) across the call into C.
+        sub sp, sp, #TF_SIZE
 
         stp x0,  x1,  [sp, #(0 * 16)]
         stp x2,  x3,  [sp, #(1 * 16)]
@@ -96,9 +104,37 @@ __kernel_vectors_end:
         stp x26, x27, [sp, #(13 * 16)]
         stp x28, x29, [sp, #(14 * 16)]
         str x30,       [sp, #(15 * 16)]
+
+        // Save exception return/system state for M8 (IRQ-return preemption).
+        // Note: ESR_EL1/FAR_EL1 are only architecturally meaningful for
+        // synchronous exceptions, but we capture them here for uniformity.
+        // Record the interrupted SP (pre-save). This is the stack pointer the
+        // CPU was using at exception entry.
+        add x9, sp, #TF_SIZE
+        str x9, [sp, #TF_SP_OFF]
+
+        mrs x9, elr_el1
+        str x9, [sp, #TF_ELR_OFF]
+        mrs x9, spsr_el1
+        str x9, [sp, #TF_SPSR_OFF]
+        mrs x9, esr_el1
+        str x9, [sp, #TF_ESR_OFF]
+        mrs x9, far_el1
+        str x9, [sp, #TF_FAR_OFF]
+
+        // Capture SP_EL0 for future EL0 support / debugging.
+        mrs x9, sp_el0
+        str x9, [sp, #TF_SP_EL0_OFF]
     .endm
 
     .macro POP_GPRS
+        // Restore the exception return state first so an M8-style scheduler
+        // can swap SP to a different saved frame before returning.
+        ldr x9, [sp, #TF_ELR_OFF]
+        msr elr_el1, x9
+        ldr x9, [sp, #TF_SPSR_OFF]
+        msr spsr_el1, x9
+
         ldp x0,  x1,  [sp, #(0 * 16)]
         ldp x2,  x3,  [sp, #(1 * 16)]
         ldp x4,  x5,  [sp, #(2 * 16)]
@@ -116,7 +152,7 @@ __kernel_vectors_end:
         ldp x28, x29, [sp, #(14 * 16)]
         ldr x30,       [sp, #(15 * 16)]
 
-        add sp, sp, #(32 * 8)
+        add sp, sp, #TF_SIZE
     .endm
 
 /* -------------------------------------------------------------------------- */
@@ -125,11 +161,13 @@ __kernel_vectors_end:
 kernel_sync_entry:
     PUSH_GPRS
 
-    /* x0..x4 = (esr, far, elr, sp_at_fault, regs_ptr) */
     mrs x0, esr_el1
     mrs x1, far_el1
     mrs x2, elr_el1
-    add x3, sp, #(32 * 8)   /* original SP before this handler */
+
+    /* x0..x4 = (esr, far, elr, sp_at_fault, regs_ptr) */
+    /* x0..x2 already loaded above */
+    add x3, sp, #TF_SIZE     /* original SP before this handler */
     mov x4, sp              /* regs_ptr */
     bl  kernel_exception_report
 
@@ -141,13 +179,39 @@ kernel_sync_entry:
 /* IRQs: dispatch and return                                                   */
 /* -------------------------------------------------------------------------- */
 kernel_irq_entry:
+    // Keep IRQs masked for the full handler path (no nesting for now).
+    // Hardware sets PSTATE.I on IRQ entry, but we set it defensively.
+    msr daifset, #2
+
     PUSH_GPRS
 
     /* x0 = trap_frame_t* */
     mov x0, sp
     bl  irq_dispatch
 
+    /*
+     * Phase 5: IRQ-exit scheduler hook.
+     *
+     * After all IRQ handlers ran, allow the scheduler to optionally switch
+     * threads by returning a different trap-frame pointer. If a different
+     * pointer is returned, we swap SP so the restore+ERET resumes the next
+     * thread instead of the interrupted one.
+     *
+     * LK inspiration (conceptual): LK's ARM64 irq_exception macro calls
+     * thread_preempt between IRQ handling and frame restore, achieving
+     * preemption at exception-exit.
+     *   lk-master/arch/arm64/exceptions.S (irq_exception macro; MIT header)
+     */
+    mov x0, sp
+    bl  sched_irq_exit
+    mov x9, sp
+    cmp x0, x9
+    b.eq 1f
+    mov sp, x0
+1:
+
     POP_GPRS
+    isb
     eret
     .size kernel_irq_entry, .-kernel_irq_entry
 

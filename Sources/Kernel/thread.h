@@ -78,6 +78,12 @@ typedef enum thread_state {
 typedef struct thread {
     ctx_t ctx;
 
+
+    // Debug identity (stable across the lifetime of the thread).
+    // tid==0 is reserved for the bootstrap (kmain) pseudo-thread.
+    uint32_t tid;
+    const char *name;
+
     // Per-thread kernel stack.
     void   *kstack_base;
     size_t  kstack_size;
@@ -89,9 +95,20 @@ typedef struct thread {
     // Reserved for M8 preemption integration (stack on IRQ return).
     trap_frame_t *last_trap;
 
-    // Saved interrupt mask state for cooperative scheduling.
-    // yield() stores the prior DAIF here so it can be restored when the
-    // thread resumes from ctx_switch.
+
+    // Preemption resume pointer (M8 Option A): saved IRQ-return SP.
+    //
+    // When a thread is switched away at IRQ exit, irq_sp is set to the address
+    // of the pinned trap_frame_t on that thread's kernel stack. The IRQ return
+    // path can later resume the thread by setting SP to irq_sp, restoring the
+    // frame, and executing eret.
+    //
+    // For newly created threads we reserve an initial synthetic trap frame at
+    // the top of the stack so irq_sp is always defined for runnable threads.
+    uint64_t irq_sp;
+
+    // Saved interrupt mask state for cooperative yield/restore.
+    // Only the DAIF.I bit is currently restored (see irq_restore).
     uint64_t saved_daif;
 
     thread_state_t state;
@@ -102,5 +119,6 @@ void ctx_switch(ctx_t *old, ctx_t *new);
 
 // Thread API (implemented starting in Phase 4).
 thread_t *thread_create(void (*entry)(void *), void *arg);
+thread_t *thread_create_named(const char *name, void (*entry)(void *), void *arg);
 __attribute__((noreturn)) void thread_trampoline(void (*entry)(void *), void *arg);
 __attribute__((noreturn)) void thread_exit(void);

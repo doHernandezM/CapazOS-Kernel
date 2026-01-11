@@ -48,8 +48,10 @@ ctx_switch:
 .global thread_start
 .type thread_start, %function
 thread_start:
-    // Ensure a newly started thread doesn't inherit a masked IRQ state from
-    // the switching thread (yield() masks IRQs during ctx_switch).
+    // A brand-new thread is entered via ctx_switch() while IRQs are masked
+    // (the yielding thread disables IRQs around the switch boundary).
+    // Unlike a resumed thread, we are not returning to yield(), so clear
+    // the IRQ mask bit here to avoid running forever with IRQs disabled.
     msr     daifclr, #2
     isb
     mov     x0, x19   // entry

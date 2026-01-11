@@ -11,13 +11,12 @@
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"
-#include "kheap.h"
 #include "platform.h"
 #include "uart_pl011.h"
 #include "irq.h"
+#include "preempt.h"
 #include "gicv2.h"
 #include "timer_generic.h"
-
 #include "sched.h"
 
 #include "config.h"
@@ -163,6 +162,7 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 {
     (void)irq; (void)ctx; (void)tf;
     timer_handle_irq();
+    preempt_set_need_resched();
 }
 
 void kmain(const boot_info_t *boot_info)
@@ -170,7 +170,7 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.6\nMachine: Virt\n");
+    uart_puts("Kernel: 0.0.8D\nMachine: Virt\n");
 
     
 #if KMAIN_DEBUG
@@ -226,12 +226,6 @@ void kmain(const boot_info_t *boot_info)
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);
 
-    /* Initialize kernel heap (kmalloc/kfree) now that PMM is live. */
-    kheap_init();
-
-    /* Initialize cooperative scheduler bootstrap context (kmain thread). */
-    sched_init_bootstrap();
-
 #if KMAIN_DEBUG
     /* Quick sanity test: allocate/free cycles and print free/total. */
     pmm_quick_alloc_test();
@@ -239,6 +233,11 @@ void kmain(const boot_info_t *boot_info)
     
     /* Always print a short, stable summary. */
     print_total_memory_from_dtb();
+
+    // Treat kmain() as the bootstrap "current thread" even if we haven't
+    // created any kernel threads yet. This keeps the IRQ-exit scaffolding
+    // (M8 readiness) safe and avoids panics on the first timer tick.
+    sched_init_bootstrap();
 
 
     

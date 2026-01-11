@@ -1,4 +1,5 @@
 #include "pmm.h"
+#include "mem.h"
 
 #include <stddef.h>
 #include <stdint.h>

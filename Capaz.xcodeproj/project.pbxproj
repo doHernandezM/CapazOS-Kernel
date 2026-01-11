@@ -48,36 +48,39 @@
 
 /* Begin PBXFileReference section */
 		AAAF958A2F0CBC5500FA62F3 /* context_switch.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = context_switch.S; sourceTree = "<group>"; };
-		AAAF95C52F0CC22E00FA62F3 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
-		AAAF95C62F0CC22E00FA62F3 /* config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = "<group>"; };
-		AAAF95C72F0CC22E00FA62F3 /* deadline_queue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = deadline_queue.h; sourceTree = "<group>"; };
-		AAAF95C82F0CC22E00FA62F3 /* deadline_queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = deadline_queue.c; sourceTree = "<group>"; };
-		AAAF95C92F0CC22E00FA62F3 /* dtb.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dtb.h; sourceTree = "<group>"; };
-		AAAF95CA2F0CC22E00FA62F3 /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
-		AAAF95CB2F0CC22E00FA62F3 /* irq.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = irq.h; sourceTree = "<group>"; };
-		AAAF95CC2F0CC22E00FA62F3 /* irq.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = irq.c; sourceTree = "<group>"; };
-		AAAF95CD2F0CC22E00FA62F3 /* kcrt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kcrt0.c; sourceTree = "<group>"; };
-		AAAF95CE2F0CC22E00FA62F3 /* kernel_header.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_header.S; sourceTree = "<group>"; };
-		AAAF95CF2F0CC22E00FA62F3 /* kernel_image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_image.h; sourceTree = "<group>"; };
-		AAAF95D02F0CC22E00FA62F3 /* kernel_vectors.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_vectors.S; sourceTree = "<group>"; };
-		AAAF95D12F0CC22E00FA62F3 /* kheap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kheap.h; sourceTree = "<group>"; };
-		AAAF95D22F0CC22E00FA62F3 /* kheap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kheap.c; sourceTree = "<group>"; };
-		AAAF95D32F0CC22E00FA62F3 /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
-		AAAF95D42F0CC22E00FA62F3 /* MathHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MathHelper.h; sourceTree = "<group>"; };
-		AAAF95D52F0CC22E00FA62F3 /* MathHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MathHelper.c; sourceTree = "<group>"; };
-		AAAF95D62F0CC22E00FA62F3 /* mem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mem.c; sourceTree = "<group>"; };
-		AAAF95D72F0CC22E00FA62F3 /* mmu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu.h; sourceTree = "<group>"; };
-		AAAF95D82F0CC22E00FA62F3 /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
-		AAAF95D92F0CC22E00FA62F3 /* panic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = panic.h; sourceTree = "<group>"; };
-		AAAF95DA2F0CC22E00FA62F3 /* panic.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = panic.c; sourceTree = "<group>"; };
-		AAAF95DB2F0CC22E00FA62F3 /* platform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = platform.h; sourceTree = "<group>"; };
-		AAAF95DC2F0CC22E00FA62F3 /* platform.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = platform.c; sourceTree = "<group>"; };
-		AAAF95DD2F0CC22E00FA62F3 /* pmm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pmm.h; sourceTree = "<group>"; };
-		AAAF95DE2F0CC22E00FA62F3 /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
-		AAAF95DF2F0CC22E00FA62F3 /* sched.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sched.h; sourceTree = "<group>"; };
-		AAAF95E02F0CC22E00FA62F3 /* sched.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sched.c; sourceTree = "<group>"; };
-		AAAF95E12F0CC22E00FA62F3 /* thread.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = thread.h; sourceTree = "<group>"; };
-		AAAF95E22F0CC22E00FA62F3 /* thread.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = thread.c; sourceTree = "<group>"; };
+		AAAF95E32F0DCC3B00FA62F3 /* boot_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = boot_info.h; sourceTree = "<group>"; };
+		AAAF95E42F0DCC3B00FA62F3 /* config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = "<group>"; };
+		AAAF95E52F0DCC3B00FA62F3 /* deadline_queue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = deadline_queue.h; sourceTree = "<group>"; };
+		AAAF95E62F0DCC3B00FA62F3 /* deadline_queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = deadline_queue.c; sourceTree = "<group>"; };
+		AAAF95E72F0DCC3B00FA62F3 /* dtb.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dtb.h; sourceTree = "<group>"; };
+		AAAF95E82F0DCC3B00FA62F3 /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
+		AAAF95E92F0DCC3B00FA62F3 /* irq.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = irq.h; sourceTree = "<group>"; };
+		AAAF95EA2F0DCC3B00FA62F3 /* irq.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = irq.c; sourceTree = "<group>"; };
+		AAAF95EB2F0DCC3B00FA62F3 /* kcrt0.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kcrt0.c; sourceTree = "<group>"; };
+		AAAF95EC2F0DCC3B00FA62F3 /* kernel_header.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_header.S; sourceTree = "<group>"; };
+		AAAF95ED2F0DCC3B00FA62F3 /* kernel_image.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kernel_image.h; sourceTree = "<group>"; };
+		AAAF95EE2F0DCC3B00FA62F3 /* kernel_vectors.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; path = kernel_vectors.S; sourceTree = "<group>"; };
+		AAAF95EF2F0DCC3B00FA62F3 /* kheap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kheap.h; sourceTree = "<group>"; };
+		AAAF95F02F0DCC3B00FA62F3 /* kheap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kheap.c; sourceTree = "<group>"; };
+		AAAF95F12F0DCC3B00FA62F3 /* kmain.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = kmain.c; sourceTree = "<group>"; };
+		AAAF95F22F0DCC3B00FA62F3 /* MathHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MathHelper.h; sourceTree = "<group>"; };
+		AAAF95F32F0DCC3B00FA62F3 /* MathHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MathHelper.c; sourceTree = "<group>"; };
+		AAAF95F42F0DCC3B00FA62F3 /* mem.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mem.h; sourceTree = "<group>"; };
+		AAAF95F52F0DCC3B00FA62F3 /* mem.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mem.c; sourceTree = "<group>"; };
+		AAAF95F62F0DCC3B00FA62F3 /* mmu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mmu.h; sourceTree = "<group>"; };
+		AAAF95F72F0DCC3B00FA62F3 /* mmu.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = mmu.c; sourceTree = "<group>"; };
+		AAAF95F82F0DCC3B00FA62F3 /* panic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = panic.h; sourceTree = "<group>"; };
+		AAAF95F92F0DCC3B00FA62F3 /* panic.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = panic.c; sourceTree = "<group>"; };
+		AAAF95FA2F0DCC3B00FA62F3 /* platform.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = platform.h; sourceTree = "<group>"; };
+		AAAF95FB2F0DCC3B00FA62F3 /* platform.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = platform.c; sourceTree = "<group>"; };
+		AAAF95FC2F0DCC3B00FA62F3 /* pmm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pmm.h; sourceTree = "<group>"; };
+		AAAF95FD2F0DCC3B00FA62F3 /* pmm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pmm.c; sourceTree = "<group>"; };
+		AAAF95FE2F0DCC3B00FA62F3 /* preempt.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = preempt.h; sourceTree = "<group>"; };
+		AAAF95FF2F0DCC3B00FA62F3 /* preempt.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = preempt.c; sourceTree = "<group>"; };
+		AAAF96002F0DCC3B00FA62F3 /* sched.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sched.h; sourceTree = "<group>"; };
+		AAAF96012F0DCC3B00FA62F3 /* sched.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sched.c; sourceTree = "<group>"; };
+		AAAF96022F0DCC3B00FA62F3 /* thread.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = thread.h; sourceTree = "<group>"; };
+		AAAF96032F0DCC3B00FA62F3 /* thread.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = thread.c; sourceTree = "<group>"; };
 		AAE12AED2F01CD6900870C5D /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
 		AAE12AF02F01CD9300870C5D /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
 		AAE12AF12F01CD9300870C5D /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
@@ -110,6 +113,46 @@
 			);
 			sourceTree = "<group>";
 		};
+		AAAF96042F0DCC3B00FA62F3 /* Kernel */ = {
+			isa = PBXGroup;
+			children = (
+				AAAF95E32F0DCC3B00FA62F3 /* boot_info.h */,
+				AAAF95E42F0DCC3B00FA62F3 /* config.h */,
+				AAAF95E52F0DCC3B00FA62F3 /* deadline_queue.h */,
+				AAAF95E62F0DCC3B00FA62F3 /* deadline_queue.c */,
+				AAAF95E72F0DCC3B00FA62F3 /* dtb.h */,
+				AAAF95E82F0DCC3B00FA62F3 /* dtb.c */,
+				AAAF95E92F0DCC3B00FA62F3 /* irq.h */,
+				AAAF95EA2F0DCC3B00FA62F3 /* irq.c */,
+				AAAF95EB2F0DCC3B00FA62F3 /* kcrt0.c */,
+				AAAF95EC2F0DCC3B00FA62F3 /* kernel_header.S */,
+				AAAF95ED2F0DCC3B00FA62F3 /* kernel_image.h */,
+				AAAF95EE2F0DCC3B00FA62F3 /* kernel_vectors.S */,
+				AAAF95EF2F0DCC3B00FA62F3 /* kheap.h */,
+				AAAF95F02F0DCC3B00FA62F3 /* kheap.c */,
+				AAAF95F12F0DCC3B00FA62F3 /* kmain.c */,
+				AAAF95F22F0DCC3B00FA62F3 /* MathHelper.h */,
+				AAAF95F32F0DCC3B00FA62F3 /* MathHelper.c */,
+				AAAF95F42F0DCC3B00FA62F3 /* mem.h */,
+				AAAF95F52F0DCC3B00FA62F3 /* mem.c */,
+				AAAF95F62F0DCC3B00FA62F3 /* mmu.h */,
+				AAAF95F72F0DCC3B00FA62F3 /* mmu.c */,
+				AAAF95F82F0DCC3B00FA62F3 /* panic.h */,
+				AAAF95F92F0DCC3B00FA62F3 /* panic.c */,
+				AAAF95FA2F0DCC3B00FA62F3 /* platform.h */,
+				AAAF95FB2F0DCC3B00FA62F3 /* platform.c */,
+				AAAF95FC2F0DCC3B00FA62F3 /* pmm.h */,
+				AAAF95FD2F0DCC3B00FA62F3 /* pmm.c */,
+				AAAF95FE2F0DCC3B00FA62F3 /* preempt.h */,
+				AAAF95FF2F0DCC3B00FA62F3 /* preempt.c */,
+				AAAF96002F0DCC3B00FA62F3 /* sched.h */,
+				AAAF96012F0DCC3B00FA62F3 /* sched.c */,
+				AAAF96022F0DCC3B00FA62F3 /* thread.h */,
+				AAAF96032F0DCC3B00FA62F3 /* thread.c */,
+			);
+			path = Kernel;
+			sourceTree = "<group>";
+		};
 		AAE12AF22F01CD9300870C5D /* Linker */ = {
 			isa = PBXGroup;
 			children = (
@@ -124,7 +167,7 @@
 			children = (
 				AAE99AA12F0B603400EAB13D /* Arch */,
 				AAE99AA82F0B603400EAB13D /* HAL */,
-				AAE99AC02F0B603400EAB13D /* Kernel */,
+				AAAF96042F0DCC3B00FA62F3 /* Kernel */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -167,43 +210,6 @@
 				AAE99AA72F0B603400EAB13D /* uart_pl011.c */,
 			);
 			path = HAL;
-			sourceTree = "<group>";
-		};
-		AAE99AC02F0B603400EAB13D /* Kernel */ = {
-			isa = PBXGroup;
-			children = (
-				AAAF95C52F0CC22E00FA62F3 /* boot_info.h */,
-				AAAF95C62F0CC22E00FA62F3 /* config.h */,
-				AAAF95C72F0CC22E00FA62F3 /* deadline_queue.h */,
-				AAAF95C82F0CC22E00FA62F3 /* deadline_queue.c */,
-				AAAF95C92F0CC22E00FA62F3 /* dtb.h */,
-				AAAF95CA2F0CC22E00FA62F3 /* dtb.c */,
-				AAAF95CB2F0CC22E00FA62F3 /* irq.h */,
-				AAAF95CC2F0CC22E00FA62F3 /* irq.c */,
-				AAAF95CD2F0CC22E00FA62F3 /* kcrt0.c */,
-				AAAF95CE2F0CC22E00FA62F3 /* kernel_header.S */,
-				AAAF95CF2F0CC22E00FA62F3 /* kernel_image.h */,
-				AAAF95D02F0CC22E00FA62F3 /* kernel_vectors.S */,
-				AAAF95D12F0CC22E00FA62F3 /* kheap.h */,
-				AAAF95D22F0CC22E00FA62F3 /* kheap.c */,
-				AAAF95D32F0CC22E00FA62F3 /* kmain.c */,
-				AAAF95D42F0CC22E00FA62F3 /* MathHelper.h */,
-				AAAF95D52F0CC22E00FA62F3 /* MathHelper.c */,
-				AAAF95D62F0CC22E00FA62F3 /* mem.c */,
-				AAAF95D72F0CC22E00FA62F3 /* mmu.h */,
-				AAAF95D82F0CC22E00FA62F3 /* mmu.c */,
-				AAAF95D92F0CC22E00FA62F3 /* panic.h */,
-				AAAF95DA2F0CC22E00FA62F3 /* panic.c */,
-				AAAF95DB2F0CC22E00FA62F3 /* platform.h */,
-				AAAF95DC2F0CC22E00FA62F3 /* platform.c */,
-				AAAF95DD2F0CC22E00FA62F3 /* pmm.h */,
-				AAAF95DE2F0CC22E00FA62F3 /* pmm.c */,
-				AAAF95DF2F0CC22E00FA62F3 /* sched.h */,
-				AAAF95E02F0CC22E00FA62F3 /* sched.c */,
-				AAAF95E12F0CC22E00FA62F3 /* thread.h */,
-				AAAF95E22F0CC22E00FA62F3 /* thread.c */,
-			);
-			path = Kernel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

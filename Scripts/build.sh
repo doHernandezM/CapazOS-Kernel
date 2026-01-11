@@ -103,6 +103,7 @@ PY
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Arch/aarch64/context_switch.S" -o "$OUT_DIR/obj/context_switch.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/thread.c"        -o "$OUT_DIR/obj/thread.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/sched.c"         -o "$OUT_DIR/obj/sched.o"
+"$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/Kernel/preempt.c"       -o "$OUT_DIR/obj/preempt.o"
 
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/gicv2.c"           -o "$OUT_DIR/obj/gicv2.o"
 "$CC" "${KERNEL_CFLAGS[@]}" -c "$KERNEL_DIR/Sources/HAL/timer_generic.c"   -o "$OUT_DIR/obj/timer_generic.o"
@@ -127,6 +128,7 @@ PY
   "$OUT_DIR/obj/context_switch.o" \
   "$OUT_DIR/obj/thread.o" \
   "$OUT_DIR/obj/sched.o" \
+  "$OUT_DIR/obj/preempt.o" \
   "$OUT_DIR/obj/gicv2.o" \
   "$OUT_DIR/obj/timer_generic.o" \
   "$OUT_DIR/obj/kernel_vectors.o" \

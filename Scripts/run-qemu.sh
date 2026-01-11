@@ -26,6 +26,6 @@ exec qemu-system-aarch64 \
   -m 128M \
   -nographic \
   -serial mon:stdio \
-  -kernel "$IMAGE" \
-  -no-reboot -no-shutdown \
-  ${DEBUG_PORT:+-S -gdb tcp::${DEBUG_PORT}}
+  -kernel "$IMAGE"
+#  -no-reboot -no-shutdown \
+#  ${DEBUG_PORT:+-S -gdb tcp::${DEBUG_PORT}}

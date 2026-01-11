@@ -1,139 +1,237 @@
 // Kernel/Sources/Kernel/sched.c
 //
-// M7 Phase 5: minimal cooperative round-robin scheduler.
+// M7 Phase 5/6: Minimal cooperative round-robin scheduler.
 //
-// Design constraints (locked in for M8 preemption):
-//  - Cooperative only: threads switch only when they explicitly call yield().
-//  - Per-thread kernel stacks: ctx_switch swaps SP.
-//  - Callee-saved context: ctx_switch saves/restores x19-x30 + SP.
-//
-// Run queue model:
-//  - `current` is *not* in the ready queue while running.
-//  - ready queue is a circular singly-linked list, tracked by a tail pointer.
-//    If `ready` is non-NULL, the head is `ready->rq_next`.
+// Design:
+//  - current thread is NOT in the ready queue while running.
+//  - ready queue is a circular singly-linked list tracked by a tail pointer.
+//  - threads switch only when they explicitly call yield().
 
 #include "sched.h"
 
 #include <stddef.h>
 
-#include "irq.h"
 #include "panic.h"
 
-// Bootstrap pseudo-thread for the initial kernel context (kmain).
+// For trap frame sizing checks (irq_sp range validation).
+#include "irq.h"
+#include "preempt.h"
+
+#define SCHED_ASSERT(cond, msg) do { if (!(cond)) panic(msg); } while (0)
+
+// Provided by Sources/Arch/aarch64/context_switch.S.
+extern void ctx_switch(ctx_t *old, ctx_t *new);
+
+// Bootstrap pseudo-thread (CPU0 initial context).
 static thread_t bootstrap_thread;
 
-static thread_t *current;
-static thread_t *ready; // tail pointer (see file header)
+static thread_t *s_current = NULL;
+// Tail pointer for circular list. Head is s_ready_tail->rq_next.
+static thread_t *s_ready_tail = NULL;
 
-// Internal helper: pop the head of the circular ready list.
-static thread_t *dequeue_head(void) {
-    if (!ready) {
+// sched.c
+static thread_t bootstrap_thread;
+
+static inline void sched_validate_irq_sp(thread_t *t) {
+    if (!t) return;
+    if (t == &bootstrap_thread) return; // bootstrap has no per-thread stack
+    SCHED_ASSERT(t->kstack_base != NULL, "sched: thread kstack_base is NULL");
+    SCHED_ASSERT(t->kstack_top != NULL, "sched: thread kstack_top is NULL");
+    SCHED_ASSERT(t->kstack_size != 0,   "sched: thread kstack_size is 0");
+    SCHED_ASSERT(t->irq_sp != 0, "sched: thread irq_sp is NULL");
+    SCHED_ASSERT((t->irq_sp & 0xF) == 0, "sched: thread irq_sp not 16-byte aligned");
+
+    uintptr_t base = (uintptr_t)t->kstack_base;
+    uintptr_t top  = (uintptr_t)t->kstack_top;
+    uintptr_t sp   = (uintptr_t)t->irq_sp;
+
+    // irq_sp points at a trap frame living *within* the kernel stack.
+    SCHED_ASSERT(sp >= base, "sched: thread irq_sp below stack base");
+    SCHED_ASSERT((sp + sizeof(trap_frame_t)) <= top, "sched: thread irq_sp beyond stack top");
+}
+static inline void rq_validate(void);
+
+static inline void rq_insert_tail(thread_t *t) {
+    if (!t) return;
+    if (t->rq_next) {
+        panic("sched: enqueue of already-queued thread");
+    }
+    SCHED_ASSERT(t->state == THREAD_READY, "sched: enqueue requires THREAD_READY");
+
+    // Preemption path will require a valid irq_sp for any non-bootstrap runnable thread.
+    sched_validate_irq_sp(t);
+    if (t->ctx.sp) {
+        SCHED_ASSERT((t->ctx.sp & 0xF) == 0, "sched: thread ctx.sp not 16-byte aligned");
+    }
+
+    if (!s_ready_tail) {
+        t->rq_next = t;
+        s_ready_tail = t;
+        return;
+    }
+
+    t->rq_next = s_ready_tail->rq_next;
+    s_ready_tail->rq_next = t;
+    s_ready_tail = t;
+}
+
+static inline uint64_t rq_critical_enter(void) {
+    uint64_t flags = irq_save();
+    preempt_disable();
+    return flags;
+}
+
+static inline void rq_critical_exit(uint64_t flags) {
+    preempt_enable();
+    irq_restore(flags);
+}
+
+static inline thread_t *rq_pop_head(void) {
+    uint64_t flags = rq_critical_enter();
+    if (!s_ready_tail) {
+        rq_critical_exit(flags);
         return NULL;
     }
 
-    thread_t *head = ready->rq_next;
-    if (head == ready) {
+    thread_t *head = s_ready_tail->rq_next;
+    if (head == s_ready_tail) {
         // Single element.
-        ready = NULL;
+        s_ready_tail = NULL;
     } else {
-        // Remove head by linking tail to head->next.
-        ready->rq_next = head->rq_next;
+        s_ready_tail->rq_next = head->rq_next;
     }
     head->rq_next = NULL;
+    rq_validate();
+
+    rq_critical_exit(flags);
     return head;
 }
 
-void sched_init_bootstrap(void) {
-    // Minimal init: represent the current execution context as a pseudo-thread.
-    // ctx is filled on the first ctx_switch out of this context.
-    bootstrap_thread.rq_next = NULL;
-    bootstrap_thread.last_trap = NULL;
-    bootstrap_thread.saved_daif = 0;
-    bootstrap_thread.state = THREAD_RUNNING;
+static inline void rq_validate(void) {
+#if SCHED_DEBUG
+    if (!s_ready_tail) return;
+    thread_t *head = s_ready_tail->rq_next;
+    SCHED_ASSERT(head != NULL, "sched: ready head is NULL");
+    // Walk at most 1024 nodes to catch corruption without hanging.
+    thread_t *t = head;
+    for (unsigned i = 0; i < 1024; i++) {
+        SCHED_ASSERT(t != NULL, "sched: ready node is NULL");
+        SCHED_ASSERT(t->rq_next != NULL, "sched: ready node rq_next NULL");
+        if (t->rq_next == head) return; // closed circle
+        t = t->rq_next;
+    }
+    panic("sched: ready queue corrupted (no cycle closure)");
+#endif
+}
 
-    current = &bootstrap_thread;
-    ready = NULL;
+thread_t *sched_current(void) {
+    return s_current;
+}
+
+void sched_init_bootstrap(void) {
+    bootstrap_thread.ctx = (ctx_t){0};
+    bootstrap_thread.kstack_base = NULL;
+    bootstrap_thread.kstack_size = 0;
+    bootstrap_thread.kstack_top  = NULL;
+    bootstrap_thread.rq_next     = NULL;
+    bootstrap_thread.last_trap   = NULL;
+    bootstrap_thread.saved_daif  = 0;
+    bootstrap_thread.state       = THREAD_RUNNING;
+
+    s_current = &bootstrap_thread;
 }
 
 void sched_enqueue(thread_t *t) {
-    if (!t) {
-        panic("sched_enqueue: t is NULL");
-    }
-    if (t->state != THREAD_READY) {
-        panic("sched_enqueue: thread not READY");
-    }
-    if (t->rq_next) {
-        panic("sched_enqueue: thread already queued");
-    }
+    if (!t) return;
 
-    if (!ready) {
-        // First element: self-linked single-node ring.
-        ready = t;
-        t->rq_next = t;
+    uint64_t flags = rq_critical_enter();
+
+    // If a thread is DEAD, it must not be re-enqueued.
+    if (t->state == THREAD_DEAD) {
+        rq_critical_exit(flags);
         return;
     }
 
-    // Insert at tail in O(1):
-    //   head = ready->next
-    //   ready->next = t
-    //   t->next = head
-    //   ready = t
-    thread_t *head = ready->rq_next;
-    ready->rq_next = t;
-    t->rq_next = head;
-    ready = t;
+    // Only READY threads belong on the ready queue.
+    t->state = THREAD_READY;
+    rq_insert_tail(t);
+    rq_validate();
+
+    rq_critical_exit(flags);
 }
 
-// Pick the next runnable thread.
-// Returns NULL if there is no other runnable thread.
 static thread_t *sched_pick_next(void) {
-    return dequeue_head();
+    thread_t *next = rq_pop_head();
+    if (!next) {
+        return s_current;
+    }
+    return next;
 }
 
 void yield(void) {
-    if (!current) {
-        panic("yield: scheduler not initialized");
-    }
+    uint64_t flags = irq_save();
+    thread_t *prev = s_current;
+    SCHED_ASSERT(prev != NULL, "sched: current is NULL");
+    SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");
 
-    // Mask IRQs while we manipulate scheduler state and switch stacks.
-    uint64_t daif = irq_save();
-
-    // If there is nobody else ready, just restore IRQ state and continue.
-    if (!ready) {
-        irq_restore(daif);
-        return;
-    }
-
-    thread_t *prev = current;
-    prev->saved_daif = daif;
-
-    // Re-queue the current thread (unless it's the bootstrap context or DEAD).
-    if (prev != &bootstrap_thread && prev->state == THREAD_RUNNING) {
+    // Only enqueue non-bootstrap runnable threads
+    if (prev != &bootstrap_thread && prev->state != THREAD_DEAD) {
         prev->state = THREAD_READY;
         sched_enqueue(prev);
     }
 
     thread_t *next = sched_pick_next();
     if (!next) {
-        // Shouldn't happen because we checked !ready above, but be defensive.
-        irq_restore(daif);
+        irq_restore(flags);
         return;
     }
 
     next->state = THREAD_RUNNING;
-    current = next;
-
-    // Switch context. Note: when switching to a brand-new thread, execution
-    // will begin at thread_start (Arch/aarch64/context_switch.S) instead of
-    // returning here immediately.
+    if (next != &bootstrap_thread) {
+        SCHED_ASSERT(next->ctx.sp != 0, "sched: next thread has NULL ctx.sp");
+    }
+    s_current = next;
     ctx_switch(&prev->ctx, &next->ctx);
 
-    // When we resume here later, we are running on *this thread's* stack.
-    // Restore the IRQ mask state that was active when this thread last yielded.
-    irq_restore(current->saved_daif);
+    irq_restore(flags);
 }
 
-// Private accessor used by thread_exit() (not part of the public scheduler API).
-thread_t *sched_get_current(void) {
-    return current;
+trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
+    /*
+     * Phase 0: preemption-readiness audit.
+     *
+     * Contract:
+     *  - IRQs remain masked across irq_dispatch() and this hook.
+     *  - The IRQ exit path restores register state from whatever SP points at
+     *    and then ERET's. M8 will switch threads by returning a different
+     *    trap frame pointer here.
+     */
+    SCHED_ASSERT(irq_irqs_disabled(), "sched: IRQs must be masked in sched_irq_exit");
+    SCHED_ASSERT(tf != NULL, "sched: NULL trap frame");
+
+    thread_t *cur = s_current;
+    // The timer/IRQ subsystem can be brought up before cooperative threads.
+    // In that early-boot window there is no "current" thread to tag; just
+    // preserve the IRQ return frame unchanged.
+    if (cur == NULL) {
+        return tf;
+    }
+    SCHED_ASSERT(cur->rq_next == NULL, "sched: current unexpectedly enqueued in irq exit");
+
+    /*
+     * Always keep a pointer to the most recent trap for debugging/introspection.
+     *
+     * IMPORTANT: cur->irq_sp is only meaningful when a thread is *switched away*
+     * at IRQ exit (its saved trap frame remains resident on its own stack).
+     * If we return to the same thread, the IRQ exit path restores from tf and
+     * then pops the frame; persisting tf into cur->irq_sp would leave a stale
+     * resume pointer.
+     */
+    cur->last_trap = tf;
+
+    /* Queue integrity checks are safe here because IRQs are still masked. */
+    rq_validate();
+
+    return tf;
 }
+
