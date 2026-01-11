@@ -81,12 +81,9 @@
 		AAAF96012F0DCC3B00FA62F3 /* sched.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sched.c; sourceTree = "<group>"; };
 		AAAF96022F0DCC3B00FA62F3 /* thread.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = thread.h; sourceTree = "<group>"; };
 		AAAF96032F0DCC3B00FA62F3 /* thread.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = thread.c; sourceTree = "<group>"; };
-		AAE12AED2F01CD6900870C5D /* build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build.sh; sourceTree = "<group>"; };
 		AAE12AF02F01CD9300870C5D /* boot.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = boot.ld; sourceTree = "<group>"; };
 		AAE12AF12F01CD9300870C5D /* kernel.ld */ = {isa = PBXFileReference; lastKnownFileType = text; path = kernel.ld; sourceTree = "<group>"; };
-		AAE76CF52EF75FFC005230EB /* toolchain.env */ = {isa = PBXFileReference; explicitFileType = text.script; path = toolchain.env; sourceTree = "<group>"; };
 		AAE76CFB2EF76AA9005230EB /* .swift-version */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ".swift-version"; sourceTree = "<group>"; };
-		AAE76CFD2EF7791E005230EB /* run-qemu.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "run-qemu.sh"; sourceTree = "<group>"; };
 		AAE99A662F09C94000EAB13D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		AAE99A672F09C97D00EAB13D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		AAE99A682F09C97D00EAB13D /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -108,7 +105,6 @@
 				AAE99A672F09C97D00EAB13D /* LICENSE */,
 				AAE99A682F09C97D00EAB13D /* README.md */,
 				AAE12AF22F01CD9300870C5D /* Linker */,
-				AAE76CE32EF75EC1005230EB /* Scripts */,
 				AAE76CE02EF727C7005230EB /* Sources */,
 			);
 			sourceTree = "<group>";
@@ -170,16 +166,6 @@
 				AAAF96042F0DCC3B00FA62F3 /* Kernel */,
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		AAE76CE32EF75EC1005230EB /* Scripts */ = {
-			isa = PBXGroup;
-			children = (
-				AAE76CF52EF75FFC005230EB /* toolchain.env */,
-				AAE12AED2F01CD6900870C5D /* build.sh */,
-				AAE76CFD2EF7791E005230EB /* run-qemu.sh */,
-			);
-			path = Scripts;
 			sourceTree = "<group>";
 		};
 		AAE99AA02F0B603400EAB13D /* aarch64 */ = {
@@ -264,7 +250,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nset -e\n\"${SRCROOT}/Scripts/build.sh\"\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\n\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
 		};
 		AAE76D022EF78768005230EB /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -281,7 +267,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "/usr/bin/env bash\nset -e\n\"${SRCROOT}/Scripts/run-qemu.sh\"\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\n# Type a script or drag a script file from your workspace to insert its path.\nset -e\n\"${SRCROOT}/Scripts/build.sh\"\n\nROOT=\"${SRCROOT}/..\"\necho \"_____________+++++++++++\"\necho $ROOT\nexec \"${ROOT}/Scripts/build.sh\" --platform aarch64-virt --target boot,kernel_c\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
