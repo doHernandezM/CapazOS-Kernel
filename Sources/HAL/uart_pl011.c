@@ -1,28 +1,58 @@
 #include "uart_pl011.h"
-
-/*
- * PL011 UART driver.
- *
- * In early bring-up we assume a high-half mapping exists where
- *   VA = 0xFFFF8000_0000_0000 + PA
- * for the first 1GiB of PA space (device/MMIO region).  The boot stage
- * maps this, and mmu_init() preserves it.
- *
- * The base is configurable so we can switch to the DTB-provided UART
- * address once DTB parsing works.
- */
+#include <stdint.h>
+#include <stdbool.h>
 
 #define HH_PHYS_BASE 0xFFFF800000000000ULL
-
-/* QEMU virt default (fallback) */
 #define UART_FALLBACK_PHYS_BASE 0x09000000ULL
 
-/* Registers */
-#define UARTDR   0x00
-#define UARTFR   0x18
-#define UARTFR_TXFF (1 << 5)
+/* PL011 register offsets */
+#define UARTDR      0x00
+#define UARTRSR     0x04   /* Read: Receive Status */
+#define UARTECR     0x04   /* Write: Error Clear (same offset) */
+#define UARTFR      0x18
+#define UARTIBRD    0x24
+#define UARTFBRD    0x28
+#define UARTLCR_H   0x2C
+#define UARTCR      0x30
+#define UARTICR     0x44
 
-static volatile uint32_t *g_uart_base = (volatile uint32_t *)(HH_PHYS_BASE + UART_FALLBACK_PHYS_BASE);
+/* UARTFR bits */
+#define UARTFR_BUSY (1u << 3)
+#define UARTFR_RXFE (1u << 4)
+#define UARTFR_TXFF (1u << 5)
+
+/* UARTCR bits */
+#define UARTCR_UARTEN (1u << 0)
+#define UARTCR_TXE    (1u << 8)
+#define UARTCR_RXE    (1u << 9)
+
+/* UARTLCR_H bits */
+#define UARTLCRH_BRK   (1u << 0)
+#define UARTLCRH_PEN   (1u << 1)
+#define UARTLCRH_EPS   (1u << 2)
+#define UARTLCRH_STP2  (1u << 3)
+#define UARTLCRH_FEN   (1u << 4)
+#define UARTLCRH_WLEN_8 (3u << 5) /* 8-bit words */
+
+/* UARTRSR / DR error bits */
+#define UARTERR_FE (1u << 0) /* Framing */
+#define UARTERR_PE (1u << 1) /* Parity */
+#define UARTERR_BE (1u << 2) /* Break */
+#define UARTERR_OE (1u << 3) /* Overrun */
+
+/* UARTICR: writing 1s clears corresponding interrupts.
+   0x7FF is commonly used to clear "all" PL011 interrupt sources. */
+#define UARTICR_ALL 0x7FFu
+
+static volatile uint32_t *g_uart_base =
+    (volatile uint32_t *)(HH_PHYS_BASE + UART_FALLBACK_PHYS_BASE);
+
+static inline void mmio_write(uint32_t off, uint32_t v) {
+    g_uart_base[off / 4] = v;
+}
+static inline uint32_t mmio_read(uint32_t off) {
+    return g_uart_base[off / 4];
+}
 
 void uart_init(uint64_t uart_phys_base)
 {
@@ -31,22 +61,113 @@ void uart_init(uint64_t uart_phys_base)
     }
 }
 
-void uart_putc(char c) {
-    while (g_uart_base[UARTFR / 4] & UARTFR_TXFF) {
+/* Optional: explicit hardware init (polled, no interrupts required).
+   You must supply the UART reference clock in Hz for accurate baud.
+   If clock_hz == 0, we skip baud programming and just enable 8N1 + FIFO. */
+void uart_hw_init(uint32_t clock_hz, uint32_t baud)
+{
+    /* Disable UART before reconfig */
+    mmio_write(UARTCR, 0);
+
+    /* Wait until not busy (best-effort; avoids truncating TX) */
+    while (mmio_read(UARTFR) & UARTFR_BUSY) {
         __asm__ volatile("nop");
     }
-    g_uart_base[UARTDR / 4] = (uint32_t)c;
+
+    /* Clear any pending interrupts and latched errors */
+    mmio_write(UARTICR, UARTICR_ALL);
+    mmio_write(UARTECR, 0xFF); /* clears FE/PE/BE/OE latches (write any value) */
+
+    /* Program baud rate divisors if clock known */
+    if (clock_hz != 0 && baud != 0) {
+        /* BRD = UARTCLK / (16 * baud)
+           IBRD = floor(BRD)
+           FBRD = round((BRD - IBRD) * 64)
+           Implemented with integer arithmetic. */
+        uint64_t denom = 16ull * (uint64_t)baud;
+        uint64_t ibrd  = (uint64_t)clock_hz / denom;
+        uint64_t rem   = (uint64_t)clock_hz % denom;
+
+        /* fractional = round(rem * 64 / denom) */
+        uint64_t fbrd  = (rem * 64ull + (denom / 2ull)) / denom;
+
+        /* Per PL011 expectations, FBRD is 6 bits (0..63).
+           If rounding yields 64, carry into IBRD. */
+        if (fbrd >= 64ull) {
+            ibrd += 1ull;
+            fbrd = 0ull;
+        }
+
+        mmio_write(UARTIBRD, (uint32_t)ibrd);
+        mmio_write(UARTFBRD, (uint32_t)fbrd);
+    }
+
+    /* 8N1, enable FIFOs (optional but typically desirable even in bring-up) */
+    uint32_t lcrh = UARTLCRH_WLEN_8 | UARTLCRH_FEN;
+    /* parity disabled, 1 stop bit, no break */
+    mmio_write(UARTLCR_H, lcrh);
+
+    /* Enable UART, TX, RX */
+    mmio_write(UARTCR, UARTCR_UARTEN | UARTCR_TXE | UARTCR_RXE);
 }
 
-void uart_puts(const char *s) {
+void uart_putc(char c)
+{
+    while (mmio_read(UARTFR) & UARTFR_TXFF) {
+        __asm__ volatile("nop");
+    }
+    mmio_write(UARTDR, (uint32_t)c);
+}
+
+void uart_puts(const char *s)
+{
     while (*s) {
         if (*s == '\n') uart_putc('\r');
         uart_putc(*s++);
     }
 }
 
-void uart_putnl(void) {
-    uart_puts("\n");
+void uart_putnl(void) { uart_puts("\n"); }
+
+/* --- Polled RX support --- */
+
+/* Returns true if a byte is available to read */
+bool uart_rx_ready(void)
+{
+    return (mmio_read(UARTFR) & UARTFR_RXFE) == 0;
+}
+
+/* Non-blocking getc:
+   - returns true and sets *out if a char was read
+   - returns false if RX FIFO empty
+   - clears any error latches if the read char had errors */
+bool uart_getc_nonblock(char *out)
+{
+    if (!uart_rx_ready())
+        return false;
+
+    uint32_t dr = mmio_read(UARTDR);
+
+    /* Low 8 bits are data. Bits [11:8] reflect error for this character. */
+    uint32_t err = (dr >> 8) & 0x0Fu;
+    if (err) {
+        /* Clear latched error state to avoid sticky conditions. */
+        mmio_write(UARTECR, 0xFF);
+        /* You can choose to drop errored characters; here we still return it. */
+    }
+
+    *out = (char)(dr & 0xFFu);
+    return true;
+}
+
+/* Blocking getc */
+char uart_getc(void)
+{
+    char c;
+    while (!uart_getc_nonblock(&c)) {
+        __asm__ volatile("nop");
+    }
+    return c;
 }
 
 void uart_puthex64(uint64_t value) {
@@ -83,4 +204,3 @@ void uart_putu64_dec(uint64_t value) {
         uart_putc(buf[i]);
     }
 }
-

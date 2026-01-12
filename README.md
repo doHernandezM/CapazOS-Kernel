@@ -1,266 +1,239 @@
-# CapazOS Kernel (AArch64)
+# CapazOS (AArch64) — Boot + Kernel + Core (scaffold)
 
 ## Concept
 
-CapazOS is an educational, freestanding **AArch64** kernel built to explore a modern OS design in small, testable milestones under **QEMU `virt`**, then eventually on real hardware.
+CapazOS is an educational, freestanding **AArch64** operating system project designed around:
 
-The long-term design intent is:
+- **Security by construction** (small trusted base, default-deny mappings, W^X)
+- **A modern capability model** (explicit authority, no ambient “global” privileges)
+- **A Swift-first “Core” layer** (policy and services in Swift later; kernel mechanisms kept minimal)
 
-- **Capability-based security model**
-  - fine-grained authority (object capabilities) instead of ambient privileges
-  - explicit delegation and revocation strategies (eventually)
-  - a small trusted computing base and strong isolation boundaries
-
-- **Energy-aware system design**
-  - predictable low-power idle paths (WFI/WFE discipline)
-  - timer/interrupt design that supports deep sleep
-  - later: DVFS hooks and energy-aware scheduling policies
-
-- **Minimal, comprehensible bring-up**
-  - higher-half kernel mapping from the start
-  - DTB-driven hardware discovery (UART, RAM, interrupts, timers)
-  - incremental transition to real drivers, interrupts, and a scheduler
+The current focus is establishing a **secure kernel mechanism layer** under **QEMU `virt`** that is stable enough to host a higher-level **Core** layer (initially C, then progressively Swift).
 
 ## Repository layout
 
-This repo builds **two images**:
+This workspace contains **two projects**:
 
-- **Boot stage** (`Kernel/Sources/Arch/aarch64/start.S`)
-  - runs at EL1 under QEMU
-  - sets up a temporary stack and early exception vectors
-  - creates minimal translation tables and enables the MMU
-  - locates the kernel image in RAM, constructs a `boot_info`, and branches to the kernel entry
+- **Kernel** (C + assembly)
+  - Builds two images: **Boot** + **Kernel**
+  - Runs on QEMU `qemu-system-aarch64 -machine virt -cpu cortex-a72`
+- **Core** (Swift)
+  - Present as a project scaffold (intentionally minimal right now)
+  - Later becomes the primary home for policy, services, and higher-level OS logic
 
-- **Kernel stage** (C + assembly)
-  - `_kcrt0` trampoline moves the stack into the higher-half direct map and tail-calls C
-  - `kmain()` installs kernel vectors, initializes the kernel MMU tables, initializes UART, and prints status
-  - DTB parsing feeds platform data into subsystems
+### Boot/Kernel two-image design
 
-Artifacts are written to `build/` at the repo root:
-- `build/boot.elf`, `build/boot.bin`
-- `build/kernel.elf`, `build/kernel.bin`
-- `build/kernel.img` (boot + padding + kernel; passed to QEMU as `-kernel`)
+The system builds **two separately-linked artifacts**:
 
-## Current status
+- **Boot stage**
+  - minimal EL1 setup, boot-only vectors, boot-only BSS clear
+  - constructs coarse page tables and enables the MMU
+  - validates/preserves the DTB pointer and hands a single `boot_info_t*` to the kernel in `x0`
+- **Kernel stage**
+  - owns TTBR1 mappings, disables TTBR0 (default-deny user mapping)
+  - installs kernel vectors and enforces runtime **W^X**
+  - brings up memory management, interrupts/timers, and the thread/scheduler baseline
 
-As of **Boot/Kernel 0.0.6**:
+## Current status (where we are now)
 
-- Stable bring-up to the kernel stage (MMU enabled, kernel vectors installed).
-- Higher-half direct map is active early; TTBR0 is default-deny (disabled) in kernel runtime.
-- Kernel C runtime zeroes `.bss` deterministically before `kmain()`.
-- DTB parsing provides `/memory` ranges and reserved regions; results are used to build a correct usable-page view.
+As of **Boot/Kernel 0.0.8D** (**Build 47**, 2026-01-12):
 
-### Milestone: PMM online (bitmap)
+### Milestone position
+- **M1–M4 are effectively complete**:
+  - two-image boot/kernel pipeline is stable
+  - kernel takes over MMU, disables TTBR0 early (default-deny)
+  - runtime **W^X** policy is enforced (text RX, rodata R/NX, data+bss RW/NX, device NX)
 
-We have a working **bitmap physical memory manager (PMM)** suitable for QEMU `virt` bring-up:
+### Bring-up + memory/MMU
+- Higher-half direct map is active early.
+- Kernel rebuilds TTBR1 mappings and installs kernel VBAR.
+- DTB parsing is active and used for platform data:
+  - `/memory` ranges
+  - memreserve / reserved ranges
+  - PL011 UART discovery (QEMU `virt`)
+- Memory subsystem is online:
+  - **PMM (bitmap)** based on DTB-derived usable ranges
+  - **kernel heap (`kheap`)** for variable-sized allocations
 
-- **Usable ranges are correct-by-construction for PMM**
-  - Start from DTB `/memory` ranges (page-aligned)
-  - Subtract DTB reserved ranges (page-aligned)
-  - Subtract implicit reservations (page-aligned):
-    - boot region `[lowest_ram_base, kernel_phys_base)`
-    - kernel runtime footprint `[kernel_phys_base, kernel_runtime_end_pa)` (includes `.bss`)
-    - DTB blob range
-    - PMM metadata pages
-  - Clamp output to the TTBR1 direct-map window (short-term correctness)
-  - Output spans are sorted, merged, non-overlapping, and page-aligned.
+### Interrupts + timers
+- Stable interrupt baseline under QEMU `virt`:
+  - **GICv2** init + IRQ dispatch
+  - **ARM generic timer (CNTV)** programming and tick delivery
+- IRQ plumbing exists and is kept separate from synchronous exception reporting (bring-up oriented).
 
-- **PMM metadata placement (bootstrap, option B)**
-  - A fixed number of pages immediately after the kernel runtime footprint are reserved for:
-    - `struct pmm_state`
-    - the bitmap
-  - The bitmap is accessed via the high-half direct map:
-    - `phys_to_virt(pa) = HH_PHYS_4000_BASE + (pa - RAM_BASE)`
+### Threads + scheduling (bring-up oriented)
+- Kernel thread structures and AArch64 context switching support exist.
+- Scheduler baseline exists (cooperative foundation; preemption hooks are present but not yet “contract-locked”).
+- A minimal deadline-queue exists as groundwork for later timer-based scheduling.
 
-- **Minimal PMM API (single-core)**
-  - `pmm_init(const boot_info_t*)`
-  - `pmm_alloc_page(uint64_t *out_pa)`
-  - `pmm_alloc_pages(uint32_t count, uint64_t *out_pa)` (contiguous)
-  - `pmm_free_page(uint64_t pa)`
-  - Optional: `pmm_alloc_page_va(uint64_t *out_pa)` for direct-map VA
+### Core (Swift)
+- A separate **Core** Xcode project exists but is intentionally minimal.
+- Build scripts support producing a Swift object (Embedded mode), but the Swift Core is **not integrated** into the kernel yet.
 
-- **Debug validation**
-  - With `KMAIN_DEBUG=1`, `kmain()` runs a quick allocation/free test and prints:
-    - `PMM(free/total): free/total`
-    - start/end counters plus intermediate cycles (single-page + contiguous allocations)
+---
 
-### Milestone: M6 — Interrupts + timer tick (GIC + ARM generic timer)
+## Roadmap (milestone plan)
 
-We now have a stable interrupt + timer baseline under QEMU `virt`:
+This roadmap is designed to support your three goals:
+1) a secure OS, 2) a capability OS, 3) as much of Core as possible in Swift (later).
 
-- **Vector split: sync vs IRQ**
-  - Synchronous exceptions stay on the existing “dump and park” path.
-  - IRQs enter a distinct handler, dispatch, restore registers, and `eret` back to the interrupted context.
+### Milestone M4.5 — Contracts locked (invariants only)
 
-- **GICv2 bring-up**
-  - `HAL/gicv2.*` initializes the distributor + CPU interface.
-  - IRQ dispatch acknowledges the interrupt (IAR), routes to a registered handler, and EOIs it.
+**Goal:** make execution context rules, allocation rules, and W^X assertions explicit and enforced.
 
-- **ARM Generic Timer (CNTV) periodic tick**
-  - `HAL/timer_generic.*` programs CNTV for a periodic interrupt (default 100 Hz in `kmain()`).
-  - The kernel maintains a `ticks` counter; `kmain()` prints a “Tick: N” line at a low rate (once per second) to avoid UART reentrancy/perf issues.
+Acceptance criteria
+- Execution contexts defined and enforced:
+  - IRQ context cannot allocate, cannot block, cannot call into Core.
+  - Thread context may allocate and may call Core.
+- Single allocation policy documented:
+  - which allocator is used for what (kernel objects vs buffers).
+- W^X invariants asserted with the current image layout:
+  - text RX, rodata R/NX, data+bss RW/NX, device NX (plus checks/asserts).
 
-### Next steps
+Phases
+1. Context framework
+   - `in_irq()` indicator + `ASSERT_THREAD_CONTEXT()` / `ASSERT_IRQ_CONTEXT()`
+   - wrap allocator entry points with “deny in IRQ” assertions
+2. Hardening hooks
+   - allocation counters by type, peak heap, PMM pressure
+   - poison-on-free (at least one allocator path)
 
-Recommended next milestones:
+### Milestone M5.0 — Core boundary introduced (C-only Core, no Swift yet)
 
-- **M7 — Cooperative threads**
-  - context switch + thread structs
-  - `thread_create(entry, arg)`, `yield()`, minimal round-robin run queue
+**Goal:** introduce a strict kernel↔core seam so policy can move out of kernel cleanly later.
 
-- **M8 — Preemption (timer-driven)**
-  - set a `need_resched` flag in the timer ISR
-  - schedule-on-return / deferred reschedule path
+Acceptance criteria
+- A separate Core module is linked into the kernel image (still C at this stage).
+- Core code is placed in dedicated sections:
+  - `.text.core/.rodata.core/.data.core/.bss.core`
+- Kernel calls `core_main()` exactly once on boot.
+- Core uses the Kernel Services ABI only (no internal kernel headers).
 
-- **M9 — Basic synchronization**
-  - spinlocks, IRQ masking discipline, per-CPU scaffolding
+Phases
+1. Section split in linker + MMU classifier updates
+2. Kernel Services ABI v1 introduced (`kernel_services_v1_t`)
+3. Restrict Core’s include path to enforce the boundary
+
+### Milestone M5.5 — Allocator truth established (hybrid model)
+
+**Goal:** make memory allocation predictable and safe enough for Core growth (and later Swift).
+
+Acceptance criteria
+- One public allocation surface for Core (`services->alloc/free`) defined as **thread-context only**.
+- Kernel objects use type-specific allocation (slabs/caches) for at least:
+  - threads/tasks
+  - capability entries
+  - IPC message objects (or endpoint queue nodes)
+- Variable-sized buffers use `kheap` (not used for kernel objects).
+
+Phases
+1. Define tiers: PMM (pages) → slabs (objects) → kheap (buffers)
+2. Convert high-churn objects first (threads, IPC message objects)
+3. Add observability: per-cache stats, failure behavior, peak usage
+
+### Milestone M6 — Concurrency baseline for Core
+
+**Goal:** run Core code in a controlled execution model that is safe and debuggable.
+
+Acceptance criteria
+- Core runs in one dedicated kernel thread (“core/main”).
+- IRQ handlers do top-half only and enqueue work to a deferred-work queue.
+- Scheduling policy for this stage is explicit:
+  - recommended: cooperative baseline or preemption-disabled while Core runs.
+
+Phases
+1. Deferred work queue + worker drain in thread context
+2. Core thread lifecycle and controlled entrypoint
+3. Explicit preemption/critical-section policy for Core
+
+### Milestone M7 — Capability kernel skeleton (mechanisms)
+
+**Goal:** establish capability mechanisms without turning the kernel into a policy engine.
+
+Acceptance criteria
+- Capability storage exists (cap space / table).
+- Capabilities carry type + rights.
+- Basic operations exist: create, dup/transfer, drop (revocation can be staged).
+
+### Milestone M8 — IPC endpoints + message passing (capability-scoped)
+
+Acceptance criteria
+- Endpoints are kernel objects referenced by capabilities.
+- Message send/recv works between threads with explicit lifetime rules.
+- Capability transfer in messages is staged in once base IPC is stable.
+
+### Milestone M9 — Service registry + discovery (policy in Core)
+
+Acceptance criteria
+- Registry maps service IDs → endpoint capabilities.
+- Clients obtain service access via explicit lookup (no global ambient namespace).
+- Registry and discovery are implemented as Core policy (not kernel mechanism).
+
+### Milestone M10 — Intent descriptors (data model + hooks)
+
+Acceptance criteria
+- Intent schema exists (latency/throughput/background/etc.).
+- Tasks/threads carry intent descriptors.
+- Scheduler accepts intent inputs (policy can remain naive initially).
+
+---
 
 ## Build prerequisites
 
 ### macOS
+- Xcode (workspace-based development)
+- Homebrew LLVM + LLD (deterministic external toolchain)
 
-Homebrew examples:
-
-- LLVM + lld:
-  - `brew install llvm lld`
-- QEMU:
-  - `brew install qemu`
-- Python 3:
-  - macOS typically ships a usable `python3`, or use `brew install python`
-- Optional for debugging:
-  - `brew install gdb` (or `gdb-multiarch` if you use it)
-
-The build scripts default to Homebrew paths:
+The scripts default to Homebrew paths:
 - LLVM tools: `/opt/homebrew/opt/llvm/bin`
 - LLD: `/opt/homebrew/opt/lld/bin`
 
-If you are on an Intel Mac or have different install paths, update `Kernel/Scripts/toolchain.env`.
+If you are on an Intel Mac or have different install paths, update `Scripts/toolchain.env`.
 
 ### Linux
-
 Debian/Ubuntu examples:
 
 - `sudo apt-get update`
 - `sudo apt-get install -y clang lld llvm make python3 qemu-system-aarch64 gdb-multiarch`
 
-Notes:
-- If your distro installs LLVM tools without versioned paths, you can typically use:
-  - `LLVM_BIN=/usr/bin`
-  - `LLD_BIN=/usr/bin`
-  by editing `Kernel/Scripts/toolchain.env` (or by exporting `CC`, `LD`, etc. in your shell).
+If your distro installs LLVM tools without versioned paths, you can typically use:
+- `LLVM_BIN=/usr/bin`
+- `LLD_BIN=/usr/bin`
+by editing `Scripts/toolchain.env`.
 
 ## Build
 
 From the repo root:
 
 ```bash
-./Kernel/Scripts/build.sh
+# Build boot + kernel (combined image for QEMU)
+./Scripts/build.sh kernel_c
+
+# If your checkout defaults to kernel build, this usually also works:
+./Scripts/build.sh
 ```
 
-This produces `build/kernel.img` and prints the computed kernel physical/virtual base addresses.
+Artifacts are emitted under `build/`:
+- `build/boot.elf`, `build/boot.bin`
+- `build/kernel.elf`, `build/kernel.bin`
+- `build/kernel.img` (boot + padding + kernel; passed to QEMU as `-kernel`)
 
-### Optional: enable a deliberate fault test
+## Run (QEMU)
+
+If you have the helper script:
 
 ```bash
-CAPAZ_FAULT_TEST=1 ./Kernel/Scripts/build.sh
+./Scripts/run.sh
 ```
 
-## Run under QEMU
-
-From the repo root:
-
-```bash
-QEMU_MACHINE="virt,gic-version=2" ./Kernel/Scripts/run-qemu.sh
-```
-
-Defaults (see `Kernel/Scripts/run-qemu.sh`):
-- machine: `virt` (override to `virt,gic-version=2` for GICv2)
-- CPU: `cortex-a72`
-- memory: `512M`
-- serial: `stdio`
-
-### Manual run command (equivalent)
+Manual invocation (typical):
 
 ```bash
 qemu-system-aarch64 \
-  -machine virt,gic-version=2 \
-  -cpu cortex-a72 -smp 1 \
+  -machine virt \
+  -cpu cortex-a72 \
   -m 128M \
   -nographic \
   -serial mon:stdio \
   -kernel build/kernel.img
 ```
-
-### Run with a GDB stub
-
-```bash
-qemu-system-aarch64 \
-  -machine virt,gic-version=2 \
-  -cpu cortex-a72 -smp 1 \
-  -m 128M \
-  -nographic \
-  -serial mon:stdio \
-  -kernel build/kernel.img \
-  -S -gdb tcp::1234
-```
-
-## Debug with GDB
-
-In one terminal (QEMU, halted):
-
-```bash
-qemu-system-aarch64 \
-  -machine virt,gic-version=2 \
-  -cpu cortex-a72 -smp 1 \
-  -m 128M \
-  -nographic \
-  -serial mon:stdio \
-  -kernel build/kernel.img \
-  -S -gdb tcp::1234
-```
-
-In another terminal:
-
-```bash
-gdb-multiarch build/kernel.elf
-(gdb) target remote :1234
-(gdb) b kmain
-(gdb) c
-```
-
-Notes:
-- If you want the earliest breakpoint, load `build/boot.elf` instead and break on `_start`.
-- When QEMU is started with `-S`, the CPU is halted at reset; you must `continue` from the debugger for anything (including timer ticks) to run.
-
-## Long-term goals
-
-The “north star” is a small, capability-oriented kernel that can evolve into:
-
-- **Boot to userspace** with a minimal init process
-- **DTB-driven driver bring-up**
-  - UART from `/chosen/stdout-path`
-  - GIC interrupt controller, ARM timer, PSCI, virtio devices (QEMU), etc.
-- **Memory management**
-  - physical memory manager (PMM)
-  - virtual memory subsystem with page fault handling
-  - kernel heap and object allocators
-- **Capability system**
-  - kernel objects addressed via capabilities
-  - message-passing IPC with explicit authority transfer
-  - per-process address spaces and resource accounting
-- **Power management**
-  - structured idle states, tickless scheduling (later)
-  - timer coalescing and interrupt discipline
-  - hooks for DVFS/governors on real hardware (later)
-
-## Platform status
-
-| AArch64 Platform | Status |  |
-|---|---|---|
-| QEMU `virt` | Currently Builds | 🟢 |
-| Raspberry Pi | Short-term Roadmap | 🟠 |
-| Apple Silicon | Long-term Roadmap | 🔴 |
-
-## License
-
-BSD 2-Clause. See `LICENSE`.

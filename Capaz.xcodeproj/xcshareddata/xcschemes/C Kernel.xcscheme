@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AAE76CF62EF762A6005230EB"
-               BuildableName = "KernelImage"
-               BlueprintName = "KernelImage"
+               BuildableName = "C Kernel"
+               BlueprintName = "C Kernel"
                ReferencedContainer = "container:Capaz.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -51,8 +51,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AAE76CF62EF762A6005230EB"
-            BuildableName = "KernelImage"
-            BlueprintName = "KernelImage"
+            BuildableName = "C Kernel"
+            BlueprintName = "C Kernel"
             ReferencedContainer = "container:Capaz.xcodeproj">
          </BuildableReference>
       </MacroExpansion>

@@ -7,29 +7,29 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
-		AAE76CF62EF762A6005230EB /* KernelImage */ = {
+		AAE76CF62EF762A6005230EB /* C Kernel */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "KernelImage" */;
+			buildConfigurationList = AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "C Kernel" */;
 			buildPhases = (
 				AAE76CFA2EF762C2005230EB /* ShellScript */,
 			);
 			dependencies = (
 			);
-			name = KernelImage;
+			name = "C Kernel";
 			packageProductDependencies = (
 			);
 			productName = KernelImage;
 		};
-		AAE76CFE2EF7875A005230EB /* RunQemu */ = {
+		AAE76CFE2EF7875A005230EB /* Run */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "RunQemu" */;
+			buildConfigurationList = AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "Run" */;
 			buildPhases = (
 				AAE76D022EF78768005230EB /* ShellScript */,
 			);
 			dependencies = (
 				AAE76D042EF787C9005230EB /* PBXTargetDependency */,
 			);
-			name = RunQemu;
+			name = Run;
 			packageProductDependencies = (
 			);
 			productName = RunQemu;
@@ -228,8 +228,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AAE76CF62EF762A6005230EB /* KernelImage */,
-				AAE76CFE2EF7875A005230EB /* RunQemu */,
+				AAE76CF62EF762A6005230EB /* C Kernel */,
+				AAE76CFE2EF7875A005230EB /* Run */,
 			);
 		};
 /* End PBXProject section */
@@ -274,7 +274,7 @@
 /* Begin PBXTargetDependency section */
 		AAE76D042EF787C9005230EB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AAE76CF62EF762A6005230EB /* KernelImage */;
+			target = AAE76CF62EF762A6005230EB /* C Kernel */;
 			targetProxy = AAE76D032EF787C9005230EB /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -457,7 +457,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "KernelImage" */ = {
+		AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "C Kernel" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AAE76CF82EF762A6005230EB /* Debug */,
@@ -466,7 +466,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "RunQemu" */ = {
+		AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "Run" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AAE76D002EF7875A005230EB /* Debug */,
