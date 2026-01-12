@@ -18,6 +18,8 @@
  *   5) Pass boot_info pointer as high-half direct-map VA (safe if kernel disables TTBR0)
  *   6) Capture DTB pointer from x0 and pass DTB (VA + size) in boot_info
  */
+#include "build_info.h"
+
 
     .section .text._start, "ax"
     .global _start
@@ -254,7 +256,14 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .asciz "\nBoot: 0.0.6\nPlatform: AArch64\n\n"
+    .ascii "\nBoot: "
+    .ascii CAPAZ_BOOT_VERSION
+    .ascii "\nPlatform: "
+    .ascii CAPAZ_BOOT_PLATFORM
+    .ascii "\n\n"
+    .byte 0
+
+
 
     .section .data.boot, "aw"
 uart_base:

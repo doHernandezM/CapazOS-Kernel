@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "boot_info.h"
+#include "build_info.h"
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"
@@ -58,6 +59,7 @@ static void print_total_memory_from_dtb(void)
     uart_puts("Memory: ");
     uart_puts(buf);
     uart_putnl();
+
 }
 
 #if KMAIN_DEBUG
@@ -170,7 +172,14 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: 0.0.8D\nMachine: Virt\n");
+    uart_puts("Kernel: ");
+    uart_puts(CAPAZ_KERNEL_VERSION);
+    uart_putnl();
+
+    uart_puts("Machine: ");
+    uart_puts(CAPAZ_MACHINE);
+    uart_putnl();
+
 
     
 #if KMAIN_DEBUG
@@ -263,6 +272,12 @@ void kmain(const boot_info_t *boot_info)
 
     irq_global_enable();
 
+    uart_puts("Build: ");
+    uart_putu64_dec(CAPAZ_BUILD_NUMBER);
+    uart_puts("  ");
+    uart_puts(CAPAZ_BUILD_DATE);
+    uart_putnl();
+    
     /* Report tick progress from the idle loop (not from ISR). */
 #if (CONFIG_TICKLESS == 0)
     uint64_t last = 0;
