@@ -19,6 +19,7 @@
 #include "mmu.h"
 #include "dtb.h"
 #include "uart_pl011.h"
+#include "panic.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -56,6 +57,13 @@ extern uint8_t KERNEL_PHYS_BASE[];
 
 /* Offset of the physical RAM base used by the boot mapping. */
 #define RAM_BASE 0x40000000ULL
+
+/* Translate a physical address in RAM to its higher-half direct-map VA. */
+static inline uint64_t mmu_pa_to_va(uint64_t pa)
+{
+    /* This kernel assumes RAM is direct-mapped starting at HH_PHYS_4000_BASE. */
+    return HH_PHYS_4000_BASE + (pa - RAM_BASE);
+}
 
 #define RAM_BLOCK_SIZE (2ULL * 1024 * 1024)
 #define RAM_DIRECTMAP_SIZE (512ULL * RAM_BLOCK_SIZE) /* legacy 1GiB window; no longer clamps DTB RAM mapping */
@@ -149,6 +157,102 @@ static uint64_t *l2_for_l1[512];
 static uint64_t l3_pool[64][512] __attribute__((aligned(4096)));
 static size_t l3_pool_used = 0;
 
+
+/* M4.5: W^X invariants self-test helpers */
+
+static inline uint64_t desc_type(uint64_t desc) { return (desc & 0x3ULL); }
+static inline uint64_t desc_addr(uint64_t desc) { return (desc & 0x0000FFFFFFFFF000ULL); }
+
+static uint64_t mmu_lookup_desc(uint64_t va)
+{
+    const uint64_t *l0 = l0_table;
+    uint64_t i0 = (va >> 39) & 0x1FFULL;
+    uint64_t d0 = l0[i0];
+    if (d0 == 0) return 0;
+
+    if (desc_type(d0) != DESC_TABLE) return d0;
+    uint64_t *l1 = (uint64_t *)(uintptr_t)mmu_pa_to_va(desc_addr(d0));
+    uint64_t i1 = (va >> 30) & 0x1FFULL;
+    uint64_t d1 = l1[i1];
+    if (d1 == 0) return 0;
+
+    if (desc_type(d1) == DESC_BLOCK) return d1;
+    if (desc_type(d1) != DESC_TABLE) return 0;
+
+    uint64_t *l2 = (uint64_t *)(uintptr_t)mmu_pa_to_va(desc_addr(d1));
+    uint64_t i2 = (va >> 21) & 0x1FFULL;
+    uint64_t d2 = l2[i2];
+    if (d2 == 0) return 0;
+
+    if (desc_type(d2) == DESC_BLOCK) return d2;
+    if (desc_type(d2) != DESC_TABLE) return 0;
+
+    uint64_t *l3 = (uint64_t *)(uintptr_t)mmu_pa_to_va(desc_addr(d2));
+    uint64_t i3 = (va >> 12) & 0x1FFULL;
+    return l3[i3];
+}
+
+static void mmu_expect_page(uint64_t va, bool expect_exec, bool expect_ro, bool expect_device)
+{
+    uint64_t d = mmu_lookup_desc(va);
+    if (d == 0) panic("mmu: selftest missing mapping");
+
+    bool is_block = (desc_type(d) == DESC_BLOCK);
+    bool is_page  = (desc_type(d) == DESC_PAGE);
+    if (!(is_block || is_page)) panic("mmu: selftest unexpected desc type");
+
+    /* AttrIndx is bits[4:2]. */
+    uint64_t attr = (d >> 2) & 0x7ULL;
+    bool is_dev = (attr == (ATTRINDX_DEVICE >> 2));
+    if (expect_device != is_dev) panic("mmu: selftest AttrIndx mismatch");
+
+    /* AP is bits[7:6]. We use AP=2 for RO EL1 in this kernel. */
+    uint64_t ap = (d >> 6) & 0x3ULL;
+    bool is_ro = (ap == 2ULL);
+    if (expect_ro != is_ro) panic("mmu: selftest AP mismatch");
+
+    bool xn = ((d >> 53) & 1ULL) || ((d >> 54) & 1ULL);
+    bool is_exec = !xn;
+    if (expect_exec != is_exec) panic("mmu: selftest XN mismatch");
+}
+
+static void mmu_assert_layout_and_wx(void)
+{
+    extern uint8_t __text_start[], __text_end[];
+    extern uint8_t __rodata_start[], __rodata_end[];
+    extern uint8_t __data_start[], __data_end[];
+    extern uint8_t __bss_start[], __bss_end[];
+
+        /* Basic monotonic layout checks (compare addresses, not arrays). */
+    uintptr_t text_start   = (uintptr_t)__text_start;
+    uintptr_t text_end     = (uintptr_t)__text_end;
+    uintptr_t rodata_start = (uintptr_t)__rodata_start;
+    uintptr_t rodata_end   = (uintptr_t)__rodata_end;
+    uintptr_t data_start   = (uintptr_t)__data_start;
+    uintptr_t data_end     = (uintptr_t)__data_end;
+    uintptr_t bss_start    = (uintptr_t)__bss_start;
+    uintptr_t bss_end      = (uintptr_t)__bss_end;
+
+    if (!(text_start < text_end)) panic("mmu: bad text range");
+    if (!(rodata_start < rodata_end)) panic("mmu: bad rodata range");
+    if (!(data_start < data_end)) panic("mmu: bad data range");
+    if (!(bss_start < bss_end)) panic("mmu: bad bss range");
+
+    if (!(text_end <= rodata_start)) panic("mmu: segments overlap (text/rodata)");
+    if (!(rodata_end <= data_start)) panic("mmu: segments overlap (rodata/data)");
+    if (!(data_end <= bss_start)) panic("mmu: segments overlap (data/bss)");
+
+    /* Representative permission checks. */
+    mmu_expect_page((uint64_t)(uintptr_t)__text_start,   /*exec*/true,  /*ro*/true,  /*dev*/false);
+    mmu_expect_page((uint64_t)(uintptr_t)__rodata_start, /*exec*/false, /*ro*/true,  /*dev*/false);
+    mmu_expect_page((uint64_t)(uintptr_t)__data_start,   /*exec*/false, /*ro*/false, /*dev*/false);
+    mmu_expect_page((uint64_t)(uintptr_t)__bss_start,    /*exec*/false, /*ro*/false, /*dev*/false);
+
+    /* Device mapping sanity: pick a VA in the device window (low addresses are mapped as device). */
+    mmu_expect_page(0xFFFF800000000000ULL + 0x0000000009000000ULL, /*exec*/false, /*ro*/false, /*dev*/true);
+}
+
+
 /* Allocate a fresh L3 page table from the static pool.  Panics if
  * exhausted.  Returns a higher‑half virtual address.  The table is
  * zeroed on allocation.
@@ -223,20 +327,20 @@ static void page_alloc_init(void)
     alloc_virt = HH_PHYS_4000_BASE + (alloc_phys - RAM_BASE);
 }
 
-static void *page_alloc(void)
-{
-    uint64_t va = alloc_virt;
-    uint64_t pa = alloc_phys;
-    alloc_phys += 0x1000ULL;
-    alloc_virt += 0x1000ULL;
-    /* Zero memory via the direct mapping. */
-    volatile uint64_t *p = (volatile uint64_t *)va;
-    for (size_t i = 0; i < 512; ++i) {
-        p[i] = 0;
-    }
-    (void)pa;
-    return (void *)va;
-}
+//static void *page_alloc(void)
+//{
+//    uint64_t va = alloc_virt;
+//    uint64_t pa = alloc_phys;
+//    alloc_phys += 0x1000ULL;
+//    alloc_virt += 0x1000ULL;
+//    /* Zero memory via the direct mapping. */
+//    volatile uint64_t *p = (volatile uint64_t *)va;
+//    for (size_t i = 0; i < 512; ++i) {
+//        p[i] = 0;
+//    }
+//    (void)pa;
+//    return (void *)va;
+//}
 
 
 void mmu_init(const boot_info_t *boot_info)
@@ -492,4 +596,7 @@ void mmu_init(const boot_info_t *boot_info)
      * the kernel exception vectors are installed.  The memory
      * attributes for the kernel image enforce W^X at page
      * granularity and mark device memory non‑executable.  */
+
+    /* M4.5: prove W^X invariants with current image layout. */
+    mmu_assert_layout_and_wx();
 }

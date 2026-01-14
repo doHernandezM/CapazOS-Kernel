@@ -79,4 +79,6 @@ void irq_restore(uint64_t prev_daif);
 /* True if IRQs are currently masked (DAIF.I == 1). */
 bool irq_irqs_disabled(void);
 
+/* True if currently executing in IRQ context (nesting-aware). */
+bool in_irq(void);
 #endif /* IRQ_H */

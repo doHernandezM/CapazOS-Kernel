@@ -15,6 +15,7 @@
 
 // For trap frame sizing checks (irq_sp range validation).
 #include "irq.h"
+#include "context.h"
 #include "preempt.h"
 
 #define SCHED_ASSERT(cond, msg) do { if (!(cond)) panic(msg); } while (0)
@@ -169,7 +170,9 @@ static thread_t *sched_pick_next(void) {
 }
 
 void yield(void) {
-    uint64_t flags = irq_save();
+    
+    ASSERT_THREAD_CONTEXT();
+uint64_t flags = irq_save();
     thread_t *prev = s_current;
     SCHED_ASSERT(prev != NULL, "sched: current is NULL");
     SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");

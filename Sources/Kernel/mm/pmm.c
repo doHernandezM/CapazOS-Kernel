@@ -9,6 +9,7 @@
 #include "dtb.h"
 #include "uart_pl011.h"
 #include "panic.h"
+#include "context.h"
 
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
@@ -42,6 +43,25 @@ typedef struct pmm_state {
 /* Stored in the metadata region; also cached as a VA pointer. */
 static pmm_state_t *g_pmm = 0;
 
+/* M4.5 hardening: PMM pressure/counters. */
+static uint64_t g_pmm_alloc_calls = 0;
+static uint64_t g_pmm_free_calls = 0;
+static uint64_t g_pmm_peak_used_pages = 0;
+static uint64_t g_pmm_low_free_pages = UINT64_MAX;
+
+/*
+ * Track PMM pressure signals:
+ *  - peak used pages (high watermark)
+ *  - low free pages (low watermark)
+ */
+static inline void pmm_update_pressure(const pmm_state_t *st) {
+    if (!st) return;
+    uint64_t used = st->total_pages - st->free_pages;
+    if (used > g_pmm_peak_used_pages) g_pmm_peak_used_pages = used;
+    if (st->free_pages < g_pmm_low_free_pages) g_pmm_low_free_pages = st->free_pages;
+}
+
+
 static inline uint64_t align_down_4k(uint64_t x) { return x & ~(PAGE_SIZE - 1ULL); }
 static inline uint64_t align_up_4k(uint64_t x)   { return (x + (PAGE_SIZE - 1ULL)) & ~(PAGE_SIZE - 1ULL); }
 
@@ -68,57 +88,80 @@ static inline bool bit_test(const uint8_t *bm, uint64_t idx) {
     return ((bm[idx >> 3] >> (idx & 7)) & 1u) != 0;
 }
 
-static void pmm_panic(const char *msg) {
-    panic_with_prefix("PMM PANIC: ", msg);
-}
+/*
+ * Bitmap convention:
+ *   bit == 1  => page is RESERVED/ALLOCATED
+ *   bit == 0  => page is FREE
+ *
+ * The PMM code below uses helper routines named bitmap_mark_*.
+ * In this repo revision those helpers were not defined anywhere, so Clang
+ * (C99+) correctly rejects the implicit declarations.
+ *
+ * Keep these helpers local to pmm.c: they're tightly coupled to pmm_state_t.
+ */
 
-/* Mark all pages reserved (1). */
+// Use align_down_4k / align_up_4k defined above.
+
 static void bitmap_mark_all_reserved(pmm_state_t *st) {
-    memset(st->bitmap, 0xFF, (size_t)st->bitmap_bytes);
+    if (!st || !st->bitmap) return;
+    // mark everything reserved
+    memset(st->bitmap, 0xFF, st->bitmap_bytes);
+    st->free_pages = 0;
 }
 
-/* Mark a physical range [start,end) free (0), clamped to the PMM window. */
 static void bitmap_mark_range_free(pmm_state_t *st, uint64_t start_pa, uint64_t end_pa) {
-    if (end_pa <= start_pa) return;
+    if (!st || !st->bitmap) return;
 
-    if (start_pa < st->base_pa) start_pa = st->base_pa;
-    if (end_pa   > st->limit_pa) end_pa = st->limit_pa;
+    // Treat as [start_pa, end_pa) and page-align conservatively.
+    uint64_t s = align_up_4k(start_pa);
+    uint64_t e = align_down_4k(end_pa);
+    if (e <= s) return;
 
-    start_pa = align_up_4k(start_pa);
-    end_pa   = align_down_4k(end_pa);
-    if (end_pa <= start_pa) return;
+    // Clamp to managed window.
+    if (s < st->base_pa) s = st->base_pa;
+    if (e > st->limit_pa) e = st->limit_pa;
+    if (e <= s) return;
 
-    for (uint64_t pa = start_pa; pa < end_pa; pa += PAGE_SIZE) {
-        uint64_t idx = (pa - st->base_pa) / PAGE_SIZE;
-        if (idx >= st->total_pages) break;
-        if (bit_test(st->bitmap, idx)) {
-            bit_clear(st->bitmap, idx);
+    uint64_t first = (s - st->base_pa) / PAGE_SIZE;
+    uint64_t last  = (e - st->base_pa) / PAGE_SIZE; // exclusive
+
+    for (uint64_t i = first; i < last; i++) {
+        if (bit_test(st->bitmap, i)) {
+            bit_clear(st->bitmap, i);
             st->free_pages++;
         }
     }
 }
 
-/* Mark a physical range [start,end) reserved (1), clamped to the PMM window. */
 static void bitmap_mark_range_reserved(pmm_state_t *st, uint64_t start_pa, uint64_t end_pa) {
-    if (end_pa <= start_pa) return;
+    if (!st || !st->bitmap) return;
 
-    if (start_pa < st->base_pa) start_pa = st->base_pa;
-    if (end_pa   > st->limit_pa) end_pa = st->limit_pa;
+    // Treat as [start_pa, end_pa) and page-align conservatively.
+    uint64_t s = align_down_4k(start_pa);
+    uint64_t e = align_up_4k(end_pa);
+    if (e <= s) return;
 
-    start_pa = align_down_4k(start_pa);
-    end_pa   = align_up_4k(end_pa);
-    if (end_pa <= start_pa) return;
+    // Clamp to managed window.
+    if (s < st->base_pa) s = st->base_pa;
+    if (e > st->limit_pa) e = st->limit_pa;
+    if (e <= s) return;
 
-    for (uint64_t pa = start_pa; pa < end_pa; pa += PAGE_SIZE) {
-        uint64_t idx = (pa - st->base_pa) / PAGE_SIZE;
-        if (idx >= st->total_pages) break;
-        if (!bit_test(st->bitmap, idx)) {
-            bit_set(st->bitmap, idx);
+    uint64_t first = (s - st->base_pa) / PAGE_SIZE;
+    uint64_t last  = (e - st->base_pa) / PAGE_SIZE; // exclusive
+
+    for (uint64_t i = first; i < last; i++) {
+        if (!bit_test(st->bitmap, i)) {
+            bit_set(st->bitmap, i);
             if (st->free_pages) st->free_pages--;
         }
     }
 }
 
+static void pmm_panic(const char *msg) {
+    panic_with_prefix("PMM PANIC: ", msg);
+}
+
+#if 0  /* Unused helper retained for future use; disabled to avoid -Wunused-function under -Werror. */
 /* Compute the max end of clamped DTB memory ranges, or fall back to RAM_DIRECTMAP_SIZE. */
 static uint64_t compute_limit_from_dtb(void) {
     dtb_range_t mem[64];
@@ -145,6 +188,7 @@ static uint64_t compute_limit_from_dtb(void) {
     }
     return max_end;
 }
+#endif
 
 void pmm_init(const boot_info_t *boot_info) {
     if (!boot_info) {
@@ -284,6 +328,8 @@ void pmm_init(const boot_info_t *boot_info) {
     bitmap_mark_range_reserved(st, meta_base_pa, meta_end_pa);
 
     g_pmm = st;
+    /* Initialize pressure counters from the post-reservation state. */
+    pmm_update_pressure(st);
     pmm_dump_summary();
 }
 
@@ -318,6 +364,7 @@ bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa) {
             }
 
             st->free_pages -= (uint64_t)count;
+            pmm_update_pressure(st);
             st->next_hint = i + (uint64_t)count;
             *out_pa = st->base_pa + (i * PAGE_SIZE);
             return true;
@@ -332,14 +379,20 @@ bool pmm_alloc_page(uint64_t *out_pa) {
 }
 
 void *pmm_alloc_page_va(uint64_t *out_pa) {
-    uint64_t pa = 0;
+    
+    ASSERT_THREAD_CONTEXT();
+    g_pmm_alloc_calls++;
+uint64_t pa = 0;
     if (!pmm_alloc_page(&pa)) return (void *)0;
     if (out_pa) *out_pa = pa;
     return (void *)(uintptr_t)phys_to_hh_virt(pa);
 }
 
 void pmm_free_page(uint64_t pa) {
-    pmm_state_t *st = g_pmm;
+    
+    ASSERT_THREAD_CONTEXT();
+    g_pmm_free_calls++;
+pmm_state_t *st = g_pmm;
     if (!st) return;
 
     if (pa < st->base_pa || pa >= st->limit_pa) {
@@ -360,6 +413,7 @@ void pmm_free_page(uint64_t pa) {
     if (bit_test(st->bitmap, idx)) {
         bit_clear(st->bitmap, idx);
         st->free_pages++;
+        pmm_update_pressure(st);
         if (idx < st->next_hint) st->next_hint = idx;
     }
 }
@@ -397,3 +451,4 @@ bool pmm_get_stats(uint64_t *out_free_pages, uint64_t *out_total_pages) {
     if (out_total_pages) *out_total_pages = st->total_pages;
     return true;
 }
+

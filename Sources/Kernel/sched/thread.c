@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "kheap.h"
+#include "context.h"
 #include "mem.h"
 #include "panic.h"
 #include "pmm.h"
@@ -87,7 +88,9 @@ thread_t *thread_create(void (*entry)(void *), void *arg) {
 }
 
 thread_t *thread_create_named(const char *name, void (*entry)(void *), void *arg) {
-    if (!entry) {
+    
+    ASSERT_THREAD_CONTEXT();
+if (!entry) {
         panic("thread_create: entry is NULL");
     }
 

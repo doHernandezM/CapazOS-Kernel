@@ -35,10 +35,11 @@ static inline uint64_t read_cntvct(void)
     return v;
 }
 
-static inline void write_cntv_tval(uint32_t v)
-{
-    __asm__ volatile("msr cntv_tval_el0, %0" :: "r"(v));
-}
+//static inline void write_cntv_tval(uint32_t v)
+//{
+//    /* CNTV_TVAL_EL0 is 32-bit: force a W-register operand to satisfy clang. */
+//    __asm__ volatile("msr cntv_tval_el0, %w0" :: "r"(v));
+//}
 
 static inline void write_cntv_cval(uint64_t v)
 {
@@ -47,7 +48,9 @@ static inline void write_cntv_cval(uint64_t v)
 
 static inline void write_cntv_ctl(uint32_t v)
 {
-    __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v));
+    /* Some assemblers reject %w0 here; use 64-bit operand and mask to 32 bits. */
+    uint64_t val = (uint64_t)(v & 0xFFFFFFFFu);
+    __asm__ volatile("msr cntv_ctl_el0, %0\n\tisb" :: "r"(val) : "memory");
 }
 
 uint64_t time_now(void)
@@ -145,3 +148,4 @@ uint64_t timer_ticks_read(void)
 {
     return s_ticks;
 }
+

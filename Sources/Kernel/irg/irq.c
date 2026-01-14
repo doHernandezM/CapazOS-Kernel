@@ -1,4 +1,11 @@
+/* Nesting-aware IRQ context indicator (single-core). */
+
 #include "irq.h"
+#include "panic.h"
+
+static volatile uint32_t s_irq_depth = 0;
+
+bool in_irq(void) { return s_irq_depth != 0; }
 
 #include "gicv2.h"
 
@@ -22,6 +29,8 @@ static inline uint32_t gic_irqid(uint32_t iar)
 
 void irq_dispatch(trap_frame_t *tf)
 {
+    s_irq_depth++;
+
     /* Acknowledge the interrupt at the GIC CPU interface. */
     uint32_t iar = gicv2_acknowledge();
     uint32_t id = gic_irqid(iar);
@@ -34,13 +43,13 @@ void irq_dispatch(trap_frame_t *tf)
          * produce an IRQ storm (the CPU keeps taking the same IRQ entry).
          */
         gicv2_end_interrupt(iar);
-        return;
+        goto out;
     }
 
     /* Defensive: ignore out-of-range IDs while still EOIR'ing. */
     if (id >= IRQ_MAX) {
         gicv2_end_interrupt(iar);
-        return;
+        goto out;
     }
 
     irq_handler_t h = s_handlers[id];
@@ -50,6 +59,11 @@ void irq_dispatch(trap_frame_t *tf)
 
     /* End-of-interrupt (write back the original IAR value). */
     gicv2_end_interrupt(iar);
+
+out:
+    /* Depth tracks *nesting* while in the handler. It may be 0 after this. */
+    if (s_irq_depth == 0) panic("irq: depth underflow");
+    s_irq_depth--;
 }
 
 void irq_global_enable(void)

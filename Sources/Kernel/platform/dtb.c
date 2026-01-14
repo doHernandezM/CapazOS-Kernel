@@ -902,136 +902,136 @@ bool dtb_find_pl011_uart(uint64_t *out_phys) {
     return false;
 }
 
-static void dump_rsvmap(void) {
-    uart_puts("DTB: memreserve map\n");
-    if (!g_rsvmap) {
-        uart_puts("  (none)\n");
-        return;
-    }
+//static void dump_rsvmap(void) {
+//    uart_puts("DTB: memreserve map\n");
+//    if (!g_rsvmap) {
+//        uart_puts("  (none)\n");
+//        return;
+//    }
+//
+//    const uint8_t *p = g_rsvmap;
+//    for (int i = 0; i < 64; i++) { /* hard cap */
+//        uint64_t addr = be64(p); p += 8;
+//        uint64_t size = be64(p); p += 8;
+//        if (addr == 0 && size == 0) break;
+//
+//        uart_puts("  addr="); uart_puthex64(addr);
+//        uart_puts(" size="); uart_puthex64(size);
+//        uart_putnl();
+//    }
+//}
 
-    const uint8_t *p = g_rsvmap;
-    for (int i = 0; i < 64; i++) { /* hard cap */
-        uint64_t addr = be64(p); p += 8;
-        uint64_t size = be64(p); p += 8;
-        if (addr == 0 && size == 0) break;
 
-        uart_puts("  addr="); uart_puthex64(addr);
-        uart_puts(" size="); uart_puthex64(size);
-        uart_putnl();
-    }
-}
-
-
-static void dump_reserved_memory_node(void) {
-    uart_puts("DTB: /reserved-memory\n");
-
-    if (!g_struct || !g_strings) {
-        uart_puts("  (unavailable)\n");
-        return;
-    }
-
-    node_ctx_t stack[MAX_DEPTH];
-    int depth = -1;
-
-    /* Root defaults. */
-    uint32_t cur_addr_cells = 2;
-    uint32_t cur_size_cells = 2;
-
-    const uint8_t *p = g_struct;
-
-    bool in_reserved = false;
-    bool seen_reserved = false;
-    int reserved_depth = -1;
-
-    for (;;) {
-        uint32_t token = be32(p);
-        p += 4;
-
-        if (token == FDT_BEGIN_NODE) {
-            const char *name = (const char *)p;
-            size_t nlen = 0;
-            while (p[nlen] != '\0') nlen++;
-            p += nlen + 1;
-            p = align4(p);
-
-            if (depth + 1 >= MAX_DEPTH) return;
-            depth++;
-
-            node_ctx_t ctx = {0};
-            ctx.parent_addr_cells = (depth == 0) ? cur_addr_cells : stack[depth - 1].addr_cells;
-            ctx.parent_size_cells = (depth == 0) ? cur_size_cells : stack[depth - 1].size_cells;
-            ctx.addr_cells = ctx.parent_addr_cells;
-            ctx.size_cells = ctx.parent_size_cells;
-            ctx.is_memory = false;
-            ctx.is_uart_candidate = false;
-
-            /* Track entry into /reserved-memory subtree. */
-            if (reserved_depth < 0) {
-                const char *needle = "reserved-memory";
-                const char *t = name;
-                const char *u = needle;
-                while (*t && *u && *t == *u) { t++; u++; }
-                if (*u == '\0') {
-                    reserved_depth = depth;
-                    in_reserved = true;
-                    seen_reserved = true;
-                }
-            }
-
-            stack[depth] = ctx;
-            continue;
-        }
-
-        if (token == FDT_END_NODE) {
-            if (depth < 0) return;
-            if (depth == reserved_depth) {
-                reserved_depth = -1;
-                in_reserved = false;
-            }
-            depth--;
-            continue;
-        }
-
-        if (token == FDT_NOP) continue;
-        if (token == FDT_END) break;
-
-        if (token != FDT_PROP) return;
-
-        uint32_t len = be32(p); p += 4;
-        uint32_t nameoff = be32(p); p += 4;
-        const uint8_t *data = p;
-        p += len;
-        p = align4(p);
-
-        if (!in_reserved || depth <= reserved_depth) continue; /* only children of reserved-memory */
-        if (depth < 0) continue;
-
-        node_ctx_t *ctx = &stack[depth];
-        const char *pname = str_at(nameoff);
-
-        if (pname[0] == '#' && pname[1] == 'a') {
-            if (len == 4) ctx->addr_cells = be32(data);
-            continue;
-        }
-        if (pname[0] == '#' && pname[1] == 's') {
-            if (len == 4) ctx->size_cells = be32(data);
-            continue;
-        }
-
-        if (pname[0] == 'r' && pname[1] == 'e' && pname[2] == 'g') {
-            uint64_t addr = 0, size = 0;
-            if (parse_reg_first(data, len, ctx->parent_addr_cells, ctx->parent_size_cells, &addr, &size)) {
-                uart_puts("  addr="); uart_puthex64(addr);
-                uart_puts(" size="); uart_puthex64(size);
-                uart_putnl();
-            }
-        }
-    }
-
-    if (!seen_reserved) {
-        uart_puts("  (not present)\n");
-    }
-}
+//static void dump_reserved_memory_node(void) {
+//    uart_puts("DTB: /reserved-memory\n");
+//
+//    if (!g_struct || !g_strings) {
+//        uart_puts("  (unavailable)\n");
+//        return;
+//    }
+//
+//    node_ctx_t stack[MAX_DEPTH];
+//    int depth = -1;
+//
+//    /* Root defaults. */
+//    uint32_t cur_addr_cells = 2;
+//    uint32_t cur_size_cells = 2;
+//
+//    const uint8_t *p = g_struct;
+//
+//    bool in_reserved = false;
+//    bool seen_reserved = false;
+//    int reserved_depth = -1;
+//
+//    for (;;) {
+//        uint32_t token = be32(p);
+//        p += 4;
+//
+//        if (token == FDT_BEGIN_NODE) {
+//            const char *name = (const char *)p;
+//            size_t nlen = 0;
+//            while (p[nlen] != '\0') nlen++;
+//            p += nlen + 1;
+//            p = align4(p);
+//
+//            if (depth + 1 >= MAX_DEPTH) return;
+//            depth++;
+//
+//            node_ctx_t ctx = {0};
+//            ctx.parent_addr_cells = (depth == 0) ? cur_addr_cells : stack[depth - 1].addr_cells;
+//            ctx.parent_size_cells = (depth == 0) ? cur_size_cells : stack[depth - 1].size_cells;
+//            ctx.addr_cells = ctx.parent_addr_cells;
+//            ctx.size_cells = ctx.parent_size_cells;
+//            ctx.is_memory = false;
+//            ctx.is_uart_candidate = false;
+//
+//            /* Track entry into /reserved-memory subtree. */
+//            if (reserved_depth < 0) {
+//                const char *needle = "reserved-memory";
+//                const char *t = name;
+//                const char *u = needle;
+//                while (*t && *u && *t == *u) { t++; u++; }
+//                if (*u == '\0') {
+//                    reserved_depth = depth;
+//                    in_reserved = true;
+//                    seen_reserved = true;
+//                }
+//            }
+//
+//            stack[depth] = ctx;
+//            continue;
+//        }
+//
+//        if (token == FDT_END_NODE) {
+//            if (depth < 0) return;
+//            if (depth == reserved_depth) {
+//                reserved_depth = -1;
+//                in_reserved = false;
+//            }
+//            depth--;
+//            continue;
+//        }
+//
+//        if (token == FDT_NOP) continue;
+//        if (token == FDT_END) break;
+//
+//        if (token != FDT_PROP) return;
+//
+//        uint32_t len = be32(p); p += 4;
+//        uint32_t nameoff = be32(p); p += 4;
+//        const uint8_t *data = p;
+//        p += len;
+//        p = align4(p);
+//
+//        if (!in_reserved || depth <= reserved_depth) continue; /* only children of reserved-memory */
+//        if (depth < 0) continue;
+//
+//        node_ctx_t *ctx = &stack[depth];
+//        const char *pname = str_at(nameoff);
+//
+//        if (pname[0] == '#' && pname[1] == 'a') {
+//            if (len == 4) ctx->addr_cells = be32(data);
+//            continue;
+//        }
+//        if (pname[0] == '#' && pname[1] == 's') {
+//            if (len == 4) ctx->size_cells = be32(data);
+//            continue;
+//        }
+//
+//        if (pname[0] == 'r' && pname[1] == 'e' && pname[2] == 'g') {
+//            uint64_t addr = 0, size = 0;
+//            if (parse_reg_first(data, len, ctx->parent_addr_cells, ctx->parent_size_cells, &addr, &size)) {
+//                uart_puts("  addr="); uart_puthex64(addr);
+//                uart_puts(" size="); uart_puthex64(size);
+//                uart_putnl();
+//            }
+//        }
+//    }
+//
+//    if (!seen_reserved) {
+//        uart_puts("  (not present)\n");
+//    }
+//}
 
 void dtb_dump_summary(void) {
     uart_puts("\nDTB: summary\n");

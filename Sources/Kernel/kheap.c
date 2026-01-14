@@ -5,6 +5,8 @@
 
 #include "pmm.h"
 #include "uart_pl011.h"
+#include "mem.h"
+#include "context.h"
 
 #ifndef KMAIN_DEBUG
 #define KMAIN_DEBUG 0
@@ -36,6 +38,27 @@ typedef struct big_alloc_hdr {
 } big_alloc_hdr_t;
 
 static free_node_t *g_freelist[NUM_BUCKETS];
+
+/* M4.5 hardening: allocation counters and peak usage. */
+static uint64_t g_kheap_cur_bytes = 0;
+static uint64_t g_kheap_peak_bytes = 0;
+static uint64_t g_kheap_small_allocs[NUM_BUCKETS];
+static uint64_t g_kheap_small_frees[NUM_BUCKETS];
+static uint64_t g_kheap_big_alloc_calls = 0;
+static uint64_t g_kheap_big_free_calls = 0;
+static uint64_t g_kheap_fail_calls = 0;
+
+static inline void kheap_account_alloc(uint64_t bytes) {
+    g_kheap_cur_bytes += bytes;
+    if (g_kheap_cur_bytes > g_kheap_peak_bytes) g_kheap_peak_bytes = g_kheap_cur_bytes;
+}
+static inline void kheap_account_free(uint64_t bytes) {
+    if (g_kheap_cur_bytes >= bytes) g_kheap_cur_bytes -= bytes;
+    else g_kheap_cur_bytes = 0;
+}
+
+#define KHEAP_POISON_BYTE 0xA5
+
 
 static inline uint64_t align_down_4k(uint64_t x) { return x & ~(PAGE_SIZE - 1ULL); }
 static inline uint64_t align_up_4k(uint64_t x)   { return (x + (PAGE_SIZE - 1ULL)) & ~(PAGE_SIZE - 1ULL); }
@@ -90,10 +113,12 @@ void kheap_init(void)
 
 void *kheap_alloc_pages(uint32_t pages, uint64_t *out_pa)
 {
-    if (pages == 0) return 0;
+    
+    ASSERT_THREAD_CONTEXT();
+if (pages == 0) return 0;
     uint64_t pa = 0;
     if (!pmm_alloc_pages(pages, &pa)) {
-        return 0;
+        g_kheap_fail_calls++; return 0;
     }
     if (out_pa) *out_pa = pa;
     return (void *)(uintptr_t)pmm_phys_to_virt(pa);
@@ -101,7 +126,9 @@ void *kheap_alloc_pages(uint32_t pages, uint64_t *out_pa)
 
 void kheap_free_pages(void *va, uint32_t pages)
 {
-    if (!va || pages == 0) return;
+    
+    ASSERT_THREAD_CONTEXT();
+if (!va || pages == 0) return;
     uint64_t pa0 = pmm_virt_to_phys((uint64_t)(uintptr_t)va);
     pa0 = align_down_4k(pa0);
     for (uint32_t i = 0; i < pages; i++) {
@@ -111,7 +138,9 @@ void kheap_free_pages(void *va, uint32_t pages)
 
 void *kmalloc(size_t size)
 {
-    if (size == 0) return 0;
+    
+    ASSERT_THREAD_CONTEXT();
+if (size == 0) return 0;
 
     /* Phase B: small-object buckets. */
     int b = bucket_for_size(size);
@@ -124,6 +153,8 @@ void *kmalloc(size_t size)
             return 0;
         }
         g_freelist[b] = n->next;
+        g_kheap_small_allocs[b]++;
+        kheap_account_alloc((uint64_t)g_bucket_sizes[b]);
         return (void *)n;
     }
 
@@ -137,13 +168,17 @@ void *kmalloc(size_t size)
     big_alloc_hdr_t *hdr = (big_alloc_hdr_t *)base_va;
     hdr->magic = BIG_MAGIC;
     hdr->pages = pages;
+    g_kheap_big_alloc_calls++;
+    kheap_account_alloc((uint64_t)pages * PAGE_SIZE);
 
     return (void *)(uintptr_t)((uint8_t *)base_va + sizeof(big_alloc_hdr_t));
 }
 
 void kfree(void *ptr)
 {
-    if (!ptr) return;
+    
+    ASSERT_THREAD_CONTEXT();
+if (!ptr) return;
 
     uint64_t va = (uint64_t)(uintptr_t)ptr;
     uint64_t page_va = align_down_4k(va);
@@ -153,9 +188,13 @@ void kfree(void *ptr)
         const slab_page_hdr_t *hdr = (const slab_page_hdr_t *)(uintptr_t)page_va;
         uint16_t b = hdr->bucket_index;
         if (b >= NUM_BUCKETS) return;
+        /* Poison freed memory (basic UAF detection). */
+        memset(ptr, KHEAP_POISON_BYTE, (size_t)hdr->block_size);
         free_node_t *n = (free_node_t *)ptr;
         n->next = g_freelist[b];
         g_freelist[b] = n;
+        g_kheap_small_frees[b]++;
+        kheap_account_free((uint64_t)hdr->block_size);
         return;
     }
 
@@ -163,9 +202,24 @@ void kfree(void *ptr)
         const big_alloc_hdr_t *hdr = (const big_alloc_hdr_t *)(uintptr_t)page_va;
         uint32_t pages = hdr->pages;
         if (pages == 0) return;
+        /* Poison freed pages (basic UAF detection). */
+        memset((void *)(uintptr_t)page_va, KHEAP_POISON_BYTE, (size_t)pages * (size_t)PAGE_SIZE);
+        g_kheap_big_free_calls++;
+        kheap_account_free((uint64_t)pages * PAGE_SIZE);
         kheap_free_pages((void *)(uintptr_t)page_va, pages);
         return;
     }
 
     /* Unknown pointer; ignore for now. */
+}
+
+
+void kheap_get_stats(kheap_stats_t *out)
+{
+    if (!out) return;
+    out->cur_bytes = g_kheap_cur_bytes;
+    out->peak_bytes = g_kheap_peak_bytes;
+    out->big_alloc_calls = g_kheap_big_alloc_calls;
+    out->big_free_calls = g_kheap_big_free_calls;
+    out->fail_calls = g_kheap_fail_calls;
 }
