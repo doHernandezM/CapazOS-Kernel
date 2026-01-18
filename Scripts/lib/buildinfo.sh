@@ -8,7 +8,38 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 buildinfo__read_kv() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
-  grep -E "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true
+  awk -v k="$key" '
+    function trim(s) { sub(/^[ \t\r\n]+/, "", s); sub(/[ \t\r\n]+$/, "", s); return s }
+    /^[ \t\r\n]*$/ { next }
+    /^[ \t]*[;#]/ { next }
+    /^[ \t]*\[/ { next }
+    {
+      line=$0
+      # strip inline comments (keep it simple: ; or # starts a comment)
+      sub(/[ \t]*[;#].*$/, "", line)
+      n = split(line, parts, "=")
+      if (n < 2) next
+      kk = trim(parts[1])
+      if (kk != k) next
+      vv = substr(line, index(line, "=") + 1)
+      vv = trim(vv)
+      val = vv
+    }
+    END { if (val != "") print val }
+  ' "$file" || true
+}
+
+buildinfo__resolve_field() {
+  # Precedence: explicit env var > existing ini value > default.
+  local env_var="$1" ini_path="$2" ini_key="$3" default_value="$4"
+  local v="${!env_var:-}"
+  if [[ -z "$v" ]]; then
+    v="$(buildinfo__read_kv "$ini_path" "$ini_key")"
+  fi
+  if [[ -z "$v" ]]; then
+    v="$default_value"
+  fi
+  printf '%s' "$v"
 }
 
 buildinfo__load_env() {
@@ -63,15 +94,17 @@ buildinfo_update_and_generate_header() {
     build_number=$((build_number + 1))
   fi
 
-  # Resolve other fields (prefer env; safe defaults as fallback).
+  # Resolve other fields.
+  # Precedence is env > ini > defaults so Xcode can override, but user-editing
+  # buildinfo.ini also works as expected.
   local boot_version boot_platform kernel_version machine kernel_name core_version core_name
-  boot_version="${BOOT_VERSION:-0.0.0}"
-  boot_platform="${BOOT_PLATFORM:-AArch64}"
-  kernel_version="${KERNEL_VERSION:-0.0.0}"
-  machine="${MACHINE:-Virt}"
-  kernel_name="${KERNEL_NAME:-Capaz Kernel}"
-  core_version="${CORE_VERSION:-0.0.0}"
-  core_name="${CORE_NAME:-Capaz Core}"
+  boot_version="$(buildinfo__resolve_field BOOT_VERSION "$ini_path" boot_version "0.0.0")"
+  boot_platform="$(buildinfo__resolve_field BOOT_PLATFORM "$ini_path" boot_platform "AArch64")"
+  kernel_version="$(buildinfo__resolve_field KERNEL_VERSION "$ini_path" kernel_version "0.0.0")"
+  machine="$(buildinfo__resolve_field MACHINE "$ini_path" machine "Virt")"
+  kernel_name="$(buildinfo__resolve_field KERNEL_NAME "$ini_path" kernel_name "Capaz Kernel")"
+  core_version="$(buildinfo__resolve_field CORE_VERSION "$ini_path" core_version "0.0.0")"
+  core_name="$(buildinfo__resolve_field CORE_NAME "$ini_path" core_name "Capaz Core")"
 
   cat >"$ini_path" <<EOF2
 # Capaz build info (generated)

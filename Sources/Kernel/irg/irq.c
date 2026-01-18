@@ -7,6 +7,13 @@ static volatile uint32_t s_irq_depth = 0;
 
 bool in_irq(void) { return s_irq_depth != 0; }
 
+void irq_enter(void) { s_irq_depth++; }
+
+void irq_exit(void) {
+    if (s_irq_depth == 0) panic("irq: depth underflow");
+    s_irq_depth--;
+}
+
 #include "gicv2.h"
 
 enum { IRQ_MAX = 1024 };
@@ -29,7 +36,7 @@ static inline uint32_t gic_irqid(uint32_t iar)
 
 void irq_dispatch(trap_frame_t *tf)
 {
-    s_irq_depth++;
+    irq_enter();
 
     /* Acknowledge the interrupt at the GIC CPU interface. */
     uint32_t iar = gicv2_acknowledge();
@@ -61,10 +68,9 @@ void irq_dispatch(trap_frame_t *tf)
     gicv2_end_interrupt(iar);
 
 out:
-    /* Depth tracks *nesting* while in the handler. It may be 0 after this. */
-    if (s_irq_depth == 0) panic("irq: depth underflow");
-    s_irq_depth--;
+    irq_exit();
 }
+
 
 void irq_global_enable(void)
 {

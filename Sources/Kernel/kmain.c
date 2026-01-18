@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include "core_kernel_abi.h"
+
 #include "boot_info.h"
 #include "build_info.h"
 #include "dtb.h"
@@ -20,9 +22,16 @@
 #include "timer_generic.h"
 #include "sched.h"
 
+/* Core entrypoint (optional). */
+extern void core_main(const kernel_services_v1_t *services) __attribute__((weak));
+const kernel_services_v1_t *kernel_services_v1(void);
+
 #include "config.h"
 
 #include "MathHelper.h"
+#include "sched/thread.h"
+#include "ipc/ipc_message.h"
+#include "cap/cap_entry.h"
 
 /*
  * Enable/disable noisy early-boot diagnostics.
@@ -246,10 +255,18 @@ void kmain(const boot_info_t *boot_info)
     // Treat kmain() as the bootstrap "current thread" even if we haven't
     // created any kernel threads yet. This keeps the IRQ-exit scaffolding
     // (M8 readiness) safe and avoids panics on the first timer tick.
+    // M5.5: Initialize slab caches for high-churn kernel objects.
+    thread_alloc_init();
+    ipc_msg_cache_init();
+    cap_entry_cache_init();
+
     sched_init_bootstrap();
 
+    /* M5.P2: Call into Core exactly once (thread context) if present. */
+    if (core_main) {
+        core_main(kernel_services_v1());
+    }
 
-    
     /* M6: Bring up interrupts + timer tick after core init. */
     irq_global_disable();
     gicv2_init();

@@ -6,7 +6,7 @@
 #include "pmm.h"
 #include "uart_pl011.h"
 #include "mem.h"
-#include "context.h"
+#include "contracts.h"
 
 #ifndef KMAIN_DEBUG
 #define KMAIN_DEBUG 0
@@ -47,6 +47,9 @@ static uint64_t g_kheap_small_frees[NUM_BUCKETS];
 static uint64_t g_kheap_big_alloc_calls = 0;
 static uint64_t g_kheap_big_free_calls = 0;
 static uint64_t g_kheap_fail_calls = 0;
+static uint64_t g_kheap_kmalloc_calls = 0;
+static uint64_t g_kheap_kfree_calls = 0;
+static uint64_t g_kheap_bucket_refills[NUM_BUCKETS] = {0};
 
 static inline void kheap_account_alloc(uint64_t bytes) {
     g_kheap_cur_bytes += bytes;
@@ -75,6 +78,7 @@ static int bucket_for_size(size_t size)
 
 static void refill_bucket(int b)
 {
+    if ((unsigned)b < NUM_BUCKETS) g_kheap_bucket_refills[b]++;
     uint64_t page_pa = 0;
     void *page_va = pmm_alloc_page_va(&page_pa);
     if (!page_va) {
@@ -138,9 +142,9 @@ if (!va || pages == 0) return;
 
 void *kmalloc(size_t size)
 {
-    
     ASSERT_THREAD_CONTEXT();
-if (size == 0) return 0;
+    g_kheap_kmalloc_calls++;
+    if (size == 0) return 0;
 
     /* Phase B: small-object buckets. */
     int b = bucket_for_size(size);
@@ -176,9 +180,9 @@ if (size == 0) return 0;
 
 void kfree(void *ptr)
 {
-    
     ASSERT_THREAD_CONTEXT();
-if (!ptr) return;
+    g_kheap_kfree_calls++;
+    if (!ptr) return;
 
     uint64_t va = (uint64_t)(uintptr_t)ptr;
     uint64_t page_va = align_down_4k(va);
@@ -219,7 +223,10 @@ void kheap_get_stats(kheap_stats_t *out)
     if (!out) return;
     out->cur_bytes = g_kheap_cur_bytes;
     out->peak_bytes = g_kheap_peak_bytes;
+    out->kmalloc_calls = g_kheap_kmalloc_calls;
+    out->kfree_calls = g_kheap_kfree_calls;
     out->big_alloc_calls = g_kheap_big_alloc_calls;
     out->big_free_calls = g_kheap_big_free_calls;
     out->fail_calls = g_kheap_fail_calls;
+    for (int i = 0; i < NUM_BUCKETS; i++) out->bucket_refill_calls[i] = g_kheap_bucket_refills[i];
 }

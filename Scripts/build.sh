@@ -72,6 +72,7 @@ COMMON_CFLAGS=(
   # Kernel headers live alongside sources (no dedicated Include/ dir).
   # Keep these broad so "#include \"uart_pl011.h\"" and friends resolve.
   -I"${KERNEL_DIR}/Sources"
+  -I"${KERNEL_DIR}/Sources/ABI"
   -I"${KERNEL_DIR}/Sources/Kernel"
   -I"${KERNEL_DIR}/Sources/Kernel/boot"
   -I"${KERNEL_DIR}/Sources/Kernel/mm"
@@ -90,9 +91,11 @@ KERNEL_CFLAGS=("${COMMON_CFLAGS[@]}" -DKERNEL_STAGE=1)
 usage() {
   cat <<USAGE
 Usage:
-  Kernel/Scripts/build.sh [--platform aarch64-virt] [--target boot|kernel_c|core_swift] [--clean]
+  Kernel/Scripts/build.sh [--platform aarch64-virt] [--target boot|kernel_c|core_c|core_swift] [--with-core|--without-core] [--clean]
 
 Notes:
+  - CORE_MODE=auto|on|off controls optional Core(C) linking.
+    --with-core sets CORE_MODE=on, --without-core sets CORE_MODE=off.
   - This script is the single entry point for both Xcode targets.
   - Platform modules live under Kernel/Scripts/platforms/.
   - Target modules live under Kernel/Scripts/targets/.
@@ -101,17 +104,22 @@ USAGE
 }
 
 CLEAN=0
+CORE_MODE=${CORE_MODE:-auto}  # auto|on|off
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform)
       PLATFORM="$2"; shift 2 ;;
     --target)
       TARGET="$2"; shift 2 ;;
+    --with-core)
+      CORE_MODE=on; shift ;;
+    --without-core)
+      CORE_MODE=off; shift ;;
     --clean)
       CLEAN=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
-    boot|kernel_c|core_swift)
+    boot|kernel_c|core_c|core_swift)
       TARGET="$1"; shift ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -206,6 +214,13 @@ case "$TARGET" in
     # shellcheck source=targets/kernel_c.sh
     source "$SCRIPTS_DIR/targets/kernel_c.sh"
     build_kernel_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR"
+    ;;
+  core_c)
+    # shellcheck source=targets/core_c.sh
+    source "$SCRIPTS_DIR/targets/core_c.sh"
+    if ! build_core_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR" "$CORE_DIR"; then
+      die "No Core sources found under: $CORE_DIR/Sources"
+    fi
     ;;
   core_swift)
     # shellcheck source=targets/core_swift.sh

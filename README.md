@@ -53,7 +53,11 @@ As of **Boot/Kernel 0.0.8D** (**Build 47**, 2026-01-12):
   - PL011 UART discovery (QEMU `virt`)
 - Memory subsystem is online:
   - **PMM (bitmap)** based on DTB-derived usable ranges
-  - **kernel heap (`kheap`)** for variable-sized allocations
+  - Allocation tiers (M5.5 direction):
+    - **PMM** = pages only
+    - **slab caches** = kernel objects only (fixed-size, type-specific)
+    - **kheap** = variable-sized buffers only (preferred name: `kbuf_alloc/kbuf_free`)
+  - Core may only allocate via `services->alloc/free` (buffer tier), thread-context only
 
 ### Interrupts + timers
 - Stable interrupt baseline under QEMU `virt`:

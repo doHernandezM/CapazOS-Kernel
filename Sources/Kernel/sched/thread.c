@@ -6,15 +6,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kheap.h"
 #include "context.h"
 #include "mem.h"
 #include "panic.h"
-#include "pmm.h"
 #include "sched.h"
 
 // Preemption-ready threads resume via an IRQ-return trap frame (M8 Option A).
 #include "irq.h"
+#include "alloc/slab_cache.h"
+#include "mm/pmm.h"
 
 // AArch64 SPSR value for returning to EL1h with IRQs enabled.
 //
@@ -36,6 +36,25 @@ extern void thread_start(void);
 static uint32_t s_next_tid = 1;
 
 
+
+
+
+// M5.5: slab cache for thread_t objects (kernel objects)
+static slab_cache_t g_thread_cache;
+static bool s_thread_cache_inited = false;
+
+void thread_alloc_init(void) {
+    if (s_thread_cache_inited) return;
+    slab_cache_init(&g_thread_cache, "thread", sizeof(thread_t), (size_t)_Alignof(thread_t));
+    s_thread_cache_inited = true;
+}
+
+bool thread_cache_get_stats(slab_cache_stats_t *out) {
+    if (!s_thread_cache_inited) {
+        return false;
+    }
+    return slab_cache_get_stats(&g_thread_cache, out);
+}
 
 static inline uint64_t align_down_u64(uint64_t v, uint64_t a) {
     return v & ~(a - 1u);
@@ -95,7 +114,7 @@ if (!entry) {
     }
 
     // Allocate the thread object.
-    thread_t *t = (thread_t *)kmalloc(sizeof(thread_t));
+    thread_t *t = (thread_t *)slab_alloc(&g_thread_cache);
     if (!t) {
         panic("thread_create: OOM thread_t");
     }
@@ -109,7 +128,7 @@ if (!entry) {
     const uint32_t pages = (uint32_t)KSTACK_PAGES_DEFAULT;
     uint64_t stack_pa = 0;
     if (!pmm_alloc_pages(pages, &stack_pa)) {
-        kfree(t);
+        slab_free(&g_thread_cache, t);
         panic("thread_create: OOM stack pages");
     }
 
@@ -156,3 +175,21 @@ __attribute__((noreturn)) void thread_exit(void) {
         __asm__ volatile("wfi");
     }
 }
+
+// M5.5: explicit teardown path for thread objects (for future use).
+void thread_destroy(thread_t *t) {
+    if (!t) return;
+    ASSERT_THREAD_CONTEXT();
+
+    // Free stack pages if present.
+    if (t->kstack_base && t->kstack_size) {
+        const uint64_t pa_base = pmm_virt_to_phys((uint64_t)t->kstack_base);
+        const uint32_t pages = (uint32_t)(t->kstack_size / (size_t)KSTACK_PAGE_SIZE);
+        for (uint32_t i = 0; i < pages; i++) {
+            pmm_free_page(pa_base + (uint64_t)i * (uint64_t)KSTACK_PAGE_SIZE);
+        }
+    }
+
+    slab_free(&g_thread_cache, t);
+}
+

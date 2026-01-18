@@ -222,6 +222,10 @@ static void mmu_assert_layout_and_wx(void)
     extern uint8_t __rodata_start[], __rodata_end[];
     extern uint8_t __data_start[], __data_end[];
     extern uint8_t __bss_start[], __bss_end[];
+    extern uint8_t __core_text_start[], __core_text_end[];
+    extern uint8_t __core_rodata_start[], __core_rodata_end[];
+    extern uint8_t __core_data_start[], __core_data_end[];
+    extern uint8_t __core_bss_start[], __core_bss_end[];
 
         /* Basic monotonic layout checks (compare addresses, not arrays). */
     uintptr_t text_start   = (uintptr_t)__text_start;
@@ -232,21 +236,69 @@ static void mmu_assert_layout_and_wx(void)
     uintptr_t data_end     = (uintptr_t)__data_end;
     uintptr_t bss_start    = (uintptr_t)__bss_start;
     uintptr_t bss_end      = (uintptr_t)__bss_end;
+    uintptr_t core_text_start   = (uintptr_t)__core_text_start;
+    uintptr_t core_text_end     = (uintptr_t)__core_text_end;
+    uintptr_t core_rodata_start = (uintptr_t)__core_rodata_start;
+    uintptr_t core_rodata_end   = (uintptr_t)__core_rodata_end;
+    uintptr_t core_data_start   = (uintptr_t)__core_data_start;
+    uintptr_t core_data_end     = (uintptr_t)__core_data_end;
+    uintptr_t core_bss_start    = (uintptr_t)__core_bss_start;
+    uintptr_t core_bss_end      = (uintptr_t)__core_bss_end;
 
     if (!(text_start < text_end)) panic("mmu: bad text range");
     if (!(rodata_start < rodata_end)) panic("mmu: bad rodata range");
     if (!(data_start < data_end)) panic("mmu: bad data range");
     if (!(bss_start < bss_end)) panic("mmu: bad bss range");
 
+    /* Core sections are optional; an empty section has start==end. */
+    if (core_text_start != core_text_end && !(core_text_start < core_text_end)) panic("mmu: bad core text range");
+    if (core_rodata_start != core_rodata_end && !(core_rodata_start < core_rodata_end)) panic("mmu: bad core rodata range");
+    if (core_data_start != core_data_end && !(core_data_start < core_data_end)) panic("mmu: bad core data range");
+    if (core_bss_start != core_bss_end && !(core_bss_start < core_bss_end)) panic("mmu: bad core bss range");
+
     if (!(text_end <= rodata_start)) panic("mmu: segments overlap (text/rodata)");
-    if (!(rodata_end <= data_start)) panic("mmu: segments overlap (rodata/data)");
-    if (!(data_end <= bss_start)) panic("mmu: segments overlap (data/bss)");
+
+    /* Enforce expected ordering: rodata -> core(text/rodata) -> data -> core(data) -> bss -> core(bss). */
+    uintptr_t after_rodata = rodata_end;
+    if (core_text_start != core_text_end) {
+        if (!(rodata_end <= core_text_start)) panic("mmu: segments overlap (rodata/core_text)");
+        after_rodata = core_text_end;
+    }
+    if (core_rodata_start != core_rodata_end) {
+        if (!(after_rodata <= core_rodata_start)) panic("mmu: segments overlap (core_text/core_rodata)");
+        after_rodata = core_rodata_end;
+    }
+    if (!(after_rodata <= data_start)) panic("mmu: segments overlap (core_rodata/data)");
+
+    uintptr_t after_data = data_end;
+    if (core_data_start != core_data_end) {
+        if (!(data_end <= core_data_start)) panic("mmu: segments overlap (data/core_data)");
+        after_data = core_data_end;
+    }
+    if (!(after_data <= bss_start)) panic("mmu: segments overlap (core_data/bss)");
+
+    if (core_bss_start != core_bss_end) {
+        if (!(bss_end <= core_bss_start)) panic("mmu: segments overlap (bss/core_bss)");
+    }
 
     /* Representative permission checks. */
     mmu_expect_page((uint64_t)(uintptr_t)__text_start,   /*exec*/true,  /*ro*/true,  /*dev*/false);
     mmu_expect_page((uint64_t)(uintptr_t)__rodata_start, /*exec*/false, /*ro*/true,  /*dev*/false);
     mmu_expect_page((uint64_t)(uintptr_t)__data_start,   /*exec*/false, /*ro*/false, /*dev*/false);
     mmu_expect_page((uint64_t)(uintptr_t)__bss_start,    /*exec*/false, /*ro*/false, /*dev*/false);
+
+    if (core_text_start != core_text_end) {
+        mmu_expect_page((uint64_t)(uintptr_t)__core_text_start,   /*exec*/true,  /*ro*/true,  /*dev*/false);
+    }
+    if (core_rodata_start != core_rodata_end) {
+        mmu_expect_page((uint64_t)(uintptr_t)__core_rodata_start, /*exec*/false, /*ro*/true,  /*dev*/false);
+    }
+    if (core_data_start != core_data_end) {
+        mmu_expect_page((uint64_t)(uintptr_t)__core_data_start,   /*exec*/false, /*ro*/false, /*dev*/false);
+    }
+    if (core_bss_start != core_bss_end) {
+        mmu_expect_page((uint64_t)(uintptr_t)__core_bss_start,    /*exec*/false, /*ro*/false, /*dev*/false);
+    }
 
     /* Device mapping sanity: pick a VA in the device window (low addresses are mapped as device). */
     mmu_expect_page(0xFFFF800000000000ULL + 0x0000000009000000ULL, /*exec*/false, /*ro*/false, /*dev*/true);
@@ -363,6 +415,10 @@ void mmu_init(const boot_info_t *boot_info)
     extern uint8_t __rodata_start[], __rodata_end[];
     extern uint8_t __data_start[], __data_end[];
     extern uint8_t __bss_start[], __bss_end[];
+    extern uint8_t __core_text_start[], __core_text_end[];
+    extern uint8_t __core_rodata_start[], __core_rodata_end[];
+    extern uint8_t __core_data_start[], __core_data_end[];
+    extern uint8_t __core_bss_start[], __core_bss_end[];
     extern uint8_t __kernel_image_start[], __kernel_runtime_end[];
 
     uint64_t text_pa_start   = virt_to_phys((uint64_t)__text_start);
@@ -373,6 +429,14 @@ void mmu_init(const boot_info_t *boot_info)
     uint64_t data_pa_end     = virt_to_phys((uint64_t)__data_end);
     uint64_t bss_pa_start    = virt_to_phys((uint64_t)__bss_start);
     uint64_t bss_pa_end      = virt_to_phys((uint64_t)__bss_end);
+    uint64_t core_text_pa_start   = virt_to_phys((uint64_t)__core_text_start);
+    uint64_t core_text_pa_end     = virt_to_phys((uint64_t)__core_text_end);
+    uint64_t core_rodata_pa_start = virt_to_phys((uint64_t)__core_rodata_start);
+    uint64_t core_rodata_pa_end   = virt_to_phys((uint64_t)__core_rodata_end);
+    uint64_t core_data_pa_start   = virt_to_phys((uint64_t)__core_data_start);
+    uint64_t core_data_pa_end     = virt_to_phys((uint64_t)__core_data_end);
+    uint64_t core_bss_pa_start    = virt_to_phys((uint64_t)__core_bss_start);
+    uint64_t core_bss_pa_end      = virt_to_phys((uint64_t)__core_bss_end);
     uint64_t kernel_pa_start = virt_to_phys((uint64_t)__kernel_image_start);
     uint64_t kernel_pa_end   = virt_to_phys((uint64_t)__kernel_runtime_end);
 
@@ -496,10 +560,23 @@ void mmu_init(const boot_info_t *boot_info)
                         /* Rodata: RO, XN. */
                         desc &= ~(3ULL << 6);
                         desc |= (2ULL << 6); /* AP_RO_EL1 */
+                    } else if (pa4 >= core_text_pa_start && pa4 < core_text_pa_end) {
+                        /* Core text: RO, executable. */
+                        desc &= ~((1ULL << 53) | (1ULL << 54)); /* clear XN */
+                        desc &= ~(3ULL << 6);
+                        desc |= (2ULL << 6); /* AP_RO_EL1 */
+                    } else if (pa4 >= core_rodata_pa_start && pa4 < core_rodata_pa_end) {
+                        /* Core rodata: RO, XN. */
+                        desc &= ~(3ULL << 6);
+                        desc |= (2ULL << 6); /* AP_RO_EL1 */
                     } else if (pa4 >= data_pa_start && pa4 < data_pa_end) {
                         /* Data: RW, XN (default). */
+                    } else if (pa4 >= core_data_pa_start && pa4 < core_data_pa_end) {
+                        /* Core data: RW, XN (default). */
                     } else if (pa4 >= bss_pa_start && pa4 < bss_pa_end) {
                         /* BSS: RW, XN (default). */
+                    } else if (pa4 >= core_bss_pa_start && pa4 < core_bss_pa_end) {
+                        /* Core bss: RW, XN (default). */
                     } else {
                         /* Outside known segments but still within kernel image: RW, XN. */
                     }

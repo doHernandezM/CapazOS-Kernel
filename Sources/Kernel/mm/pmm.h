@@ -35,8 +35,21 @@ void *pmm_alloc_page_va(uint64_t *out_pa);
 /* Debug: print PMM summary to UART. */
 void pmm_dump_summary(void);
 
-/* Query PMM counters (returns false if PMM not initialized). */
+/* Query basic PMM counters (returns false if PMM not initialized). */
 bool pmm_get_stats(uint64_t *out_free_pages, uint64_t *out_total_pages);
+
+/* Extended PMM stats for hardening (Milestone M4.5). */
+typedef struct pmm_stats_ex {
+    uint64_t free_pages;
+    uint64_t total_pages;
+    uint64_t low_free_pages_seen;  /* low-water mark */
+    uint64_t peak_used_pages_seen; /* high-water mark */
+    uint64_t alloc_pages_calls;
+    uint64_t alloc_contig_calls;
+    uint64_t free_page_calls;
+} pmm_stats_ex_t;
+
+bool pmm_get_stats_ex(pmm_stats_ex_t *out);
 
 /* Direct-map helpers for the QEMU virt baseline. */
 static inline uint64_t pmm_phys_to_virt(uint64_t pa) {

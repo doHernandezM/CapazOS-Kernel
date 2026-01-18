@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "alloc/slab_cache.h"
+
 // Forward declaration (defined in irq.h).
 typedef struct trap_frame trap_frame_t;
 
@@ -119,6 +121,14 @@ void ctx_switch(ctx_t *old, ctx_t *new);
 
 // Thread API (implemented starting in Phase 4).
 thread_t *thread_create(void (*entry)(void *), void *arg);
+
+// M5.5: slab-backed allocation for thread objects
+void thread_alloc_init(void);
+void thread_destroy(thread_t *t);
+
+/* Observability (M5.5 Phase 3). Returns false if cache not initialized. */
+bool thread_cache_get_stats(slab_cache_stats_t *out);
+
 thread_t *thread_create_named(const char *name, void (*entry)(void *), void *arg);
 __attribute__((noreturn)) void thread_trampoline(void (*entry)(void *), void *arg);
 __attribute__((noreturn)) void thread_exit(void);

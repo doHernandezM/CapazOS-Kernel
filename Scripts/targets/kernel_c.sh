@@ -6,6 +6,8 @@ TARGET_DIR="$(cd "$(dirname "$TARGET_THIS")" && pwd)"
 
 # shellcheck source=boot.sh
 source "${TARGET_DIR}/boot.sh"
+# shellcheck source=core_c.sh
+source "${TARGET_DIR}/core_c.sh"
 # shellcheck source=../lib/cc.sh
 source "${TARGET_DIR}/../lib/cc.sh"
 # shellcheck source=../lib/link.sh
@@ -64,8 +66,13 @@ PY
   add_obj "$kernel_dir/Sources/Kernel/boot/kernel_header.S"
   add_obj "$kernel_dir/Sources/Kernel/boot/kcrt0.c"
   add_obj "$kernel_dir/Sources/Kernel/kmain.c"
+  add_obj "$kernel_dir/Sources/Kernel/core_abi_v1.c"
   add_obj "$kernel_dir/Sources/Kernel/platform/platform.c"
   add_obj "$kernel_dir/Sources/Kernel/mm/pmm.c"
+  add_obj "$kernel_dir/Sources/Kernel/alloc/slab_cache.c"
+  add_obj "$kernel_dir/Sources/Kernel/alloc/alloc_stats.c"
+  add_obj "$kernel_dir/Sources/Kernel/cap/cap_entry.c"
+  add_obj "$kernel_dir/Sources/Kernel/ipc/ipc_message.c"
   add_obj "$kernel_dir/Sources/Kernel/kheap.c"
   add_obj "$kernel_dir/Sources/Kernel/mm/mmu.c"
   add_obj "$kernel_dir/Sources/Kernel/platform/dtb.c"
@@ -82,6 +89,25 @@ PY
   add_obj "$kernel_dir/Sources/HAL/gicv2.c"
   add_obj "$kernel_dir/Sources/HAL/timer_generic.c"
   add_obj "$kernel_dir/Sources/HAL/uart_pl011.c"
+
+  # Optional Core(C): build and link if present.
+  # Controlled by CORE_MODE=auto|on|off (set by Scripts/build.sh).
+  case "${CORE_MODE:-auto}" in
+    off)
+      ;;
+    on|auto)
+      if [[ -n "${CORE_DIR:-}" ]] && build_core_c "$out_dir" "$obj_dir" "$kernel_dir" "$CORE_DIR"; then
+        objs+=("$obj_dir/core_c.o")
+      else
+        if [[ "${CORE_MODE:-auto}" == "on" ]]; then
+          die "CORE_MODE=on but no Core sources found under: ${CORE_DIR:-<unset>}/Sources"
+        fi
+      fi
+      ;;
+    *)
+      die "Invalid CORE_MODE=${CORE_MODE} (expected auto|on|off)"
+      ;;
+  esac
 
   local kernel_ld="$kernel_dir/Linker/kernel.ld"
 

@@ -81,4 +81,8 @@ bool irq_irqs_disabled(void);
 
 /* True if currently executing in IRQ context (nesting-aware). */
 bool in_irq(void);
+
+/* Optional explicit enter/exit hooks (used by irq_dispatch). */
+void irq_enter(void);
+void irq_exit(void);
 #endif /* IRQ_H */

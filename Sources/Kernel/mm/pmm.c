@@ -9,7 +9,7 @@
 #include "dtb.h"
 #include "uart_pl011.h"
 #include "panic.h"
-#include "context.h"
+#include "contracts.h"
 
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
@@ -46,6 +46,8 @@ static pmm_state_t *g_pmm = 0;
 /* M4.5 hardening: PMM pressure/counters. */
 static uint64_t g_pmm_alloc_calls = 0;
 static uint64_t g_pmm_free_calls = 0;
+static uint64_t g_pmm_alloc_pages_calls = 0;
+static uint64_t g_pmm_alloc_contig_calls = 0;
 static uint64_t g_pmm_peak_used_pages = 0;
 static uint64_t g_pmm_low_free_pages = UINT64_MAX;
 
@@ -334,6 +336,9 @@ void pmm_init(const boot_info_t *boot_info) {
 }
 
 bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa) {
+    ASSERT_THREAD_CONTEXT();
+    g_pmm_alloc_pages_calls++;
+    if (count > 1) g_pmm_alloc_contig_calls++;
     pmm_state_t *st = g_pmm;
     if (!st || !out_pa || count == 0) return false;
     if (st->free_pages < (uint64_t)count) return false;
@@ -375,6 +380,7 @@ bool pmm_alloc_pages(uint32_t count, uint64_t *out_pa) {
 }
 
 bool pmm_alloc_page(uint64_t *out_pa) {
+    /* pmm_alloc_pages enforces thread-context. */
     return pmm_alloc_pages(1, out_pa);
 }
 
@@ -451,4 +457,19 @@ bool pmm_get_stats(uint64_t *out_free_pages, uint64_t *out_total_pages) {
     if (out_total_pages) *out_total_pages = st->total_pages;
     return true;
 }
+
+bool pmm_get_stats_ex(pmm_stats_ex_t *out)
+{
+    pmm_state_t *st = g_pmm;
+    if (!st || !out) return false;
+    out->free_pages = st->free_pages;
+    out->total_pages = st->total_pages;
+    out->low_free_pages_seen = (g_pmm_low_free_pages == UINT64_MAX) ? st->free_pages : g_pmm_low_free_pages;
+    out->peak_used_pages_seen = g_pmm_peak_used_pages;
+    out->alloc_pages_calls = g_pmm_alloc_pages_calls;
+    out->alloc_contig_calls = g_pmm_alloc_contig_calls;
+    out->free_page_calls = g_pmm_free_calls;
+    return true;
+}
+
 
