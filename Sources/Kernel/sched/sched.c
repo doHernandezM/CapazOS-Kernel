@@ -17,6 +17,7 @@
 #include "irq.h"
 #include "context.h"
 #include "preempt.h"
+#include "config.h"
 
 #define SCHED_ASSERT(cond, msg) do { if (!(cond)) panic(msg); } while (0)
 
@@ -170,9 +171,8 @@ static thread_t *sched_pick_next(void) {
 }
 
 void yield(void) {
-    
     ASSERT_THREAD_CONTEXT();
-uint64_t flags = irq_save();
+    uint64_t flags = irq_save();
     thread_t *prev = s_current;
     SCHED_ASSERT(prev != NULL, "sched: current is NULL");
     SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");
@@ -235,6 +235,16 @@ trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
     /* Queue integrity checks are safe here because IRQs are still masked. */
     rq_validate();
 
+#if CONFIG_SCHED_COOPERATIVE
+    /*
+     * M6 policy: cooperative scheduling.
+     * IRQ exit must never switch threads; it simply returns to the interrupted
+     * context.
+     */
     return tf;
+#else
+    /* Future: preemptive scheduling may return a different trap frame here. */
+    return tf;
+#endif
 }
 

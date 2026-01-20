@@ -6,6 +6,7 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "core_kernel_abi.h"
 
@@ -20,7 +21,10 @@
 #include "preempt.h"
 #include "gicv2.h"
 #include "timer_generic.h"
+#include "work/work_queue.h"
 #include "sched.h"
+#include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
+#include "panic.h"   // panic()
 
 /* Core entrypoint (optional). */
 extern void core_main(const kernel_services_v1_t *services) __attribute__((weak));
@@ -32,6 +36,9 @@ const kernel_services_v1_t *kernel_services_v1(void);
 #include "sched/thread.h"
 #include "ipc/ipc_message.h"
 #include "cap/cap_entry.h"
+#include "cap/cap_table.h"
+#include "cap/cap_ops.h"
+#include "task/task.h"
 
 /*
  * Enable/disable noisy early-boot diagnostics.
@@ -168,12 +175,123 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 }
 
 
-/* M6: Timer IRQ handler (allocation-free). */
+/* M6: Deferred work queue (IRQ top-half only). */
+static workq_t g_deferred_workq;
+static task_t g_kernel_task;
+static cap_table_t g_kernel_cap_table;
+static uint32_t g_timer_token;
+// NOTE: In the current M7 skeleton we seed capabilities for the log service
+// (and other bootstrap objects) directly into the kernel cap table. There is no
+// separate global "token" value to track here, and leaving an unused global
+// trips -Werror/-Wunused-variable under the Xcode build.
+static volatile bool g_tick_work_pending = false;
+
+static void tick_work_fn(void *arg);
+
+/* Preallocated tick work item: never freed. */
+static work_item_t g_tick_item = { .fn = tick_work_fn, .arg = NULL, .next = NULL };
+
+static void tick_work_fn(void *arg)
+{
+    (void)arg;
+    /* Mark as no longer pending before doing any work. */
+    g_tick_work_pending = false;
+    /* Defer scheduler signal out of IRQ context. */
+    preempt_set_need_resched();
+}
+
+/* Timer IRQ handler (allocation-free): ack + enqueue work. */
 static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 {
     (void)irq; (void)ctx; (void)tf;
+
+    /* Top-half: acknowledge/re-arm the timer. */
     timer_handle_irq();
-    preempt_set_need_resched();
+
+    /* Enqueue the deferred tick work item (no allocation in IRQ). */
+    if (!g_tick_work_pending) {
+        g_tick_work_pending = true;
+        (void)workq_enqueue_from_irq(&g_deferred_workq, &g_tick_item);
+    }
+}
+
+/*
+ * M6: Dedicated Core thread.
+ * - Calls core_main() exactly once (if present).
+ * - Drains deferred work queue in thread context.
+ */
+static void core_thread_entry(void *arg)
+{
+    (void)arg;
+
+    /* M7: Seed initial caps for kernel task in core/main thread entry (before core_main()). */
+    cap_table_init(&g_kernel_cap_table);
+    task_init(&g_kernel_task, 0, &g_kernel_cap_table);
+
+    cap_status_t st;
+
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_TASK,
+                    (cap_rights_t)(CAP_R_DUP | CAP_R_TRANSFER | CAP_R_CONTROL),
+                    &g_kernel_task,
+                    &g_kernel_task.self_cap);
+    if (st != CAP_OK) {
+        panic("core/main: failed to seed task cap");
+    }
+
+    /* Placeholder token objects for M7 (mechanism labels only). */
+    g_timer_token = 1;
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_TIMER_TOKEN,
+                    (cap_rights_t)(CAP_R_ARM | CAP_R_ACK | CAP_R_DUP | CAP_R_TRANSFER),
+                    &g_timer_token,
+                    &g_kernel_task.timer_cap);
+    if (st != CAP_OK) {
+        panic("core/main: failed to seed timer cap");
+    }
+
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_SERVICE,
+                    (cap_rights_t)(CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER),
+                    (void *)kernel_services_v1(),
+                    &g_kernel_task.log_cap);
+    if (st != CAP_OK) {
+        panic("core/main: failed to seed log service cap");
+    }
+
+#ifdef DEBUG
+    cap_ops_selftest(&g_kernel_cap_table);
+#endif
+
+    /* Phase 2 contract: Core runs once in this thread. */
+    if (core_main) {
+        core_main(kernel_services_v1());
+    }
+
+    for (;;) {
+        /* Drain all pending work items. */
+        for (;;) {
+            work_item_t *it = workq_dequeue(&g_deferred_workq);
+            if (!it) break;
+
+            it->fn(it->arg);
+
+            /* Free cached items; the tick item is preallocated/static. */
+            if (it != &g_tick_item) {
+                work_item_free(it);
+            }
+        }
+
+        /* Cooperative scheduling hook for the current stage. */
+        if (preempt_need_resched()) {
+            preempt_clear_need_resched();
+            yield();
+            continue;
+        }
+
+        /* Sleep until the next interrupt enqueues more work. */
+        __asm__ volatile ("wfi");
+    }
 }
 
 void kmain(const boot_info_t *boot_info)
@@ -259,13 +377,12 @@ void kmain(const boot_info_t *boot_info)
     thread_alloc_init();
     ipc_msg_cache_init();
     cap_entry_cache_init();
+    /* M6: Work item cache + deferred work queue. */
+    work_item_cache_init();
+    workq_init(&g_deferred_workq);
 
     sched_init_bootstrap();
-
-    /* M5.P2: Call into Core exactly once (thread context) if present. */
-    if (core_main) {
-        core_main(kernel_services_v1());
-    }
+    // M7: cap-space is initialized and seeded in core/main thread entry (before core_main).
 
     /* M6: Bring up interrupts + timer tick after core init. */
     irq_global_disable();
@@ -287,6 +404,17 @@ void kmain(const boot_info_t *boot_info)
      */
     timer_init_hz(CONFIG_TICK_HZ);
 
+    /* M6: Create and enqueue a dedicated Core thread. */
+    thread_t *core_thr = thread_create_named("core/main", core_thread_entry, NULL);
+    if (!core_thr) {
+        uart_puts("kmain: failed to create core thread\n");
+        for (;;) {
+            __asm__ volatile ("wfi");
+        }
+    }
+    core_thr->task = &g_kernel_task;
+    sched_enqueue(core_thr);
+
     irq_global_enable();
 
     uart_puts("Build: ");
@@ -295,22 +423,13 @@ void kmain(const boot_info_t *boot_info)
     uart_puts(CAPAZ_BUILD_DATE);
     uart_putnl();
     
-    /* Report tick progress from the idle loop (not from ISR). */
-#if (CONFIG_TICKLESS == 0)
-    uint64_t last = 0;
+    /* Enter the cooperative scheduler. */
+    yield();
+
+    /* Bootstrap thread becomes the idle thread. */
     for (;;) {
         __asm__ volatile ("wfi");
-        uint64_t t = timer_ticks_read();
-        if (t - last >= (uint64_t)CONFIG_TICK_HZ) { /* ~1s */
-            last = t;
-            uart_puts("tick:");
-            uart_putu64_dec(t / (uint64_t)CONFIG_TICK_HZ);
-            uart_puts("\n");
-        }
+        /* Give other runnable threads a chance to run. */
+        yield();
     }
-#else
-    for (;;) {
-        __asm__ volatile ("wfi");
-    }
-#endif
 }

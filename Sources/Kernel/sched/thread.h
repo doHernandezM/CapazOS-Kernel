@@ -8,6 +8,8 @@
 
 // Forward declaration (defined in irq.h).
 typedef struct trap_frame trap_frame_t;
+// Forward declaration (defined in task/task.h).
+typedef struct task task_t;
 
 // Default kernel stack sizing for cooperative threads.
 // Phase 0 decision: 16 KiB default, up to 64 KiB max.
@@ -85,6 +87,9 @@ typedef struct thread {
     // tid==0 is reserved for the bootstrap (kmain) pseudo-thread.
     uint32_t tid;
     const char *name;
+
+    // Owning task (cap-space owner). Phase 2 (M7): required for capability lookup.
+    task_t *task;
 
     // Per-thread kernel stack.
     void   *kstack_base;

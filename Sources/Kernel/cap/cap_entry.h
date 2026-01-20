@@ -1,14 +1,27 @@
 #pragma once
+
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "alloc/slab_cache.h"
+#include "cap/cap_rights.h"
+#include "cap/cap_types.h"
 
-/* Minimal fixed-size capability entry (expanded in later milestones). */
+/*
+ * Slab-backed capability entry.
+ *
+ * Phase 2 (M7): becomes the real storage unit referenced by cap_table slots.
+ * The cap handle carries (index, generation); the entry stores its generation
+ * and a validity flag.
+ */
+#define CAP_ENTRY_FLAG_VALID (1u << 0)
+
 typedef struct cap_entry {
-    uint64_t object;   /* opaque object pointer/id */
-    uint32_t rights;   /* rights bitmask */
-    uint32_t type;     /* type tag */
-    struct cap_entry *next;
+    cap_type_t type;       /* type tag */
+    cap_rights_t rights;   /* rights bitmask */
+    void *obj;             /* opaque kernel object pointer */
+    uint32_t gen;          /* generation for stale-handle protection */
+    uint32_t flags;        /* CAP_ENTRY_FLAG_* */
 } cap_entry_t;
 
 /* M5.5: slab-backed cache for capability entries (kernel objects). */

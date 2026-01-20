@@ -30,7 +30,7 @@ cap_entry_t *cap_entry_alloc(void) {
     }
     cap_entry_t *e = (cap_entry_t *)slab_alloc(&g_cap_entry_cache);
     if (!e) {
-        panic("cap_entry_alloc: OOM");
+        return NULL;
     }
     memset(e, 0, sizeof(*e));
     return e;

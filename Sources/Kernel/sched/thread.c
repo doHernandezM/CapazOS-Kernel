@@ -122,6 +122,7 @@ if (!entry) {
 
     t->tid = s_next_tid++;
     t->name = name;
+    t->task = NULL;
 
     // Allocate a per-thread kernel stack from PMM pages.
     // Phase 0 default: 16 KiB (4 pages). This remains a per-thread contract.

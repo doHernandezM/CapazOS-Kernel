@@ -22,6 +22,17 @@
 #define CONFIG_TICKLESS 0
 #endif
 
+/*
+ * Scheduler policy (M6 baseline)
+ *
+ * Cooperative scheduling means:
+ *  - IRQ handlers never switch threads.
+ *  - Thread switches occur only via explicit yield() (or later, explicit safe points).
+ */
+#ifndef CONFIG_SCHED_COOPERATIVE
+#define CONFIG_SCHED_COOPERATIVE 1
+#endif
+
 #if (CONFIG_TICK_HZ <= 0)
 #error "CONFIG_TICK_HZ must be > 0"
 #endif

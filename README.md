@@ -70,6 +70,11 @@ As of **Boot/Kernel 0.0.8D** (**Build 47**, 2026-01-12):
 - Scheduler baseline exists (cooperative foundation; preemption hooks are present but not yet “contract-locked”).
 - A minimal deadline-queue exists as groundwork for later timer-based scheduling.
 
+**M6 policy (explicit): cooperative scheduling**
+- Config: `CONFIG_SCHED_COOPERATIVE=1` (default; overrideable at build time).
+- IRQ handlers never switch threads.
+- Thread switches occur only via explicit `yield()` (later: explicit safe preemption points).
+
 ### Core (Swift)
 - A separate **Core** Xcode project exists but is intentionally minimal.
 - Build scripts support producing a Swift object (Embedded mode), but the Swift Core is **not integrated** into the kernel yet.
@@ -149,6 +154,8 @@ Phases
 1. Deferred work queue + worker drain in thread context
 2. Core thread lifecycle and controlled entrypoint
 3. Explicit preemption/critical-section policy for Core
+
+For this milestone, the scheduler mode is pinned to cooperative via `CONFIG_SCHED_COOPERATIVE=1`.
 
 ### Milestone M7 — Capability kernel skeleton (mechanisms)
 

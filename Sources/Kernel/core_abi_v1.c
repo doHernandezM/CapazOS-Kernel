@@ -13,8 +13,10 @@
 #include "irq.h"
 #include "timer_generic.h"
 #include "sched.h"
+#include "contracts.h"
 
 static void ks_log(const char *msg) {
+    CORE_ENTRY_GUARD();
     if (msg) {
         uart_puts(msg);
     }
@@ -22,10 +24,12 @@ static void ks_log(const char *msg) {
 }
 
 static void ks_panic(const char *msg) {
+    CORE_ENTRY_GUARD();
     panic(msg ? msg : "panic");
 }
 
 static void *ks_alloc(size_t size) {
+    CORE_ENTRY_GUARD();
     /*
      * Core's allocation surface is explicitly a BUFFER allocator.
      * Kernel OBJECTS must not use this path; they should use slab caches.
@@ -34,22 +38,27 @@ static void *ks_alloc(size_t size) {
 }
 
 static void ks_free(void *ptr) {
+    CORE_ENTRY_GUARD();
     kbuf_free(ptr);
 }
 
 static uint64_t ks_irq_save(void) {
+    CORE_ENTRY_GUARD();
     return irq_save();
 }
 
 static void ks_irq_restore(uint64_t prev_daif) {
+    CORE_ENTRY_GUARD();
     irq_restore(prev_daif);
 }
 
 static uint64_t ks_time_now_ticks(void) {
+    CORE_ENTRY_GUARD();
     return timer_ticks_read();
 }
 
 static void ks_yield(void) {
+    CORE_ENTRY_GUARD();
     yield();
 }
 
