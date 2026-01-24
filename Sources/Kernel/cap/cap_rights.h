@@ -13,6 +13,9 @@ typedef uint32_t cap_rights_t;
 #define CAP_R_DUP      ((cap_rights_t)1u << 3)   // may duplicate/derive
 #define CAP_R_TRANSFER ((cap_rights_t)1u << 4)   // may transfer ownership
 
+// Drop/invalidate (ability to remove a capability from your own table).
+#define CAP_R_DROP     ((cap_rights_t)1u << 5)
+
 // Thread/Task
 #define CAP_R_CONTROL  ((cap_rights_t)1u << 8)
 

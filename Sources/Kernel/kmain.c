@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Canonical boundary contract (Kernel <-> Core)
 #include "core_kernel_abi.h"
 
 #include "boot_info.h"
@@ -26,8 +27,9 @@
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
 #include "panic.h"   // panic()
 
-/* Core entrypoint (optional). */
-extern void core_main(const kernel_services_v1_t *services) __attribute__((weak));
+// Core entrypoints are declared in core_entrypoints.h (included via
+// core_kernel_abi.h). A weak stub implementation is provided by
+// core_entrypoints_stub.c so the Kernel can build/link without Core.
 const kernel_services_v1_t *kernel_services_v1(void);
 
 #include "config.h"
@@ -38,6 +40,8 @@ const kernel_services_v1_t *kernel_services_v1(void);
 #include "cap/cap_entry.h"
 #include "cap/cap_table.h"
 #include "cap/cap_ops.h"
+#include "ipc/ipc_selftest.h"
+#include "ipc/endpoint.h"
 #include "task/task.h"
 
 /*
@@ -264,9 +268,10 @@ static void core_thread_entry(void *arg)
 #endif
 
     /* Phase 2 contract: Core runs once in this thread. */
-    if (core_main) {
-        core_main(kernel_services_v1());
-    }
+    // Hand services table to Core, then enter Core.
+    // If Core is not linked, weak stubs (in core_entrypoints_stub.c) make this a no-op.
+    core_set_services(kernel_services_v1());
+    (void)core_main();
 
     for (;;) {
         /* Drain all pending work items. */
@@ -376,6 +381,7 @@ void kmain(const boot_info_t *boot_info)
     // M5.5: Initialize slab caches for high-churn kernel objects.
     thread_alloc_init();
     ipc_msg_cache_init();
+    endpoint_cache_init();
     cap_entry_cache_init();
     /* M6: Work item cache + deferred work queue. */
     work_item_cache_init();

@@ -130,7 +130,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
-# Pre-build: archive previous kernel.img and then delete the build folder.
+# Pre-build: archive previous build artifacts and then delete the build folder.
 # ---------------------------------------------------------------------------
 
 archive_previous_kernel_img_if_present() {
@@ -145,41 +145,104 @@ archive_previous_kernel_img_if_present() {
     fi
   fi
 
-  local kernel_img="$OUT_DIR/kernel.img"
-  if [[ ! -f "$kernel_img" ]]; then
+  # Support both spellings to avoid brittle builds.
+  local kernel_img=""
+  if [[ -f "$OUT_DIR/Kernel.img" ]]; then
+    kernel_img="$OUT_DIR/Kernel.img"
+  elif [[ -f "$OUT_DIR/kernel.img" ]]; then
+    kernel_img="$OUT_DIR/kernel.img"
+  else
     return 0
   fi
 
   ensure_dir "$ARCHIVE_DIR"
 
-  local zip_path="$ARCHIVE_DIR/Kernel.${build_num}.zip"
+  # Archive both the source tree (Code/) and the built kernel image.
+  local zip_path="$ARCHIVE_DIR/Code.${build_num}.zip"
   rm -f "$zip_path"
 
-  if command -v zip >/dev/null 2>&1; then
-    # -j: junk paths (store only filename), -q: quiet
-    zip -q -j "$zip_path" "$kernel_img"
-  elif command -v ditto >/dev/null 2>&1; then
-    # macOS-friendly fallback
-    ditto -c -k --sequesterRsrc --keepParent "$kernel_img" "$zip_path"
-  else
-    die "Neither 'zip' nor 'ditto' is available to archive kernel.img"
+  local staging_dir
+  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/capazos-archive.XXXXXX")"
+  mkdir -p "$staging_dir"
+
+  # Stage Code/ as Code/ (not an absolute path) and stage the kernel as Kernel.img.
+  cp -a "$CODE_DIR" "$staging_dir/Code"
+  cp -a "$kernel_img" "$staging_dir/Kernel.img"
+
+  if ! command -v zip >/dev/null 2>&1; then
+    die "'zip' is required to archive Code/ + Kernel.img (install zip or ensure it's in PATH)"
   fi
 
-  log "Archived previous kernel image -> $zip_path"
+  (
+    cd "$staging_dir"
+    zip -q -r "$zip_path" "Code" "Kernel.img"
+  )
+
+  rm -rf "$staging_dir"
+  log "Archived previous build -> $zip_path"
 }
 
-archive_previous_kernel_img_if_present
-rm -rf "$OUT_DIR"
+### Cleaning / archiving policy
+#
+# The kernel build produces a "kernel.img" in $OUT_DIR. Historically we always
+# cleaned $OUT_DIR at the start of *every* invocation; that works for "kernel"
+# builds, but it breaks the "Core"/"core_swift" target because Xcode will run
+# the script and we end up archiving + deleting the last kernel image even
+# though we're not rebuilding it.
+#
+# Policy:
+#   - kernel_c: archive existing kernel.img, then clean the entire build dir.
+#   - boot:     do NOT delete the whole build dir (boot doesn't produce kernel.img).
+#   - core_*:   do NOT archive or delete the whole build dir; only clean the
+#               core-specific outputs when --clean is passed.
 
-# Recreate output dirs after cleaning.
+case "$TARGET" in
+  kernel_c|core_swift)
+    archive_previous_kernel_img_if_present
+    rm -rf "$OUT_DIR"
+    ;;
+  clean)
+    rm -rf "$OUT_DIR"
+    ;;
+  *)
+    # Keep existing build products (especially kernel.img).
+    ;;
+esac
+
+# A dedicated clean target should not regenerate build info or recreate the
+# build directory; it should just remove it and exit.
+if [[ "$TARGET" == "clean" ]]; then
+  echo "Cleaned -> $OUT_DIR"
+  exit 0
+fi
+
+# Ensure output dirs exist.
 ensure_dir "$OUT_DIR"
 ensure_dir "$OBJ_DIR"
 ensure_dir "$OUT_DIR/include"
 
-# Optional clean flag: treat as "extra clean" on top of the always-clean behavior.
+# Optional clean flag: remove known artifacts, but do not nuke the entire build
+# dir unless the target is "kernel_c" or "clean" (handled above).
 if [[ "$CLEAN" == "1" ]]; then
-  rm -rf "$OBJ_DIR"     "$OUT_DIR/boot.elf" "$OUT_DIR/boot.bin"     "$OUT_DIR/kernel.elf" "$OUT_DIR/kernel.bin" "$OUT_DIR/kernel.img"     "$OUT_DIR/Kernel.zip" || true
-  ensure_dir "$OBJ_DIR"
+  case "$TARGET" in
+    core_swift)
+      rm -f "$OBJ_DIR/core_swift.o" "$OUT_DIR/core_swift.o" || true
+      ;;
+    core_c)
+      rm -f "$OBJ_DIR/core_c.o" "$OUT_DIR/core_c.o" || true
+      ;;
+    boot)
+      rm -f "$OUT_DIR/boot.elf" "$OUT_DIR/boot.bin" || true
+      ;;
+    kernel_c)
+      # kernel_c already cleared $OUT_DIR above.
+      ;;
+    *)
+      # Conservative: only clear obj dir.
+      rm -rf "$OBJ_DIR" || true
+      ensure_dir "$OBJ_DIR"
+      ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -218,14 +281,45 @@ case "$TARGET" in
   core_c)
     # shellcheck source=targets/core_c.sh
     source "$SCRIPTS_DIR/targets/core_c.sh"
-    if ! build_core_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR" "$CORE_DIR"; then
-      die "No Core sources found under: $CORE_DIR/Sources"
+    build_core_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR" "$CORE_DIR"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      if [ $rc -eq 1 ]; then
+        die "No Core sources found under: $CORE_DIR/Sources"
+      else
+        die "Core(C) compilation failed."
+      fi
     fi
     ;;
   core_swift)
+    # Build full Kernel image with Swift Core objects linked in.
+    # shellcheck source=targets/boot.sh
+    source "$SCRIPTS_DIR/targets/boot.sh"
     # shellcheck source=targets/core_swift.sh
     source "$SCRIPTS_DIR/targets/core_swift.sh"
+      # shellcheck source=targets/core_c.sh
+      source "$SCRIPTS_DIR/targets/core_c.sh"
+    # shellcheck source=targets/kernel_c.sh
+    source "$SCRIPTS_DIR/targets/kernel_c.sh"
+
+      # Force Core on for this target (Swift + Core C stubs).
+    CORE_MODE="swift"
+      export CORE_SWIFT_OBJ="$OBJ_DIR/core_swift.o"
+      # build_core_c publishes to $OUT_DIR/core_c.o
+      export CORE_C_OBJ="$OUT_DIR/core_c.o"
+
+    build_boot "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR"
     build_core_swift "$OUT_DIR" "$OBJ_DIR" "$CORE_DIR"
+    build_core_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR" "$CORE_DIR"
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      if [ $rc -eq 1 ]; then
+        die "No Core sources found under: $CORE_DIR/Sources"
+      else
+        die "Core(C) compilation failed."
+      fi
+    fi
+    build_kernel_c "$OUT_DIR" "$OBJ_DIR" "$KERNEL_DIR"
     ;;
   *)
     die "Unknown target: $TARGET"

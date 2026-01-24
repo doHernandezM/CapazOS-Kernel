@@ -18,6 +18,13 @@ void sched_enqueue(thread_t *t);
 // Cooperative yield: switch to the next runnable thread (if any).
 void yield(void);
 
+// Block the currently running thread and reschedule.
+// Thread context only. The thread remains blocked until woken via sched_wake().
+void sched_block_current(void);
+
+// Wake a blocked thread (moves it to ready queue).
+void sched_wake(thread_t *t);
+
 /*
  * Called from the IRQ exception path just before restoring the trap frame.
  * For now this is a no-op hook that records the current thread's last trap

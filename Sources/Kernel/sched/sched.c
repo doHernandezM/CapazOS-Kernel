@@ -177,13 +177,14 @@ void yield(void) {
     SCHED_ASSERT(prev != NULL, "sched: current is NULL");
     SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");
 
-    // Only enqueue non-bootstrap runnable threads
-    if (prev != &bootstrap_thread && prev->state != THREAD_DEAD) {
+    // Only enqueue non-bootstrap runnable threads.
+    // Blocked threads must not be re-enqueued.
+    if (prev != &bootstrap_thread && prev->state == THREAD_RUNNING) {
         prev->state = THREAD_READY;
         sched_enqueue(prev);
     }
-
-    thread_t *next = sched_pick_next();
+    // THREAD_DEAD and THREAD_BLOCKED are intentionally not enqueued.
+thread_t *next = sched_pick_next();
     if (!next) {
         irq_restore(flags);
         return;
@@ -199,6 +200,49 @@ void yield(void) {
     irq_restore(flags);
 }
 
+void sched_block_current(void) {
+    ASSERT_THREAD_CONTEXT();
+    uint64_t flags = irq_save();
+
+    thread_t *prev = s_current;
+    SCHED_ASSERT(prev != NULL, "sched: current is NULL");
+    SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");
+    SCHED_ASSERT(prev != &bootstrap_thread, "sched: bootstrap thread must not block");
+
+    prev->state = THREAD_BLOCKED;
+
+    thread_t *next = sched_pick_next();
+    if (!next) {
+        // No other runnable thread; keep running (can't block).
+        prev->state = THREAD_RUNNING;
+        irq_restore(flags);
+        return;
+    }
+
+    next->state = THREAD_RUNNING;
+    if (next != &bootstrap_thread) {
+        SCHED_ASSERT(next->ctx.sp != 0, "sched: next thread has NULL ctx.sp");
+    }
+    s_current = next;
+    ctx_switch(&prev->ctx, &next->ctx);
+
+    irq_restore(flags);
+}
+
+void sched_wake(thread_t *t) {
+    ASSERT_THREAD_CONTEXT();
+    if (!t) return;
+
+    uint64_t flags = irq_save();
+
+    // Only wake genuinely blocked threads.
+    if (t->state == THREAD_BLOCKED) {
+        t->state = THREAD_READY;
+        sched_enqueue(t);
+    }
+
+    irq_restore(flags);
+}
 trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
     /*
      * Phase 0: preemption-readiness audit.

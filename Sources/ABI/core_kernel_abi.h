@@ -1,23 +1,22 @@
+// Canonical boundary umbrella header (Option A boundary)
+//
+// This header exists as the stable include used by both Kernel and Core.
+// Keep it small and versioned; include only other ABI headers.
+
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
+// Core<->Kernel ABI version: bump on any breaking change to *any* boundary header.
+#define CAPAZ_CORE_KERNEL_ABI_VERSION 1
 
-#define KERNEL_SERVICES_ABI_VERSION 1
+#include "kernel_services_v1.h"
+#include "core_entrypoints.h"
 
-typedef struct kernel_services_v1 {
-  uint32_t abi_version;
+// Backwards-compatibility: some code may still refer to this macro name.
+#ifndef KERNEL_SERVICES_ABI_VERSION
+#define KERNEL_SERVICES_ABI_VERSION CAPAZ_KERNEL_SERVICES_V1_MAJOR
+#endif
 
-  void (*log)(const char *msg);
-  void (*panic)(const char *msg);
-
-  void *(*alloc)(size_t size);
-  void (*free)(void *ptr);
-
-  uint64_t (*irq_save)(void);
-  void (*irq_restore)(uint64_t prev_daif);
-
-  uint64_t (*time_now_ticks)(void);
-
-  void (*yield)(void);
-} kernel_services_v1_t;
+// Backwards-compatibility: keep the older umbrella ABI macro.
+#ifndef KERNEL_ABI_VERSION
+#define KERNEL_ABI_VERSION CAPAZ_CORE_KERNEL_ABI_VERSION
+#endif

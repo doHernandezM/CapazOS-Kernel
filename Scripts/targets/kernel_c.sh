@@ -66,8 +66,10 @@ PY
   add_obj "$kernel_dir/Sources/Kernel/boot/kernel_header.S"
   add_obj "$kernel_dir/Sources/Kernel/boot/kcrt0.c"
   add_obj "$kernel_dir/Sources/Kernel/kmain.c"
+  add_obj "$kernel_dir/Sources/Kernel/core_entrypoints_stub.c"
   add_obj "$kernel_dir/Sources/Kernel/core_abi_v1.c"
   add_obj "$kernel_dir/Sources/Kernel/core_abi_v2.c"
+  add_obj "$kernel_dir/Sources/Kernel/core_abi_v3.c"
   add_obj "$kernel_dir/Sources/Kernel/platform/platform.c"
   add_obj "$kernel_dir/Sources/Kernel/mm/pmm.c"
   add_obj "$kernel_dir/Sources/Kernel/alloc/slab_cache.c"
@@ -97,10 +99,34 @@ PY
   add_obj "$kernel_dir/Sources/HAL/timer_generic.c"
   add_obj "$kernel_dir/Sources/HAL/uart_pl011.c"
 
-  # Optional Core(C): build and link if present.
-  # Controlled by CORE_MODE=auto|on|off (set by Scripts/build.sh).
+  # Optional Core payload: build and link if present.
+  # Controlled by CORE_MODE=auto|on|off|swift (set by Scripts/build.sh).
+  #
+  #   auto  - link Core(C) if present
+  #   on    - require and link Core(C)
+  #   off   - do not link any Core payload
+  #   swift - link Core(Swift) object produced by target core_swift
   case "${CORE_MODE:-auto}" in
     off)
+      ;;
+    swift)
+      # Swift mode links Core artifacts (no compiling Core sources from the Kernel build).
+      # Core must publish:
+      #   - core_swift.o (Swift object)
+      #   - core_c.o (C shims + C entrypoints)
+      if [[ -z "${CORE_SWIFT_OBJ:-}" || ! -f "${CORE_SWIFT_OBJ}" ]]; then
+        die "CORE_MODE=swift but CORE_SWIFT_OBJ is missing or not a file: ${CORE_SWIFT_OBJ:-<unset>}"
+      fi
+
+      if [[ -z "${CORE_C_OBJ:-}" ]]; then
+        CORE_C_OBJ="$build_root/core_c.o"
+      fi
+      if [[ ! -f "${CORE_C_OBJ}" ]]; then
+        die "CORE_MODE=swift but CORE_C_OBJ is missing or not a file: ${CORE_C_OBJ:-<unset>} (build core_c first)"
+      fi
+
+      objs+=("$CORE_C_OBJ")
+      objs+=("$CORE_SWIFT_OBJ")
       ;;
     on|auto)
       if [[ -n "${CORE_DIR:-}" ]] && build_core_c "$out_dir" "$obj_dir" "$kernel_dir" "$CORE_DIR"; then
@@ -112,7 +138,7 @@ PY
       fi
       ;;
     *)
-      die "Invalid CORE_MODE=${CORE_MODE} (expected auto|on|off)"
+      die "Invalid CORE_MODE=${CORE_MODE} (expected auto|on|off|swift)"
       ;;
   esac
 

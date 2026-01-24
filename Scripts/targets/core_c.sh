@@ -125,5 +125,12 @@ build_core_c() {
   "$LD" -r -o "$out_obj" "${objs[@]}"
 
   log "Core(C) linked -> $out_obj"
+
+  # Publish into the top-level build output directory so other targets can
+  # reference a stable path (e.g. $OUT_DIR/core_c.o).
+  ensure_dir "$out_dir"
+  local pub_obj="$out_dir/core_c.o"
+  cp -f "$out_obj" "$pub_obj"
+  log "Core(C) published -> $pub_obj"
   return 0
 }

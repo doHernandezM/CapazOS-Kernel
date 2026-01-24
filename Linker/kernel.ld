@@ -22,8 +22,17 @@ MEMORY
 
 PHDRS
 {
-  text PT_LOAD FLAGS(5); /* R-X */
-  data PT_LOAD FLAGS(6); /* RW- */
+  /*
+   * Single loadable segment.
+   *
+   * We intentionally avoid multiple PT_LOAD segments here because lld keeps a
+   * separate load-address counter per segment. When using a single AT> region,
+   * that can yield overlapping LMAs (both counters start at ORIGIN(KPHYS)).
+   *
+   * Page protections are enforced by our own paging setup (using the section
+   * boundary symbols below), so we do not rely on ELF program-header flags.
+   */
+  kernel PT_LOAD FLAGS(7); /* RWX (metadata only for our loader) */
 }
 
 SECTIONS
@@ -35,7 +44,7 @@ SECTIONS
   {
     . = ALIGN(16);
     KEEP(*(.kernel_header))
-  } >KVIRT AT>KPHYS :text
+  } >KVIRT AT> KPHYS :kernel
 
   .text :
   {
@@ -44,7 +53,7 @@ SECTIONS
     *(.text._kcrt0)
     *(.text*)
     __text_end = .;
-  } >KVIRT AT>KPHYS :text
+  } >KVIRT AT> KPHYS :kernel
 
   .rodata :
   {
@@ -52,7 +61,7 @@ SECTIONS
     __rodata_start = .;
     *(.rodata*)
     __rodata_end = .;
-  } >KVIRT AT>KPHYS :text
+  } >KVIRT AT> KPHYS :kernel
 
 
   .text.core :
@@ -61,7 +70,7 @@ SECTIONS
     __core_text_start = .;
     *(.text.core*)
     __core_text_end = .;
-  } >KVIRT AT>KPHYS :text
+  } >KVIRT AT> KPHYS :kernel
 
   .rodata.core :
   {
@@ -69,7 +78,7 @@ SECTIONS
     __core_rodata_start = .;
     *(.rodata.core*)
     __core_rodata_end = .;
-  } >KVIRT AT>KPHYS :text
+  } >KVIRT AT> KPHYS :kernel
 
   .data :
   {
@@ -77,7 +86,7 @@ SECTIONS
     __data_start = .;
     *(.data*)
     __data_end = .;
-  } >KVIRT AT>KPHYS :data
+  } >KVIRT AT> KPHYS :kernel
 
 
   .data.core :
@@ -87,7 +96,7 @@ SECTIONS
     *(.data.core*)
     __core_data_end = .;
     __kernel_loaded_end = .;
-  } >KVIRT AT>KPHYS :data
+  } >KVIRT AT> KPHYS :kernel
 
   .bss (NOLOAD) :
   {
@@ -98,7 +107,7 @@ SECTIONS
     __bss_end = .;
 
 
-  } >KVIRT :data
+  } >KVIRT :kernel
 
   .bss.core (NOLOAD) :
   {
@@ -114,6 +123,6 @@ SECTIONS
     __kernel_image_end     = __kernel_loaded_end;
     __kernel_image_size    = __kernel_image_end - __kernel_image_start;
     __kernel_entry_offset  = _kcrt0 - __kernel_image_start;
-  } >KVIRT :data
+  } >KVIRT :kernel
 
 }

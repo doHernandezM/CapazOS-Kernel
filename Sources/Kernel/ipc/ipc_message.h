@@ -1,15 +1,23 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "alloc/slab_cache.h"
+
+// M8 Phase 0 policy: inline payload only.
+// Larger payloads will be supported later via a MEMOBJ capability.
+#ifndef IPC_MSG_INLINE_MAX
+#define IPC_MSG_INLINE_MAX 128u
+#endif
 
 typedef struct ipc_msg {
     struct ipc_msg *next;
     struct ipc_msg *prev;
-    void *payload;
-    size_t len;
+
     uint32_t tag;
+    uint32_t len; // bytes valid in data[]
+    uint8_t  data[IPC_MSG_INLINE_MAX];
 } ipc_msg_t;
 
 /* M5.5: slab-backed cache for IPC message objects (high churn). */

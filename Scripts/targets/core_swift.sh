@@ -27,6 +27,7 @@ build_core_swift() {
 
   # Compile all Swift sources into a single object.
   # Use -parse-as-library since there is no 'main'.
+  # Keep the Swift target triple aligned with the C toolchain.
   "$SWIFTC" \
     -target aarch64-none-none-elf \
     -emit-object -parse-as-library -wmo \
@@ -37,4 +38,9 @@ build_core_swift() {
     -o "$out_obj"
 
   echo "[core_swift] built $out_obj"
+
+  # Publish an easy-to-find build product at the build root.
+  # (The object also remains in build/obj for incremental builds.)
+  cp -f "$out_obj" "$out_dir/core_swift.o"
+  echo "[core_swift] published $out_dir/core_swift.o"
 }

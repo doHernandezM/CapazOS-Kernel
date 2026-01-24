@@ -76,6 +76,7 @@ _Static_assert(sizeof(ctx_t) == 104, "ctx_t ABI: size");
 typedef enum thread_state {
     THREAD_READY = 0,
     THREAD_RUNNING,
+    THREAD_BLOCKED,
     THREAD_DEAD,
 } thread_state_t;
 

@@ -15,26 +15,30 @@
 #include "sched.h"
 #include "contracts.h"
 
-static void ks_log(const char *msg) {
+// ABI requires a printf-style variadic logger. We currently ignore varargs and
+// treat the first argument as a raw string.
+static void ks_log(const char *fmt, ...) {
     CORE_ENTRY_GUARD();
-    if (msg) {
-        uart_puts(msg);
+    if (fmt) {
+        uart_puts(fmt);
     }
     uart_putnl();
 }
 
-static void ks_panic(const char *msg) {
+static __attribute__((noreturn)) void ks_panic(const char *msg) {
     CORE_ENTRY_GUARD();
     panic(msg ? msg : "panic");
+    __builtin_unreachable();
 }
 
-static void *ks_alloc(size_t size) {
+static void *ks_alloc(uint64_t size, uint64_t align) {
     CORE_ENTRY_GUARD();
     /*
      * Core's allocation surface is explicitly a BUFFER allocator.
      * Kernel OBJECTS must not use this path; they should use slab caches.
      */
-    return kbuf_alloc(size);
+    (void)align;
+    return kbuf_alloc((size_t)size);
 }
 
 static void ks_free(void *ptr) {
