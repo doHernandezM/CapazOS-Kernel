@@ -147,7 +147,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\n\nexec \"${SRCROOT}/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nexec \"${SRCROOT}/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
 		};
 		AAE76D022EF78768005230EB /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

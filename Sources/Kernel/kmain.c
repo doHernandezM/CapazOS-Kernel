@@ -12,7 +12,7 @@
 #include "core_kernel_abi.h"
 
 #include "boot_info.h"
-#include "build_info.h"
+#include "buildinfo.h"
 #include "dtb.h"
 #include "mmu.h"
 #include "pmm.h"

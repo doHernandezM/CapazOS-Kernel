@@ -18,7 +18,7 @@
  *   5) Pass boot_info pointer as high-half direct-map VA (safe if kernel disables TTBR0)
  *   6) Capture DTB pointer from x0 and pass DTB (VA + size) in boot_info
  */
-#include "build_info.h"
+#include "buildinfo.h"
 
 
     .section .text._start, "ax"
