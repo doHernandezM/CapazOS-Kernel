@@ -156,6 +156,106 @@ PY
   fi
 }
 
+# Deterministic discovery helpers ------------------------------------------------
+#
+list_sources_sorted() {
+  # Usage:
+  #   list_sources_sorted <dir...> -- <find predicates...>
+  # Example:
+  #   list_sources_sorted "$KERNEL_DIR/Sources/Kernel" "$KERNEL_DIR/Sources/HAL" -- \
+  #     -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \)
+  local dirs=()
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--" ]]; then
+      shift
+      break
+    fi
+    dirs+=("$1")
+    shift
+  done
+  [[ ${#dirs[@]} -gt 0 ]] || die "list_sources_sorted: missing dirs"
+  # Remaining args are find predicates.
+  find "${dirs[@]}" "$@" -print | LC_ALL=C sort
+}
+
+list_files_sorted0() {
+  # Usage:
+  #   list_files_sorted0 <dir> <name_pattern>
+  # Example:
+  #   list_files_sorted0 "$obj_dir" "*.o"
+  local dir="$1"
+  local pat="$2"
+  find "${dir}" -type f -name "${pat}" -print0 | LC_ALL=C sort -z
+}
+
+# Preflight error aggregation ---------------------------------------------------
+preflight_fail() {
+  # Print a single actionable failure message.
+  echo "error: preflight failed:" >&2
+  local msg
+  for msg in "$@"; do
+    echo "  - ${msg}" >&2
+  done
+  exit 1
+}
+
+boundary_lint_core() {
+  local core_src="${REPO_ROOT}/Code/Core/Sources"
+  [[ -d "${core_src}" ]] || return 0
+  # Disallow reaching into Kernel via path-based includes. ABI headers must be
+  # included by basename with -I Kernel/Sources/ABI.
+  if grep -R --line-number -E '#include[[:space:]]+["<](\.\./)*Kernel/' "${core_src}" >/dev/null 2>&1; then
+    echo "Core includes kernel-private headers via a Kernel/ path (only ABI basenames via -I Kernel/Sources/ABI are allowed)."
+    return 1
+  fi
+  if grep -R --line-number -E '#include[[:space:]]+<Kernel/' "${core_src}" >/dev/null 2>&1; then
+    echo "Core includes kernel-private headers via <Kernel/...> (only ABI basenames via -I Kernel/Sources/ABI are allowed)."
+    return 1
+  fi
+  return 0
+}
+
+boundary_lint_kernel() {
+  local kernel_src="${KERNEL_DIR}/Sources"
+  [[ -d "${kernel_src}" ]] || return 0
+  # Kernel must not include Core headers. The only allowed cross-boundary header
+  # is Kernel/Sources/ABI/*, which includes core_entrypoints.h (by basename).
+  if grep -R --line-number -E '#include[[:space:]]+["<](\.\./)*Core/' "${kernel_src}" >/dev/null 2>&1; then
+    echo "Kernel includes Core headers via a Core/ path (forbidden)."
+    return 1
+  fi
+  return 0
+}
+
+gate_checks() {
+  local errs=()
+
+  # W^X selftest must be invoked during MMU init (not just defined).
+  local mmu_file="${KERNEL_DIR}/Sources/Kernel/mm/mmu.c"
+  if [[ -f "${mmu_file}" ]]; then
+    if ! grep -q 'mmu_assert_layout_and_wx();' "${mmu_file}"; then
+      errs+=("W^X selftest call missing: expected mmu_assert_layout_and_wx() invocation in Sources/Kernel/mm/mmu.c")
+    fi
+  else
+    errs+=("Missing file: Sources/Kernel/mm/mmu.c (expected for W^X gate)")
+  fi
+
+  # Allocation must deny IRQ context.
+  local kheap_file="${KERNEL_DIR}/Sources/Kernel/kheap.c"
+  if [[ -f "${kheap_file}" ]]; then
+    if ! grep -q 'ASSERT_THREAD_CONTEXT' "${kheap_file}"; then
+      errs+=("IRQ allocation gate missing: expected ASSERT_THREAD_CONTEXT in Sources/Kernel/kheap.c")
+    fi
+  else
+    errs+=("Missing file: Sources/Kernel/kheap.c (expected for allocation gate)")
+  fi
+
+  if (( ${#errs[@]} )); then
+    preflight_fail "${errs[@]}"
+  fi
+}
+
+
 # --- Preflight / toolchain ---------------------------------------------------
 
 preflight_common() {
@@ -289,26 +389,63 @@ preflight_common() {
   LDFLAGS_COMMON="${LDFLAGS_COMMON_ARR[*]}"
 
 
-  # Toolchain sanity
-  [[ -n "${CC:-}" ]] || die "CC not set (expected via toolchain.env)"
-  [[ -n "${LD:-}" ]] || die "LD not set (expected via toolchain.env)"
-  [[ -n "${OBJCOPY:-}" ]] || die "OBJCOPY not set (expected via toolchain.env)"
-  # AR isn't always provided by Xcode / toolchain.env, but we rely on it to
-  # create archives (and we run with `set -u`, so an unset AR would hard-fail).
-  if [[ -z "${AR:-}" ]]; then
-    if command -v llvm-ar >/dev/null 2>&1; then
-      AR="llvm-ar"
-    elif command -v ar >/dev/null 2>&1; then
-      AR="ar"
-    else
-      die "AR not set and neither llvm-ar nor ar found in PATH"
-    fi
+  
+# Toolchain + target-specific checklist (single failure message).
+local errs=()
+
+[[ -n "${CC:-}" ]] || errs+=("CC not set (expected via Kernel/Scripts/toolchain.env)")
+[[ -n "${LD:-}" ]] || errs+=("LD not set (expected via Kernel/Scripts/toolchain.env)")
+[[ -n "${OBJCOPY:-}" ]] || errs+=("OBJCOPY not set (expected via Kernel/Scripts/toolchain.env)")
+
+# AR isn't always provided by Xcode / toolchain.env; choose a reasonable default.
+if [[ -z "${AR:-}" ]]; then
+  if command -v llvm-ar >/dev/null 2>&1; then
+    AR="llvm-ar"
+  elif command -v ar >/dev/null 2>&1; then
+    AR="ar"
+  else
+    errs+=("AR not set and neither llvm-ar nor ar found in PATH")
   fi
-  need_cmd "${CC}"
-  need_cmd "${LD}"
-  need_cmd "${OBJCOPY}"
-  need_cmd "${AR}"
-  if [[ -n "${NM:-}" ]]; then need_cmd "${NM}"; fi
+fi
+
+# Required directories / files per target.
+if [[ "${TARGET}" == "kernel_c" || "${TARGET}" == "core" ]]; then
+  [[ -d "${KERNEL_DIR}/Sources/Kernel" ]] || errs+=("Missing dir: Kernel/Sources/Kernel")
+  [[ -d "${KERNEL_DIR}/Sources/HAL" ]] || errs+=("Missing dir: Kernel/Sources/HAL")
+  [[ -d "${KERNEL_DIR}/Sources/Arch/aarch64" ]] || errs+=("Missing dir: Kernel/Sources/Arch/aarch64")
+  [[ -f "${KERNEL_DIR}/Linker/kernel.ld" ]] || errs+=("Missing file: Kernel/Linker/kernel.ld")
+  [[ -f "${KERNEL_DIR}/Linker/boot.ld" ]] || errs+=("Missing file: Kernel/Linker/boot.ld")
+  [[ -d "${KERNEL_DIR}/Sources/ABI" ]] || errs+=("Missing dir: Kernel/Sources/ABI")
+fi
+
+if [[ "${TARGET}" == "core" ]]; then
+  [[ -d "${REPO_ROOT}/Code/Core/Sources" ]] || errs+=("Missing dir: Code/Core/Sources (required for --target core)")
+  [[ -f "${REPO_ROOT}/Code/Core/Scripts/build_core.sh" ]] || errs+=("Missing script: Code/Core/Scripts/build_core.sh")
+fi
+
+# Boundary lint gates
+if [[ "${TARGET}" == "core" ]]; then
+  if ! boundary_lint_core >/dev/null 2>&1; then
+    errs+=("Core boundary lint failed (Core must not include Kernel-private headers; only ABI basenames are allowed).")
+  fi
+fi
+if ! boundary_lint_kernel >/dev/null 2>&1; then
+  errs+=("Kernel boundary lint failed (Kernel must not include Core headers).")
+fi
+
+if (( ${#errs[@]} )); then
+  preflight_fail "${errs[@]}"
+fi
+
+# Tool presence (after values are validated).
+need_cmd "${CC}"
+need_cmd "${LD}"
+need_cmd "${OBJCOPY}"
+need_cmd "${AR}"
+if [[ -n "${NM:-}" ]]; then need_cmd "${NM}"; fi
+
+# drift-prevention gates (cheap checks).
+gate_checks
 }
 
 
@@ -663,7 +800,49 @@ select_platform() {
 
 # --- Entrypoint used by build.sh --------------------------------------------
 
+# Build Core artifacts and link them into the kernel image.
+#
+#     --target core is implemented as:
+#   1) Core/Scripts/build_core.sh -> publishes core_c.o + core_swift.o
+#   2) Kernel build -> final link consumes those artifacts (Kernel does NOT scan Core sources)
+build_core_and_kernel() {
+  select_platform
+  preflight_common
+
+  local out_dir="${OUT_DIR:?}"
+  local core_out="${out_dir}/core"
+  mkdirp "${core_out}"
+
+  local core_build="${REPO_ROOT}/Code/Core/Scripts/build_core.sh"
+  [[ -f "${core_build}" ]] || preflight_fail "Missing script: Core/Scripts/build_core.sh"
+
+  echo "[build] Building Core artifacts..."
+  "${core_build}" \
+    --platform "${PLATFORM}" \
+    --config "${CONFIG}" \
+    --out "${core_out}" \
+    --kernel-abi "${KERNEL_DIR}/Sources/ABI"
+
+  local core_c="${core_out}/core_c.o"
+  local core_swift="${core_out}/core_swift.o"
+
+  if [[ ! -f "${core_c}" || ! -f "${core_swift}" ]]; then
+    preflight_fail "Core build did not produce expected outputs:" \
+                   "expected: ${core_c}" \
+                   "expected: ${core_swift}"
+  fi
+
+  echo "[build] Linking kernel with Core artifacts..."
+  build_boot_and_kernel "${core_c}" "${core_swift}"
+}
+
 build_boot_and_kernel() {
+  # Optional extra objects to link into the kernel ELF (e.g. Core artifacts for --target core).
+  # Use an explicit array declaration. With `set -u`, some shells can treat an
+  # empty `local x=("$@")` as unset and later fail on `${x[@]}`.
+  local -a extra_kern_objs=()
+  extra_kern_objs=("$@")
+
   select_platform
   preflight_common
 
@@ -697,32 +876,30 @@ build_boot_and_kernel() {
 
   # Kernel + HAL sources.
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${KERNEL_DIR}/Sources/Kernel" "${KERNEL_DIR}/Sources/HAL" \
-      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+    list_sources_sorted "${KERNEL_DIR}/Sources/Kernel" "${KERNEL_DIR}/Sources/HAL" -- \
+      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \)
   )
 
   # Arch sources (excluding boot start.S).
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${KERNEL_DIR}/Sources/Arch/aarch64" \
-      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S" -print | sort
+    list_sources_sorted "${KERNEL_DIR}/Sources/Arch/aarch64" -- \
+      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S"
   )
-
 
   # Compile generated build metadata as part of the kernel, if present.
   if [ -f "${gen_dir}/buildinfo.c" ]; then
     kernel_sources+=("${gen_dir}/buildinfo.c")
   fi
 
-
   compile_objects "${boot_obj_dir}" "${gen_inc}" "${boot_sources[@]}"
   compile_objects "${kern_obj_dir}" "${gen_inc}" "${kernel_sources[@]}"
 
-  # Collect objects
+  # Collect objects (deterministic order).
   local boot_objs=()
   local kern_objs=()
 
-  while IFS= read -r -d '' f; do boot_objs+=("$f"); done < <(find "${boot_obj_dir}" -name '*.o' -print0)
-  while IFS= read -r -d '' f; do kern_objs+=("$f"); done < <(find "${kern_obj_dir}" -name '*.o' -print0)
+  while IFS= read -r -d '' f; do boot_objs+=("$f"); done < <(list_files_sorted0 "${boot_obj_dir}" "*.o")
+  while IFS= read -r -d '' f; do kern_objs+=("$f"); done < <(list_files_sorted0 "${kern_obj_dir}" "*.o")
 
   local boot_elf="${out_dir}/boot.elf"
   local kern_elf="${out_dir}/kernel.elf"
@@ -730,7 +907,13 @@ build_boot_and_kernel() {
   local kern_bin="${out_dir}/kernel.bin"
 
   link_kernel "${boot_elf}" "${KERNEL_DIR}/Linker/boot.ld" "${boot_objs[@]}"
-  link_kernel "${kern_elf}" "${KERNEL_DIR}/Linker/kernel.ld" "${kern_objs[@]}"
+  # Optional extra kernel objects. With 'set -u', expanding an unset array
+  # (common on macOS's /bin/bash 3.2) trips "unbound variable".
+  # The ${var+word} form is safe under nounset: it expands to 'word' only if
+  # the variable is set.
+  link_kernel "${kern_elf}" "${KERNEL_DIR}/Linker/kernel.ld" \
+    "${kern_objs[@]}" \
+    ${extra_kern_objs[@]+"${extra_kern_objs[@]}"}
 
   make_binary "${boot_elf}" "${boot_bin}"
   make_binary "${kern_elf}" "${kern_bin}"

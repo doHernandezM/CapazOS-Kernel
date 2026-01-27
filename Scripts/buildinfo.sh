@@ -10,7 +10,7 @@
 #   macros.
 # - Generates:
 #     - buildinfo.h   (start.S expects this)
-#     - build_info.h  (kmain.c expects this)
+#     //////////////- build_info.h  (kmain.c expects this)
 #     - buildinfo.c   (optional; currently unused by the kernel sources)
 #
 # This file is meant to be sourced by other scripts.

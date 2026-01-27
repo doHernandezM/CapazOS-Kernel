@@ -1,6 +1,6 @@
 // Kernel/Sources/Kernel/sched.c
 //
-// M7 Phase 5/6: Minimal cooperative round-robin scheduler.
+// Minimal cooperative round-robin scheduler.
 //
 // Design:
 //  - current thread is NOT in the ready queue while running.

@@ -50,7 +50,17 @@ if [[ "${CAPAZ_BUMP_BUILD_NUMBER:-1}" != "0" && "${ACTION:-build}" != "clean" ]]
   "${SCRIPT_DIR}/bump_build_number.sh" "${BUILDINFO_INI}" || true
 fi
 
-build_boot_and_kernel
+case "${TARGET}" in
+  kernel_c)
+    build_boot_and_kernel
+    ;;
+  core)
+    build_core_and_kernel
+    ;;
+  *)
+    die "Unknown --target: ${TARGET} (expected kernel_c|core)"
+    ;;
+esac
 
 # --- Final artifact location ---
 # The kernel build produces kernel.img inside the selected OUT_DIR (which varies

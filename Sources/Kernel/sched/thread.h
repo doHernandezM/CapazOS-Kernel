@@ -89,7 +89,7 @@ typedef struct thread {
     uint32_t tid;
     const char *name;
 
-    // Owning task (cap-space owner). Phase 2 (M7): required for capability lookup.
+    // Owning task (cap-space owner). required for capability lookup.
     task_t *task;
 
     // Per-thread kernel stack.

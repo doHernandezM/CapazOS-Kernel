@@ -1,6 +1,5 @@
 // Kernel-private capability table (cap-space) implementation.
 //
-// Milestone M7: storage + lookup rules.
 // This is not exposed to Core; Core will eventually hold opaque cap_handle_t values.
 
 #pragma once
@@ -82,5 +81,5 @@ static inline cap_entry_t *cap_table_lookup(cap_table_t *t, cap_handle_t h, cap_
 // Remove (drop) an entry; bumps generation and frees the entry object.
 cap_status_t cap_table_remove(cap_table_t *t, cap_handle_t h);
 
-// Invalidate stub for M7: currently identical to remove.
+// currently identical to remove.
 cap_status_t cap_table_invalidate(cap_table_t *t, cap_handle_t h);
