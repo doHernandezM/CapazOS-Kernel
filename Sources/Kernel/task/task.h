@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "resource_contract_v1.h"
+
 // Forward declare cap table.
 typedef struct cap_table cap_table_t;
 // cap_handle_t is the opaque handle type that will eventually cross the Core ABI.
@@ -15,6 +17,9 @@ typedef struct task {
     uint64_t id;
     cap_table_t *caps; // capability space owned by this task
 
+    // Resource contract (mechanism only in Phase 0).
+    resource_contract_t contract;
+
     // Bootstrap handles seeded for the initial kernel task.
     cap_handle_t self_cap;
     cap_handle_t timer_cap;
@@ -24,6 +29,7 @@ typedef struct task {
 static inline void task_init(task_t *t, uint64_t id, cap_table_t *caps) {
     t->id = id;
     t->caps = caps;
+    t->contract = resource_contract_default();
     t->self_cap = 0;
     t->timer_cap = 0;
     t->log_cap = 0;

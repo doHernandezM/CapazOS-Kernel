@@ -18,6 +18,7 @@
 #include "pmm.h"
 #include "platform.h"
 #include "uart_pl011.h"
+#include "console/ringbuf.h"
 #include "irq.h"
 #include "preempt.h"
 #include "gicv2.h"
@@ -59,6 +60,25 @@ const kernel_services_v1_t *kernel_services_v1(void);
 #    define KMAIN_DEBUG 0
 #  endif
 #endif
+
+// PL011 UART IRQ decoded from DTB (GIC IRQ id). 0 means unknown.
+// For QEMU 'virt', SPI(1) => GIC IRQ 33.
+static uint32_t s_uart_irq = 33u;
+
+// Global RX ring for Phase 1 (consumed by future console server).
+static rx_ringbuf_t s_uart_rx_rb;
+static uint8_t s_uart_rx_storage[1024];
+
+static void pl011_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
+{
+    (void)irq; (void)ctx; (void)tf;
+
+    char tmp[64];
+    size_t n = 0;
+    if (uart_irq_drain_rx(tmp, sizeof(tmp), &n) && n) {
+        rx_ringbuf_push_from_irq(&s_uart_rx_rb, (const uint8_t *)tmp, n);
+    }
+}
 
 static void print_total_memory_from_dtb(void)
 {
@@ -303,6 +323,7 @@ void kmain(const boot_info_t *boot_info)
 {
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
+    rx_ringbuf_init(&s_uart_rx_rb, s_uart_rx_storage, sizeof(s_uart_rx_storage));
 
     uart_puts("Kernel: ");
     uart_puts(CAPAZ_KERNEL_VERSION);
@@ -335,14 +356,26 @@ void kmain(const boot_info_t *boot_info)
             dtb_dump_summary();
 #endif
 
-            /* If DTB gives us a UART base, switch to it (fallback otherwise). */
+            /* If DTB gives us a UART base/IRQ, switch to it (fallback otherwise). */
             uint64_t uart_phys = 0;
-            if (dtb_find_pl011_uart(&uart_phys)) {
+            uint32_t uart_irq = 0;
+
+            (void)dtb_find_pl011_uart_irq(&uart_phys, &uart_irq);
+
+            if (uart_phys != 0) {
 #if KMAIN_DEBUG
-                uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
+                uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys);
+                uart_puts(" irq="); uart_putu64_dec((uint64_t)uart_irq); uart_putnl();
 #endif
                 uart_init(uart_phys);
-                uart_puts("UART: "); uart_puthex64(uart_phys); uart_putnl();
+                rx_ringbuf_init(&s_uart_rx_rb, s_uart_rx_storage, sizeof(s_uart_rx_storage));
+
+                if (uart_irq != 0) {
+                    s_uart_irq = uart_irq;
+                }
+
+                uart_puts("UART: "); uart_puthex64(uart_phys);
+                uart_puts(" irq="); uart_putu64_dec((uint64_t)s_uart_irq); uart_putnl();
             }
 
             /* Derive allocator-friendly usable RAM spans (RAM - reserved - implicit). */
@@ -402,6 +435,16 @@ void kmain(const boot_info_t *boot_info)
      */
     gicv2_config_irq(TIMER_PPI_IRQ, false);
     gicv2_enable_irq(TIMER_PPI_IRQ);
+
+    /* Register and enable PL011 RX interrupt (Phase 1). */
+    if (s_uart_irq != 0) {
+        (void)irq_register(s_uart_irq, pl011_irq_handler, 0);
+        /* PL011 IRQ is level-sensitive on QEMU virt. */
+        gicv2_config_irq(s_uart_irq, false);
+        gicv2_enable_irq(s_uart_irq);
+        uart_enable_rx_irq();
+    }
+
 
     /* 100Hz tick (10ms). */
     /*
