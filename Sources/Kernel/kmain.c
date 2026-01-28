@@ -179,12 +179,12 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 }
 
 
-/* M6: Deferred work queue (IRQ top-half only). */
+/* Deferred work queue (IRQ top-half only). */
 static workq_t g_deferred_workq;
 static task_t g_kernel_task;
 static cap_table_t g_kernel_cap_table;
 static uint32_t g_timer_token;
-// NOTE: In the current M7 skeleton we seed capabilities for the log service
+// NOTE: In the current skeleton we seed capabilities for the log service
 // (and other bootstrap objects) directly into the kernel cap table. There is no
 // separate global "token" value to track here, and leaving an unused global
 // trips -Werror/-Wunused-variable under the Xcode build.
@@ -220,7 +220,7 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 }
 
 /*
- * M6: Dedicated Core thread.
+ * Dedicated Core thread.
  * - Calls core_main() exactly once (if present).
  * - Drains deferred work queue in thread context.
  */
@@ -228,7 +228,7 @@ static void core_thread_entry(void *arg)
 {
     (void)arg;
 
-    /* M7: Seed initial caps for kernel task in core/main thread entry (before core_main()). */
+    /* Seed initial caps for kernel task in core/main thread entry (before core_main()). */
     cap_table_init(&g_kernel_cap_table);
     task_init(&g_kernel_task, 0, &g_kernel_cap_table);
 
@@ -243,7 +243,7 @@ static void core_thread_entry(void *arg)
         panic("core/main: failed to seed task cap");
     }
 
-    /* Placeholder token objects for M7 (mechanism labels only). */
+    /* Placeholder token objects (mechanism labels only). */
     g_timer_token = 1;
     st = cap_create(&g_kernel_cap_table,
                     CAP_TYPE_TIMER_TOKEN,
@@ -267,7 +267,7 @@ static void core_thread_entry(void *arg)
     cap_ops_selftest(&g_kernel_cap_table);
 #endif
 
-    /* Phase 2 contract: Core runs once in this thread. */
+    /* Contract: Core runs once in this thread. */
     // Hand services table to Core, then enter Core.
     // If Core is not linked, weak stubs (in core_entrypoints_stub.c) make this a no-op.
     core_set_services(kernel_services_v1());
@@ -377,20 +377,20 @@ void kmain(const boot_info_t *boot_info)
 
     // Treat kmain() as the bootstrap "current thread" even if we haven't
     // created any kernel threads yet. This keeps the IRQ-exit scaffolding
-    // (M8 readiness) safe and avoids panics on the first timer tick.
-    // M5.5: Initialize slab caches for high-churn kernel objects.
+    // Preemption-ready: safe and avoids panics on the first timer tick.
+    // Initialize slab caches for high-churn kernel objects.
     thread_alloc_init();
     ipc_msg_cache_init();
     endpoint_cache_init();
     cap_entry_cache_init();
-    /* M6: Work item cache + deferred work queue. */
+    /* Work item cache + deferred work queue. */
     work_item_cache_init();
     workq_init(&g_deferred_workq);
 
     sched_init_bootstrap();
-    // M7: cap-space is initialized and seeded in core/main thread entry (before core_main).
+    // Cap-space is initialized and seeded in core/main thread entry (before core_main).
 
-    /* M6: Bring up interrupts + timer tick after core init. */
+    /* Bring up interrupts + timer tick after core init. */
     irq_global_disable();
     gicv2_init();
 
@@ -410,7 +410,7 @@ void kmain(const boot_info_t *boot_info)
      */
     timer_init_hz(CONFIG_TICK_HZ);
 
-    /* M6: Create and enqueue a dedicated Core thread. */
+    /* Create and enqueue a dedicated Core thread. */
     thread_t *core_thr = thread_create_named("core/main", core_thread_entry, NULL);
     if (!core_thr) {
         uart_puts("kmain: failed to create core thread\n");

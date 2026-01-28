@@ -23,11 +23,12 @@
 #endif
 
 /*
- * Scheduler policy (M6 baseline)
+ * Scheduler policy.
  *
  * Cooperative scheduling means:
  *  - IRQ handlers never switch threads.
- *  - Thread switches occur only via explicit yield() (or later, explicit safe points).
+ *  - Thread switches occur only via explicit yield() (or explicit safe points).
+ * A preemptive mode may be introduced in the future.
  */
 #ifndef CONFIG_SCHED_COOPERATIVE
 #define CONFIG_SCHED_COOPERATIVE 1

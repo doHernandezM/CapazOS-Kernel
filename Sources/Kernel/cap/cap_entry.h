@@ -10,9 +10,9 @@
 /*
  * Slab-backed capability entry.
  *
- * Phase 2 (M7): becomes the real storage unit referenced by cap_table slots.
- * The cap handle carries (index, generation); the entry stores its generation
- * and a validity flag.
+ * Each capability is represented by a handle consisting of an index and a generation.
+ * The corresponding cap_entry stores metadata (type, rights, object pointer, generation)
+ * and a validity flag to protect against stale handle reuse.
  */
 #define CAP_ENTRY_FLAG_VALID (1u << 0)
 
@@ -24,10 +24,10 @@ typedef struct cap_entry {
     uint32_t flags;        /* CAP_ENTRY_FLAG_* */
 } cap_entry_t;
 
-/* M5.5: slab-backed cache for capability entries (kernel objects). */
+/* Initialize the slab-backed cache for capability entries (kernel objects). */
 void cap_entry_cache_init(void);
 cap_entry_t *cap_entry_alloc(void);
 void cap_entry_free(cap_entry_t *e);
 
-/* Observability (M5.5 Phase 3). Returns false if cache not initialized. */
+/* Returns false if cache not initialized. */
 bool cap_entry_cache_get_stats(slab_cache_stats_t *out);

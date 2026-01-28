@@ -1,6 +1,6 @@
 // Kernel/Sources/Kernel/preempt.c
 //
-// M8 Phase 1: preemption intent + preemption disable depth.
+// Preemption bookkeeping: intent + preemption-disable depth.
 
 #include "preempt.h"
 

@@ -38,7 +38,7 @@ void pmm_dump_summary(void);
 /* Query basic PMM counters (returns false if PMM not initialized). */
 bool pmm_get_stats(uint64_t *out_free_pages, uint64_t *out_total_pages);
 
-/* Extended PMM stats for hardening (Milestone M4.5). */
+/* Extended PMM stats for bring-up/hardening. */
 typedef struct pmm_stats_ex {
     uint64_t free_pages;
     uint64_t total_pages;

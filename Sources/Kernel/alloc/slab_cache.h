@@ -1,6 +1,6 @@
 #pragma once
 /*
- * slab_cache.h — simple slab/cache allocator (Milestone M5.5 Phase 1)
+ * slab_cache.h — simple slab/cache allocator (bring-up)
  *
  * Purpose:
  *  - Kernel OBJECTS only (fixed-size, type-specific caches)
@@ -9,14 +9,14 @@
  *
  * Notes:
  *  - Single-core bring-up: no locks.
- *  - Phase 3 will add richer stats/introspection.
+ *  - Stats/introspection can be expanded later.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Per-cache observability (Milestone M5.5 Phase 3). */
+/* Per-cache observability (best-effort; expanded over time). */
 typedef struct slab_cache_stats {
     uint64_t alloc_calls;
     uint64_t free_calls;

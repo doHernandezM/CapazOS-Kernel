@@ -11,8 +11,7 @@ typedef struct trap_frame trap_frame_t;
 // Forward declaration (defined in task/task.h).
 typedef struct task task_t;
 
-// Default kernel stack sizing for cooperative threads.
-// Phase 0 decision: 16 KiB default, up to 64 KiB max.
+// Default kernel stack sizing for cooperative threads (16 KiB by default, up to 64 KiB).
 #ifndef KSTACK_PAGES_DEFAULT
 #define KSTACK_PAGES_DEFAULT 4u
 #endif
@@ -89,7 +88,7 @@ typedef struct thread {
     uint32_t tid;
     const char *name;
 
-    // Owning task (cap-space owner). Phase 2 (M7): required for capability lookup.
+    // Owning task (cap-space owner). Used for capability lookup.
     task_t *task;
 
     // Per-thread kernel stack.
@@ -100,11 +99,11 @@ typedef struct thread {
     // Minimal run-queue linkage (circular singly-linked list).
     struct thread *rq_next;
 
-    // Reserved for M8 preemption integration (stack on IRQ return).
+    // Reserved for preemption integration on IRQ return.
     trap_frame_t *last_trap;
 
 
-    // Preemption resume pointer (M8 Option A): saved IRQ-return SP.
+    // Preemption resume pointer: saved IRQ-return SP.
     //
     // When a thread is switched away at IRQ exit, irq_sp is set to the address
     // of the pinned trap_frame_t on that thread's kernel stack. The IRQ return
@@ -125,14 +124,14 @@ typedef struct thread {
 // Assembly primitive.
 void ctx_switch(ctx_t *old, ctx_t *new);
 
-// Thread API (implemented starting in Phase 4).
+// Thread API.
 thread_t *thread_create(void (*entry)(void *), void *arg);
 
-// M5.5: slab-backed allocation for thread objects
+// Slab-backed allocation for thread objects
 void thread_alloc_init(void);
 void thread_destroy(thread_t *t);
 
-/* Observability (M5.5 Phase 3). Returns false if cache not initialized. */
+/* Returns false if cache not initialized. */
 bool thread_cache_get_stats(slab_cache_stats_t *out);
 
 thread_t *thread_create_named(const char *name, void (*entry)(void *), void *arg);

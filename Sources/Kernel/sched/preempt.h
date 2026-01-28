@@ -1,6 +1,6 @@
 // Kernel/Sources/Kernel/preempt.h
 //
-// M8 Phase 1: preemption intent + preemption disable depth.
+// Preemption bookkeeping: intent + preemption-disable depth.
 //
 // Single-CPU today, but shaped like per-CPU state so SMP can drop in later.
 

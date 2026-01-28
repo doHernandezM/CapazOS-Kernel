@@ -7,16 +7,16 @@
 #define KHEAP_NUM_BUCKETS 8
 
 /*
- * Allocation policy (Milestone M4.5)
+ * Allocation policy
  *
  * - kmalloc/kfree (kheap) are for VARIABLE-SIZED BUFFERS.
- * - Kernel OBJECTS should migrate to type-specific allocators (slabs/caches).
+ * - Kernel OBJECTS should use type-specific allocators (slabs/caches).
  * - Allocation is THREAD CONTEXT ONLY: IRQ context must not allocate.
-
- * Phase A: page-granularity allocations via PMM.
- * Phase B: small-object allocator (buckets) backed by PMM pages.
  *
- * Single-core initially (no locks).
+ * Implementation notes:
+ * - Large allocations are page-granularity via PMM.
+ * - Small allocations use fixed buckets backed by PMM pages.
+ * - Single-core bring-up (no locks).
  */
 
 void kheap_init(void);
@@ -30,7 +30,7 @@ void *kmalloc(size_t size);
 void  kfree(void *ptr);
 
 /*
- * Buffer-facing API (Milestone M5.5)
+ * Buffer-facing API
  *
  * kbuf_* is the preferred name for variable-sized buffers.
  * Kernel OBJECTS should not use kmalloc/kfree directly; they should use

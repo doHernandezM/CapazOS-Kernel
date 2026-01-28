@@ -1,11 +1,14 @@
 #pragma once
 /*
- * work_queue.h — Deferred work queue for M6
+ * work_queue.h — Deferred work queue.
  *
  * Design (single-core bring-up):
  *  - Simple FIFO queue protected by irq_save()/irq_restore().
  *  - IRQ context: enqueue only (must not allocate).
  *  - Thread context: dequeue and execute callbacks.
+ *
+ * This queue allows deferred processing of work items posted from interrupt
+ * context to be executed safely in thread context.
  */
 
 #include <stdbool.h>

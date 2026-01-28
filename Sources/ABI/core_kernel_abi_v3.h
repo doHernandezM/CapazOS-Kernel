@@ -28,8 +28,8 @@ enum {
     KS_IPC_ERR_CLOSED  = -5,
 };
 
-// Fixed inline payload for M8 bring-up.
-// Larger payloads will be supported later via MEMOBJ capability transfer.
+// Fixed inline payload for bring-up.
+// Larger payloads can be supported later via a shared-memory/MEMOBJ capability.
 #ifndef KS_IPC_MSG_MAX
 #define KS_IPC_MSG_MAX 128u
 #endif

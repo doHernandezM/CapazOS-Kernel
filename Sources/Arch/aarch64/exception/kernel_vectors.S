@@ -3,7 +3,7 @@
  *
  * Exception vector table for the Capaz kernel.
  *
- * M6: Split synchronous exceptions from IRQ handling:
+ * Synchronous exceptions and IRQs are handled via distinct entry points:
  *   - kernel_sync_entry: dump state via kernel_exception_report() and park.
  *   - kernel_irq_entry : call irq_dispatch() in C and return via eret.
  */
@@ -105,7 +105,7 @@ __kernel_vectors_end:
         stp x28, x29, [sp, #(14 * 16)]
         str x30,       [sp, #(15 * 16)]
 
-        // Save exception return/system state for M8 (IRQ-return preemption).
+        // Save exception return/system state (useful for future IRQ-return scheduling).
         // Note: ESR_EL1/FAR_EL1 are only architecturally meaningful for
         // synchronous exceptions, but we capture them here for uniformity.
         // Record the interrupted SP (pre-save). This is the stack pointer the
@@ -128,7 +128,7 @@ __kernel_vectors_end:
     .endm
 
     .macro POP_GPRS
-        // Restore the exception return state first so an M8-style scheduler
+        // Restore the exception return state first so a future scheduler
         // can swap SP to a different saved frame before returning.
         ldr x9, [sp, #TF_ELR_OFF]
         msr elr_el1, x9
@@ -190,7 +190,7 @@ kernel_irq_entry:
     bl  irq_dispatch
 
     /*
-     * Phase 5: IRQ-exit scheduler hook.
+     * IRQ-exit hook (reserved for future scheduling decisions).
      *
      * After all IRQ handlers ran, allow the scheduler to optionally switch
      * threads by returning a different trap-frame pointer. If a different

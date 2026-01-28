@@ -1,7 +1,7 @@
 // Capability operations (kernel-internal)
 //
 // These are explicit, auditable primitives built atop cap_table_t.
-// Phase 3 will surface a Core-facing ABI for capability ops, but the
+// A Core-facing ABI for capability operations may be added in the future, but the
 // kernel must first have a correct internal substrate.
 
 #pragma once

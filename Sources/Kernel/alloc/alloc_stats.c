@@ -1,5 +1,8 @@
 /*
- * alloc_stats.c — allocation observability aggregation (M5.5 Phase 3)
+ * alloc_stats.c — allocation observability aggregation.
+ *
+ * This module aggregates statistics from each allocator tier (PMM, slab caches,
+ * kheap) into a single snapshot for debugging or Core introspection.
  */
 
 #include "alloc/alloc_stats.h"

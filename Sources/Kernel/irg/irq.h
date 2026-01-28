@@ -8,7 +8,7 @@
 /*
  * Trap frame as saved by kernel_vectors.S IRQ entry stub.
  *
- * Layout is intentionally "M8-friendly": in addition to saving x0..x30, the
+ * Layout is preemption-ready: in addition to saving x0..x30, the
  * IRQ stub also snapshots ELR_EL1 and SPSR_EL1 into the frame. This enables a
  * future "return-from-IRQ into a different thread" design by switching SP to a
  * different saved trap frame and restoring ELR/SPSR before ERET.
@@ -25,9 +25,9 @@ typedef struct trap_frame {
     /*
      * Additional fields saved by the exception entry stubs.
      *
-     * Phase 0 requirement: the trap-frame contract must be "real":
+     * Requirement: the trap-frame contract must be "real":
      * the assembly layout and this C layout must match exactly so that
-     * later M8 can safely switch threads by switching the IRQ-return SP.
+     * a future scheduler can safely switch threads by switching the IRQ-return SP.
      */
     uint64_t sp_at_fault; /* SP after allocating the frame */
     uint64_t elr_el1;

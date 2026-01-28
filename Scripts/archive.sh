@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Archive CapazOS/Code and build/kernel.img into CapazOS/archive/OS.<build_number>.zip
+# Archive CapazOS/Code and build/kernel.img into CapazOS/archive/OS.<kernel_build_number>.zip
 #
 # Usage:
 #   archive.sh [REPO_ROOT] [KERNEL_IMG_PATH] [BUILDINFO_INI]
@@ -42,9 +42,14 @@ if [[ ! -f "${BUILDINFO_INI}" ]]; then
   exit 1
 fi
 
-BUILD_NUMBER="$(ini_get build_number "${BUILDINFO_INI}" || true)"
+BUILD_NUMBER="$(ini_get kernel_build_number "${BUILDINFO_INI}" || true)"
 if [[ -z "${BUILD_NUMBER}" ]]; then
-  echo "[archive] error: build_number missing in ${BUILDINFO_INI}" >&2
+  # Fall back to legacy key for backwards compatibility
+  BUILD_NUMBER="$(ini_get build_number "${BUILDINFO_INI}" || true)"
+fi
+
+if [[ -z "${BUILD_NUMBER}" ]]; then
+  echo "[archive] error: kernel_build_number missing in ${BUILDINFO_INI}" >&2
   exit 1
 fi
 

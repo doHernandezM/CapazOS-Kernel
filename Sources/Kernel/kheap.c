@@ -39,7 +39,7 @@ typedef struct big_alloc_hdr {
 
 static free_node_t *g_freelist[NUM_BUCKETS];
 
-/* M4.5 hardening: allocation counters and peak usage. */
+/* Hardening: allocation counters and peak usage. */
 static uint64_t g_kheap_cur_bytes = 0;
 static uint64_t g_kheap_peak_bytes = 0;
 static uint64_t g_kheap_small_allocs[NUM_BUCKETS];
@@ -146,7 +146,7 @@ void *kmalloc(size_t size)
     g_kheap_kmalloc_calls++;
     if (size == 0) return 0;
 
-    /* Phase B: small-object buckets. */
+    /* Small-object fast path: fixed buckets. */
     int b = bucket_for_size(size);
     if (b >= 0) {
         if (!g_freelist[b]) {

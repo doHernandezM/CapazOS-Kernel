@@ -1,10 +1,10 @@
 #pragma once
 
 /*
- * alloc_stats.h — allocation observability aggregation (M5.5 Phase 3)
+ * alloc_stats.h — allocation observability aggregation.
  *
- * No printing is required: this is a pure getter surface that can be used by
- * future debug commands or by Core via an explicit ABI addition later.
+ * Provides a pure getter surface that can be used by debug commands or by Core
+ * via a future ABI addition to query allocator statistics. No printing is required.
  */
 
 #include <stdbool.h>

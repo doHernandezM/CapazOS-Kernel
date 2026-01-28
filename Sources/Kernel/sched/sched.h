@@ -27,11 +27,12 @@ void sched_wake(thread_t *t);
 
 /*
  * Called from the IRQ exception path just before restoring the trap frame.
- * For now this is a no-op hook that records the current thread's last trap
- * frame pointer and re-validates scheduler invariants while IRQs are masked.
  *
- * M8 will use this hook to perform IRQ-return reschedules by returning a
- * different trap frame pointer.
+ * Today this hook records the current thread's most recent trap frame pointer
+ * and re-validates scheduler invariants while IRQs are masked.
+ *
+ * A future preemptive scheduler may use this hook to return a different trap
+ * frame pointer in order to resume a different thread on IRQ return.
  */
 trap_frame_t *sched_irq_exit(trap_frame_t *tf);
 

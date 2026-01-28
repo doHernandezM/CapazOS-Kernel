@@ -16,13 +16,13 @@ typedef struct endpoint {
     struct ipc_msg *q_head;
     struct ipc_msg *q_tail;
 
-    // Single waiting receiver (M8 minimal blocking primitive).
+    // Single waiting receiver: minimal blocking primitive.
     thread_t *waiting_recv;
 
     bool closed;
 } endpoint_t;
 
-// Slab-backed endpoint objects (M8 readiness).
+// Slab-backed endpoint objects (dynamic allocation).
 void endpoint_cache_init(void);
 endpoint_t *endpoint_alloc(void);
 void endpoint_free(endpoint_t *e);

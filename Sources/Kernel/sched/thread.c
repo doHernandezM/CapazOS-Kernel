@@ -11,7 +11,7 @@
 #include "panic.h"
 #include "sched.h"
 
-// Preemption-ready threads resume via an IRQ-return trap frame (M8 Option A).
+// Preemption-ready threads can resume via an IRQ-return trap frame.
 #include "irq.h"
 #include "alloc/slab_cache.h"
 #include "mm/pmm.h"
@@ -39,7 +39,7 @@ static uint32_t s_next_tid = 1;
 
 
 
-// M5.5: slab cache for thread_t objects (kernel objects)
+// Slab cache for thread_t objects (kernel objects).
 static slab_cache_t g_thread_cache;
 static bool s_thread_cache_inited = false;
 
@@ -67,8 +67,8 @@ __attribute__((noreturn)) void thread_trampoline(void (*entry)(void *), void *ar
 
 // Build an initial IRQ-return frame at the top of the new thread's kernel stack.
 //
-// The saved frame pointer (t->irq_sp) is later used by M8 to "return from IRQ into
-// a different thread" by switching SP to this trap frame before restoring and ERET.
+// The saved frame pointer (t->irq_sp) enables "return from IRQ into a different thread"
+// by switching SP to this trap frame before restoring registers and executing ERET.
 static uintptr_t thread_build_initial_irq_frame(thread_t *t, void (*entry)(void *), void *arg,
                                                uintptr_t stack_top_aligned) {
     // Reserve an initial trap frame at the top of the kernel stack.
@@ -83,7 +83,7 @@ static uintptr_t thread_build_initial_irq_frame(thread_t *t, void (*entry)(void 
     // Make ELR point at the C trampoline so it can call entry(arg) then exit.
     tf->x[0] = (uint64_t)(uintptr_t)entry;
     tf->x[1] = (uint64_t)(uintptr_t)arg;
-    // Phase 3 (M8): first-run/resume uses an IRQ-return frame (eret-based).
+    // Future: first-run/resume can use the IRQ-return (eret-based) frame.
     // Seed ELR/SPSR so the thread starts at thread_trampoline(entry, arg) with
     // IRQs enabled in the restored PSTATE.
     tf->elr_el1  = (uint64_t)(uintptr_t)thread_trampoline;
@@ -94,8 +94,8 @@ static uintptr_t thread_build_initial_irq_frame(thread_t *t, void (*entry)(void 
     // the thread was "interrupted" at the normal stack top.
     tf->sp_at_fault = (uint64_t)stack_top_aligned;
 
-    // Record the "resume from" frame pointer for M8. This is the stack pointer
-    // the IRQ exit path can switch to before restoring regs and eret.
+    // Record the "resume from" frame pointer. This is the stack pointer
+    // the IRQ-exit path can switch to before restoring registers and ERET.
     t->irq_sp    = (uint64_t)tf_sp;
     t->last_trap = tf;
 
@@ -125,7 +125,7 @@ if (!entry) {
     t->task = NULL;
 
     // Allocate a per-thread kernel stack from PMM pages.
-    // Phase 0 default: 16 KiB (4 pages). This remains a per-thread contract.
+    // Default: 16 KiB (4 pages). This remains a per-thread contract.
     const uint32_t pages = (uint32_t)KSTACK_PAGES_DEFAULT;
     uint64_t stack_pa = 0;
     if (!pmm_alloc_pages(pages, &stack_pa)) {
@@ -177,7 +177,7 @@ __attribute__((noreturn)) void thread_exit(void) {
     }
 }
 
-// M5.5: explicit teardown path for thread objects (for future use).
+// Explicit teardown path for thread objects (for future use).
 void thread_destroy(thread_t *t) {
     if (!t) return;
     ASSERT_THREAD_CONTEXT();

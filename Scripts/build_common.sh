@@ -356,17 +356,51 @@ emit_buildinfo_header() {
     if [[ ! -f "${ini}" ]]; then
       mkdirp "$(dirname "${ini}")"
       if ! cat >"${ini}" <<'EOF'
-version=0.0.0
-build_number=0
-build_date=
+# Build Info
+version = 0.0.0
+kernel_build_number = 0
+core_build_number = 0
+build_version = 0.0.0
+build_environment = macOS Xcode
+build_date =
+
+# Boot Info
+boot_version = 0.0.0
+boot_platform = unknown
+
+# Kernel Info
+kernel_version = 0.0.0
+kernel_name = Capaz Kernel
+kernel_machine = unknown
+
+# Core Info
+core_version = 0.0.0
+core_name = Capaz Core
 EOF
       then
         ini="${gen_dir}/buildinfo.ini"
         if [[ ! -f "${ini}" ]]; then
           cat >"${ini}" <<'EOF'
-version=0.0.0
-build_number=0
-build_date=
+# Build Info
+version = 0.0.0
+kernel_build_number = 0
+core_build_number = 0
+build_version = 0.0.0
+build_environment = macOS Xcode
+build_date =
+
+# Boot Info
+boot_version = 0.0.0
+boot_platform = unknown
+
+# Kernel Info
+kernel_version = 0.0.0
+kernel_name = Capaz Kernel
+kernel_machine = unknown
+
+# Core Info
+core_version = 0.0.0
+core_name = Capaz Core
 EOF
         fi
       fi
@@ -388,11 +422,27 @@ EOF
   if [[ ! -f "${gen_include_dir}/buildinfo.h" ]]; then
     cat >"${gen_include_dir}/buildinfo.h" <<'EOF'
 #pragma once
+
+// Fallback buildinfo header when buildinfo generation fails.
+// Defines safe defaults for all expected CAPAZ_* macros so the kernel and
+// core can still compile.
+
 #define CAPAZ_BUILD_GIT_HASH "unknown"
 #define CAPAZ_BUILD_DATE ""
 #define CAPAZ_BUILD_VERSION "0.0.0"
-#define CAPAZ_CORE_BUILD_NUMBER 0
 #define CAPAZ_BUILD_ENVIRONMENT "macOS Xcode"
+
+// Default build numbers
+#define CAPAZ_BUILD_NUMBER 0
+#define CAPAZ_CORE_BUILD_NUMBER 0
+
+// Default machine and version info
+#define CAPAZ_MACHINE "unknown"
+#define CAPAZ_KERNEL_VERSION "0.0.0"
+#define CAPAZ_BOOT_PLATFORM "unknown"
+#define CAPAZ_BOOT_VERSION "0.0.0"
+
+/* End of fallback buildinfo.h */
 EOF
   fi
 }

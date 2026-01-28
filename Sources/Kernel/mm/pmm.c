@@ -43,7 +43,7 @@ typedef struct pmm_state {
 /* Stored in the metadata region; also cached as a VA pointer. */
 static pmm_state_t *g_pmm = 0;
 
-/* M4.5 hardening: PMM pressure/counters. */
+/* Hardening: PMM pressure/counters. */
 static uint64_t g_pmm_alloc_calls = 0;
 static uint64_t g_pmm_free_calls = 0;
 static uint64_t g_pmm_alloc_pages_calls = 0;

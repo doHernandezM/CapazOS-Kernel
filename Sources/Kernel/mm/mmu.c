@@ -158,7 +158,7 @@ static uint64_t l3_pool[64][512] __attribute__((aligned(4096)));
 static size_t l3_pool_used = 0;
 
 
-/* M4.5: W^X invariants self-test helpers */
+/* W^X invariants self-test helpers */
 
 static inline uint64_t desc_type(uint64_t desc) { return (desc & 0x3ULL); }
 static inline uint64_t desc_addr(uint64_t desc) { return (desc & 0x0000FFFFFFFFF000ULL); }
@@ -674,6 +674,6 @@ void mmu_init(const boot_info_t *boot_info)
      * attributes for the kernel image enforce W^X at page
      * granularity and mark device memory non‑executable.  */
 
-    /* M4.5: prove W^X invariants with current image layout. */
+    /* Prove W^X invariants with current image layout. */
     mmu_assert_layout_and_wx();
 }

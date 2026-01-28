@@ -21,7 +21,7 @@ preflight_common
 
 # Choose a buildinfo.ini to read versioning from.
 #
-# IMPORTANT: by default we bump build_number on every build so buildinfo.h/.c
+# IMPORTANT: by default we bump kernel_build_number (or core_build_number) on every build so buildinfo.h/.c
 # reflect the current build. You can disable this behavior by exporting:
 #   CAPAZ_BUMP_BUILD_NUMBER=0
 if [ -z "${BUILDINFO_INI:-}" ]; then
@@ -37,28 +37,39 @@ if [ -z "${BUILDINFO_INI:-}" ]; then
     mkdirp "${OUT_DIR}/gen"
     BUILDINFO_INI="${OUT_DIR}/gen/buildinfo.ini"
     cat >"${BUILDINFO_INI}" <<'EOF'
-version=0.0.0
-build_number=0
-build_date=
+# Build Info
+version = 0.0.0
+kernel_build_number = 0
+core_build_number = 0
+build_version = 0.0.0
+build_environment = macOS Xcode
+build_date =
+
+# Boot Info
+boot_version = 0.0.0
+boot_platform = unknown
+
+# Kernel Info
+kernel_version = 0.0.0
+kernel_name = Capaz Kernel
+kernel_machine = unknown
+
+# Core Info
+core_version = 0.0.0
+core_name = Capaz Core
 EOF
   fi
 fi
 export BUILDINFO_INI
 
-# Initialize the buildinfo.ini if it is missing keys.  This ensures new keys
-# (core_build_number, build_version, build_environment) exist before we bump
-# anything.  The buildinfo.sh functions are available via build_common.sh.
-init_buildinfo_ini "${BUILDINFO_INI}"
-
 # Bump build number once per build invocation unless explicitly disabled.
 if [[ "${CAPAZ_BUMP_BUILD_NUMBER:-1}" != "0" && "${ACTION:-build}" != "clean" ]]; then
-  # Use target-specific bump keys: core builds increment core_build_number,
-  # kernel builds increment build_number (the original key).  Pass the ini
-  # path explicitly to avoid ambiguity when using --key.
+  # Determine which counter to bump based on the target.  Kernel builds bump
+  # kernel_build_number; core builds bump core_build_number.
   if [[ "${TARGET}" == "core" ]]; then
     "${SCRIPT_DIR}/bump_build_number.sh" --key core_build_number "${BUILDINFO_INI}" || true
   else
-    "${SCRIPT_DIR}/bump_build_number.sh" "${BUILDINFO_INI}" || true
+    "${SCRIPT_DIR}/bump_build_number.sh" --key kernel_build_number "${BUILDINFO_INI}" || true
   fi
 fi
 
@@ -86,7 +97,7 @@ fi
 
 # --- Archiving ---
 # Keep this minimal: after a successful build, archive CapazOS/Code and the
-# final kernel image into CapazOS/archive/OS.<build_number>.zip.
+# final kernel image into CapazOS/archive/OS.<kernel_build_number>.zip.
 if [ -f "${FINAL_KERNEL_IMG}" ] && [[ "${ACTION:-build}" != "clean" ]]; then
     "${SCRIPT_DIR}/archive.sh" "${REPO_ROOT}" "${FINAL_KERNEL_IMG}" "${BUILDINFO_INI}"
 fi

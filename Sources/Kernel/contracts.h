@@ -1,6 +1,6 @@
 #pragma once
 /*
- * contracts.h — Execution context contracts (Milestone M4.5)
+ * contracts.h — Execution context contracts
  *
  * These contracts are always-on and intended to be small, explicit, and cheap.
  *

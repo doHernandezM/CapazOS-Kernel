@@ -1,5 +1,5 @@
 /*
- * slab_cache.c — simple slab/cache allocator (Milestone M5.5 Phase 1)
+ * slab_cache.c — simple slab/cache allocator (bring-up)
  */
 
 #include "alloc/slab_cache.h"

@@ -1,11 +1,12 @@
 // Kernel/Sources/Kernel/sched.c
 //
-// M7 Phase 5/6: Minimal cooperative round-robin scheduler.
+// Minimal round-robin scheduler.
 //
 // Design:
 //  - current thread is NOT in the ready queue while running.
 //  - ready queue is a circular singly-linked list tracked by a tail pointer.
-//  - threads switch only when they explicitly call yield().
+//  - in cooperative mode, threads switch only when they explicitly call yield().
+//    preemptive hooks exist but are disabled by default.
 
 #include "sched.h"
 
@@ -245,13 +246,13 @@ void sched_wake(thread_t *t) {
 }
 trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
     /*
-     * Phase 0: preemption-readiness audit.
+     * Preemption-readiness audit.
      *
      * Contract:
      *  - IRQs remain masked across irq_dispatch() and this hook.
      *  - The IRQ exit path restores register state from whatever SP points at
-     *    and then ERET's. M8 will switch threads by returning a different
-     *    trap frame pointer here.
+     *    and then executes an ERET. A future preemptive scheduler may switch threads
+     *    by returning a different trap frame pointer here.
      */
     SCHED_ASSERT(irq_irqs_disabled(), "sched: IRQs must be masked in sched_irq_exit");
     SCHED_ASSERT(tf != NULL, "sched: NULL trap frame");
@@ -281,13 +282,13 @@ trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
 
 #if CONFIG_SCHED_COOPERATIVE
     /*
-     * M6 policy: cooperative scheduling.
+     * Cooperative scheduling:
      * IRQ exit must never switch threads; it simply returns to the interrupted
      * context.
      */
     return tf;
 #else
-    /* Future: preemptive scheduling may return a different trap frame here. */
+    /* When preemptive scheduling is enabled this hook may return a different trap frame. */
     return tf;
 #endif
 }
