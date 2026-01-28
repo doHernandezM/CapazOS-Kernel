@@ -45,22 +45,24 @@ EOF
 fi
 export BUILDINFO_INI
 
+# Initialize the buildinfo.ini if it is missing keys.  This ensures new keys
+# (core_build_number, build_version, build_environment) exist before we bump
+# anything.  The buildinfo.sh functions are available via build_common.sh.
+init_buildinfo_ini "${BUILDINFO_INI}"
+
 # Bump build number once per build invocation unless explicitly disabled.
 if [[ "${CAPAZ_BUMP_BUILD_NUMBER:-1}" != "0" && "${ACTION:-build}" != "clean" ]]; then
-  "${SCRIPT_DIR}/bump_build_number.sh" "${BUILDINFO_INI}" || true
+  # Use target-specific bump keys: core builds increment core_build_number,
+  # kernel builds increment build_number (the original key).  Pass the ini
+  # path explicitly to avoid ambiguity when using --key.
+  if [[ "${TARGET}" == "core" ]]; then
+    "${SCRIPT_DIR}/bump_build_number.sh" --key core_build_number "${BUILDINFO_INI}" || true
+  else
+    "${SCRIPT_DIR}/bump_build_number.sh" "${BUILDINFO_INI}" || true
+  fi
 fi
 
-case "${TARGET}" in
-  kernel_c)
-    build_boot_and_kernel
-    ;;
-  core)
-    build_core_and_kernel
-    ;;
-  *)
-    die "Unknown --target: ${TARGET} (expected kernel_c|core)"
-    ;;
-esac
+build_boot_and_kernel
 
 # --- Final artifact location ---
 # The kernel build produces kernel.img inside the selected OUT_DIR (which varies

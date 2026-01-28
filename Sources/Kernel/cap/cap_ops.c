@@ -1,5 +1,6 @@
 // Capability operations (kernel-internal)
 //
+// Milestone M7 Phase 3: first explicit cap operations.
 // These primitives are built atop cap_table_t and are NOT exposed to Core directly.
 
 #include "cap_ops.h"
@@ -59,7 +60,7 @@ cap_status_t cap_transfer(cap_table_t *src,
         return CAP_ERR_INVALID;
     }
 
-    // implement transfer as dup + drop, with rollback if src removal fails.
+    // For M7: implement transfer as dup + drop, with rollback if src removal fails.
     cap_entry_t *e = cap_table_lookup(src, h, CAP_R_TRANSFER);
     if (!e) {
         return CAP_ERR_DENIED;

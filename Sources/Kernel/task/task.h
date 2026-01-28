@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-// Forward declare cap table.
+// Forward declare cap table; implemented in M7 Phase 2.
 typedef struct cap_table cap_table_t;
 // cap_handle_t is the opaque handle type that will eventually cross the Core ABI.
 // It is defined in cap_table.h. Keep a fallback typedef here so task.h can be

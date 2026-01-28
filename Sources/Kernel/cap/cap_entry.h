@@ -10,7 +10,7 @@
 /*
  * Slab-backed capability entry.
  *
- *  
+ * Phase 2 (M7): becomes the real storage unit referenced by cap_table slots.
  * The cap handle carries (index, generation); the entry stores its generation
  * and a validity flag.
  */

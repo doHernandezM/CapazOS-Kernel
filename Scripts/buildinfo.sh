@@ -53,8 +53,13 @@ buildinfo__read_ini() {
     printf '%s' "${s}"
   }
 
-  # Clear only the vars we manage.
+  # Clear only the vars we manage.  When adding new ini keys, append them here.
+  # These variables are populated by buildinfo__read_ini and referenced later in
+  # emit_buildinfo_files. If you add keys to buildinfo.ini you must also add
+  # them here so they don't leak previous values across calls.
   unset build_number version boot_platform machine kernel_name kernel_version boot_version core_name core_version build_date
+  # New keys introduced by M7: core_build_number, build_version, build_environment
+  unset core_build_number build_version build_environment
 
   # shellcheck disable=SC2162
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -127,6 +132,20 @@ init_buildinfo_ini() {
 
   cur="$(read_buildinfo_value "${ini}" build_date || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" build_date "$(date -u +%Y-%m-%d)"
+
+  # New defaults introduced by M7.  core_build_number is distinct from the
+  # kernel build_number and should be zero-initialized.  build_version and
+  # build_environment provide a human-readable version string and a build
+  # environment identifier.  If these keys already exist in the ini file
+  # (perhaps set manually by a developer or CI), we leave them untouched.
+  cur="$(read_buildinfo_value "${ini}" core_build_number || true)"
+  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" core_build_number "0"
+
+  cur="$(read_buildinfo_value "${ini}" build_version || true)"
+  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" build_version "0.0.0"
+
+  cur="$(read_buildinfo_value "${ini}" build_environment || true)"
+  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" build_environment "macOS Xcode"
 }
 
 buildinfo__git_hash() {
@@ -151,6 +170,26 @@ emit_buildinfo_files() {
   [[ -n "${machine-}" ]] || buildinfo__die "machine missing in ${ini}"
   [[ -n "${build_date-}" ]] || build_date="$(date -u +%Y-%m-%d)"
 
+  # Before emitting the header and C file we need to determine the version and
+  # environment fields.  build_version is the canonical version moving forward,
+  # but older ini files may still use "version".  If build_version is empty and
+  # version is present, fall back to version.  This preserves backwards
+  # compatibility until all callers migrate to build_version.
+  local _build_version="${build_version-}"
+  if [[ -z "${_build_version}" && -n "${version-}" ]]; then
+    _build_version="${version-}"
+  fi
+  # Provide a sane default if nothing is set.
+  [[ -n "${_build_version}" ]] || _build_version="0.0.0"
+
+  # Use the provided build_environment or default to "macOS Xcode" if not set.
+  local _build_env="${build_environment-}"
+  [[ -n "${_build_env}" ]] || _build_env="macOS Xcode"
+
+  # core_build_number may be empty if not defined in the ini; default to 0.
+  local _core_build_number="${core_build_number-}"
+  [[ -n "${_core_build_number}" ]] || _core_build_number="0"
+
   buildinfo__write_if_changed "${out_h}" <<EOF
 #pragma once
 
@@ -167,6 +206,14 @@ emit_buildinfo_files() {
 #define CAPAZ_KERNEL_VERSION "${kernel_version}"
 #define CAPAZ_BOOT_PLATFORM "${boot_platform}"
 #define CAPAZ_BOOT_VERSION "${boot_version}"
+
+// M7 additional build metadata.  These macros expose the core build
+// number, overall build version and the build environment.  They are
+// derived from the ini file or fall back to sensible defaults when
+// missing.  See init_buildinfo_ini() for details.
+#define CAPAZ_CORE_BUILD_NUMBER ${_core_build_number}
+#define CAPAZ_BUILD_VERSION "${_build_version}"
+#define CAPAZ_BUILD_ENVIRONMENT "${_build_env}"
 EOF
 
   # kmain.c uses build_info.h (underscore). Keep it as a thin wrapper so
@@ -189,5 +236,8 @@ __attribute__((used)) const char capaz_machine[] = CAPAZ_MACHINE;
 __attribute__((used)) const char capaz_kernel_version[] = CAPAZ_KERNEL_VERSION;
 __attribute__((used)) const char capaz_boot_platform[] = CAPAZ_BOOT_PLATFORM;
 __attribute__((used)) const char capaz_boot_version[] = CAPAZ_BOOT_VERSION;
+__attribute__((used)) const unsigned long capaz_core_build_number = CAPAZ_CORE_BUILD_NUMBER;
+__attribute__((used)) const char capaz_build_version[] = CAPAZ_BUILD_VERSION;
+__attribute__((used)) const char capaz_build_environment[] = CAPAZ_BUILD_ENVIRONMENT;
 EOF
 }

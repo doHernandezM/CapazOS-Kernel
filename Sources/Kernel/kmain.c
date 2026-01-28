@@ -184,7 +184,7 @@ static workq_t g_deferred_workq;
 static task_t g_kernel_task;
 static cap_table_t g_kernel_cap_table;
 static uint32_t g_timer_token;
-// NOTE: We seed capabilities for the log service
+// NOTE: In the current M7 skeleton we seed capabilities for the log service
 // (and other bootstrap objects) directly into the kernel cap table. There is no
 // separate global "token" value to track here, and leaving an unused global
 // trips -Werror/-Wunused-variable under the Xcode build.
@@ -228,7 +228,7 @@ static void core_thread_entry(void *arg)
 {
     (void)arg;
 
-    /* Seed initial caps for kernel task in core/main thread entry (before core_main()). */
+    /* M7: Seed initial caps for kernel task in core/main thread entry (before core_main()). */
     cap_table_init(&g_kernel_cap_table);
     task_init(&g_kernel_task, 0, &g_kernel_cap_table);
 
@@ -243,7 +243,7 @@ static void core_thread_entry(void *arg)
         panic("core/main: failed to seed task cap");
     }
 
-    /* Placeholder token objects for (mechanism labels only). */
+    /* Placeholder token objects for M7 (mechanism labels only). */
     g_timer_token = 1;
     st = cap_create(&g_kernel_cap_table,
                     CAP_TYPE_TIMER_TOKEN,
@@ -388,9 +388,9 @@ void kmain(const boot_info_t *boot_info)
     workq_init(&g_deferred_workq);
 
     sched_init_bootstrap();
-    // cap-space is initialized and seeded in core/main thread entry (before core_main).
+    // M7: cap-space is initialized and seeded in core/main thread entry (before core_main).
 
-    /* Bring up interrupts + timer tick after core init. */
+    /* M6: Bring up interrupts + timer tick after core init. */
     irq_global_disable();
     gicv2_init();
 
