@@ -1,7 +1,6 @@
 #include "uart_pl011.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 #define HH_PHYS_BASE 0xFFFF800000000000ULL
 #define UART_FALLBACK_PHYS_BASE 0x09000000ULL
@@ -15,10 +14,6 @@
 #define UARTFBRD    0x28
 #define UARTLCR_H   0x2C
 #define UARTCR      0x30
-#define UARTIFLS    0x34
-#define UARTIMSC    0x38
-#define UARTRIS     0x3C
-#define UARTMIS     0x40
 #define UARTICR     0x44
 
 /* UARTFR bits */
@@ -30,14 +25,6 @@
 #define UARTCR_UARTEN (1u << 0)
 #define UARTCR_TXE    (1u << 8)
 #define UARTCR_RXE    (1u << 9)
-
-/* UARTIMSC bits */
-#define UARTIMSC_RXIM (1u << 4)
-#define UARTIMSC_RTIM (1u << 6)
-
-/* UARTICR bits */
-#define UARTICR_RXIC  (1u << 4)
-#define UARTICR_RTIC  (1u << 6)
 
 /* UARTLCR_H bits */
 #define UARTLCRH_BRK   (1u << 0)
@@ -216,48 +203,4 @@ void uart_putu64_dec(uint64_t value) {
     while (i--) {
         uart_putc(buf[i]);
     }
-}
-
-
-void uart_enable_rx_irq(void)
-{
-    /* Clear any pending UART interrupts. */
-    mmio_write(UARTICR, UARTICR_ALL);
-
-    /* Enable RX and RX timeout interrupts. */
-    uint32_t mask = mmio_read(UARTIMSC);
-    mask |= (UARTIMSC_RXIM | UARTIMSC_RTIM);
-    mmio_write(UARTIMSC, mask);
-}
-
-void uart_disable_rx_irq(void)
-{
-    uint32_t mask = mmio_read(UARTIMSC);
-    mask &= ~(UARTIMSC_RXIM | UARTIMSC_RTIM);
-    mmio_write(UARTIMSC, mask);
-
-    /* Clear any pending UART interrupts. */
-    mmio_write(UARTICR, UARTICR_ALL);
-}
-
-bool uart_irq_drain_rx(char *out_buf, size_t max, size_t *out_n)
-{
-    if (out_n) *out_n = 0;
-    if (!out_buf || max == 0) return false;
-
-    size_t n = 0;
-    while (n < max && uart_rx_ready()) {
-        uint32_t dr = mmio_read(UARTDR);
-        uint32_t err = (dr >> 8) & 0x0Fu;
-        if (err) {
-            mmio_write(UARTECR, 0xFF);
-        }
-        out_buf[n++] = (char)(dr & 0xFFu);
-    }
-
-    /* Ack RX-related sources (best-effort). */
-    mmio_write(UARTICR, (UARTICR_RXIC | UARTICR_RTIC));
-
-    if (out_n) *out_n = n;
-    return n != 0;
 }

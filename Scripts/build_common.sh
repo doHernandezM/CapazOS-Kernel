@@ -635,6 +635,7 @@ compile_objects() {
           -I "${KERNEL_DIR}/Sources/Kernel/task" \
           -I "${KERNEL_DIR}/Sources/Kernel/util" \
           -I "${KERNEL_DIR}/Sources/Kernel/work" \
+          -I "${REPO_ROOT}/Code/Core/Sources" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
@@ -663,6 +664,7 @@ compile_objects() {
           -I "${KERNEL_DIR}/Sources/Kernel/task" \
           -I "${KERNEL_DIR}/Sources/Kernel/util" \
           -I "${KERNEL_DIR}/Sources/Kernel/work" \
+          -I "${REPO_ROOT}/Code/Core/Sources" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
@@ -758,6 +760,18 @@ build_boot_and_kernel() {
     find "${KERNEL_DIR}/Sources/Arch/aarch64" \
       -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S" -print | sort
   )
+
+  # Optionally compile and link Core into the kernel image.
+  #
+  # CAPAZ_WITH_CORE=0 keeps the Kernel build completely independent (Core is
+  # omitted and the weak stubs are used). When enabled and Core sources exist,
+  # Core objects are linked into Kernel.elf and core_main() will be the real one.
+  local with_core="${CAPAZ_WITH_CORE:-1}"
+  if [ "${with_core}" != "0" ] && [ -d "${REPO_ROOT}/Code/Core/Sources" ]; then
+    while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
+      find "${REPO_ROOT}/Code/Core/Sources" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+    )
+  fi
 
 
   # Compile generated build metadata as part of the kernel, if present.

@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "intent_v1.h"
 #include "alloc/slab_cache.h"
 
 // Forward declaration (defined in irq.h).
@@ -88,9 +87,6 @@ typedef struct thread {
     // tid==0 is reserved for the bootstrap (kmain) pseudo-thread.
     uint32_t tid;
     const char *name;
-
-    // Scheduling / resource intent (mechanism only in Phase 0).
-    intent_t intent;
 
     // Owning task (cap-space owner). Used for capability lookup.
     task_t *task;

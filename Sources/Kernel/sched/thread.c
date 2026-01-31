@@ -124,9 +124,6 @@ if (!entry) {
     t->name = name;
     t->task = NULL;
 
-    // Phase 0: plumb intent, but do not change scheduling behavior.
-    t->intent = intent_default_background();
-
     // Allocate a per-thread kernel stack from PMM pages.
     // Default: 16 KiB (4 pages). This remains a per-thread contract.
     const uint32_t pages = (uint32_t)KSTACK_PAGES_DEFAULT;

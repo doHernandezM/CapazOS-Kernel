@@ -13,9 +13,6 @@ void dtb_dump_summary(void);
 /* If a PL011 UART is found, returns true and writes its physical base to *out_phys. */
 bool dtb_find_pl011_uart(uint64_t *out_phys);
 
-/* Find PL011 UART base + decode its GIC IRQ (best-effort, QEMU virt). */
-bool dtb_find_pl011_uart_irq(uint64_t *out_phys, uint32_t *out_irq);
-
 /* Return the first RAM range found in /memory (base,size). Returns false if missing. */
 bool dtb_first_memory_range(uint64_t *out_base, uint64_t *out_size);
 

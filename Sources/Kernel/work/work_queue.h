@@ -32,6 +32,10 @@ typedef struct workq {
     work_item_t *tail;
 } workq_t;
 
+// Global deferred work queue.
+// Drivers/ISRs can enqueue short tasks here to be processed in thread context.
+extern workq_t g_deferred_workq;
+
 /* Queue API */
 void workq_init(workq_t *q);
 

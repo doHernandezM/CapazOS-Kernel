@@ -9,7 +9,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "core_kernel_abi.h"
+// IMPORTANT: Keep this header cycle-free.
+//
+// core_kernel_abi.h includes core_entrypoints.h, which in turn pulls in newer
+// ABI headers (v3+). If we include core_kernel_abi.h here, we create an include
+// cycle where v3 is parsed before the v2 ABI typedefs below are seen, causing
+// missing-type build failures.
+#include "kernel_services_v1.h"
 
 #ifdef __cplusplus
 extern "C" {
