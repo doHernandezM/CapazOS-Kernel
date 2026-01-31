@@ -10,7 +10,7 @@ set -euo pipefail
 # If args are omitted, defaults are derived from this script's location.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"          # .../CapazOS/Code/Kernel
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"          # .../CapazOS/Code/OS
 WORKSPACE_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"       # .../CapazOS/Code
 DEFAULT_REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)" # .../CapazOS
 

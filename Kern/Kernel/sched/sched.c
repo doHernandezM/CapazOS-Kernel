@@ -1,4 +1,4 @@
-// Kernel/Sources/Kernel/sched.c
+// OS/Kern/Kernel/sched.c
 //
 // Minimal round-robin scheduler.
 //

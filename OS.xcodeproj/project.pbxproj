@@ -7,56 +7,23 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
-		AAE76CF62EF762A6005230EB /* C Kernel */ = {
+		AAE3C9B22F2E80D7007F25C3 /* OS */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "C Kernel" */;
+			buildConfigurationList = AAE3C9B32F2E80D8007F25C3 /* Build configuration list for PBXAggregateTarget "OS" */;
 			buildPhases = (
-				AAE76CFA2EF762C2005230EB /* ShellScript */,
+				AAE3C9B62F2E80DC007F25C3 /* ShellScript */,
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-				AAAF96DC2F1882B300FA62F3 /* Linker */,
-				AAAF96EF2F1882B300FA62F3 /* Scripts */,
-				AAAF972A2F1882B300FA62F3 /* Sources */,
-			);
-			name = "C Kernel";
+			name = OS;
 			packageProductDependencies = (
 			);
-			productName = KernelImage;
-		};
-		AAE76CFE2EF7875A005230EB /* RunQemu */ = {
-			isa = PBXAggregateTarget;
-			buildConfigurationList = AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "RunQemu" */;
-			buildPhases = (
-				AAE76D022EF78768005230EB /* ShellScript */,
-			);
-			dependencies = (
-				AAE76D042EF787C9005230EB /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				AAAF96DC2F1882B300FA62F3 /* Linker */,
-				AAAF96EF2F1882B300FA62F3 /* Scripts */,
-				AAAF972A2F1882B300FA62F3 /* Sources */,
-			);
-			name = RunQemu;
-			packageProductDependencies = (
-			);
-			productName = RunQemu;
+			productName = OS;
 		};
 /* End PBXAggregateTarget section */
 
-/* Begin PBXContainerItemProxy section */
-		AAE76D032EF787C9005230EB /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AA4605E92EF726B30018B236 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AAE76CF62EF762A6005230EB;
-			remoteInfo = KernelImage;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
+		AAE3C9B72F2EA62D007F25C3 /* READMECORE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = READMECORE.md; sourceTree = "<group>"; };
 		AAE76CFB2EF76AA9005230EB /* .swift-version */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ".swift-version"; sourceTree = "<group>"; };
 		AAE99A662F09C94000EAB13D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		AAE99A672F09C97D00EAB13D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -74,9 +41,14 @@
 			path = Scripts;
 			sourceTree = "<group>";
 		};
-		AAAF972A2F1882B300FA62F3 /* Sources */ = {
+		AAAF972A2F1882B300FA62F3 /* Kern */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Sources;
+			path = Kern;
+			sourceTree = "<group>";
+		};
+		AAE3C9B12F2E8069007F25C3 /* Core */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Core;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -88,10 +60,12 @@
 				AAE76CFB2EF76AA9005230EB /* .swift-version */,
 				AAE99A662F09C94000EAB13D /* .gitignore */,
 				AAE99A672F09C97D00EAB13D /* LICENSE */,
+				AAE3C9B72F2EA62D007F25C3 /* READMECORE.md */,
 				AAE99A682F09C97D00EAB13D /* README.md */,
 				AAAF96DC2F1882B300FA62F3 /* Linker */,
 				AAAF96EF2F1882B300FA62F3 /* Scripts */,
-				AAAF972A2F1882B300FA62F3 /* Sources */,
+				AAAF972A2F1882B300FA62F3 /* Kern */,
+				AAE3C9B12F2E8069007F25C3 /* Core */,
 			);
 			sourceTree = "<group>";
 		};
@@ -104,15 +78,12 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					AAE76CF62EF762A6005230EB = {
-						CreatedOnToolsVersion = 26.2;
-					};
-					AAE76CFE2EF7875A005230EB = {
+					AAE3C9B22F2E80D7007F25C3 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
 			};
-			buildConfigurationList = AA4605EC2EF726B30018B236 /* Build configuration list for PBXProject "C Kernel" */;
+			buildConfigurationList = AA4605EC2EF726B30018B236 /* Build configuration list for PBXProject "OS" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -125,32 +96,13 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AAE76CF62EF762A6005230EB /* C Kernel */,
-				AAE76CFE2EF7875A005230EB /* RunQemu */,
+				AAE3C9B22F2E80D7007F25C3 /* OS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		AAE76CFA2EF762C2005230EB /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nexec \"${SRCROOT}/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
-		};
-		AAE76D022EF78768005230EB /* ShellScript */ = {
+		AAE3C9B62F2E80DC007F25C3 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -165,17 +117,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\n\nexec \"${SRCROOT}/Scripts/run.sh\" --platform aarch64-virt\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --platform aarch64-virt --target core\n";
 		};
 /* End PBXShellScriptBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		AAE76D042EF787C9005230EB /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AAE76CF62EF762A6005230EB /* C Kernel */;
-			targetProxy = AAE76D032EF787C9005230EB /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA4605EE2EF726B30018B236 /* Debug */ = {
@@ -303,42 +247,20 @@
 			};
 			name = Release;
 		};
-		AAE76CF82EF762A6005230EB /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
-				DEAD_CODE_STRIPPING = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		AAE76CF92EF762A6005230EB /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Manual;
-				DEAD_CODE_STRIPPING = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
-		AAE76D002EF7875A005230EB /* Debug */ = {
+		AAE3C9B42F2E80D8007F25C3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65FTD79W4E;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
 		};
-		AAE76D012EF7875A005230EB /* Release */ = {
+		AAE3C9B52F2E80D8007F25C3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65FTD79W4E;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -346,7 +268,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA4605EC2EF726B30018B236 /* Build configuration list for PBXProject "C Kernel" */ = {
+		AA4605EC2EF726B30018B236 /* Build configuration list for PBXProject "OS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA4605EE2EF726B30018B236 /* Debug */,
@@ -355,20 +277,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AAE76CF72EF762A6005230EB /* Build configuration list for PBXAggregateTarget "C Kernel" */ = {
+		AAE3C9B32F2E80D8007F25C3 /* Build configuration list for PBXAggregateTarget "OS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AAE76CF82EF762A6005230EB /* Debug */,
-				AAE76CF92EF762A6005230EB /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		AAE76CFF2EF7875A005230EB /* Build configuration list for PBXAggregateTarget "RunQemu" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AAE76D002EF7875A005230EB /* Debug */,
-				AAE76D012EF7875A005230EB /* Release */,
+				AAE3C9B42F2E80D8007F25C3 /* Debug */,
+				AAE3C9B52F2E80D8007F25C3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

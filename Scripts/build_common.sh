@@ -13,18 +13,31 @@ set -euo pipefail
 : "${SCRIPTS_DIR:="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"}"
 : "${SCRIPT_DIR:="${SCRIPTS_DIR}"}"
 
-# Kernel root (Code/Kernel). Prefer SRCROOT when provided by Xcode, otherwise derive from Scripts/.
-: "${KERNEL_DIR:="${SRCROOT:-$(cd "${SCRIPTS_DIR}/.." && pwd)}"}"
+# OS root (Code/OS).
+#
+# This file is sometimes invoked from the Core Xcode target, where SRCROOT points
+# at Code/Core (not Code/OS). So we only trust SRCROOT if it *looks like* the OS
+# root (i.e. it contains Kern/).
+if [ -z "${KERNEL_DIR:-}" ]; then
+  if [ -n "${SRCROOT:-}" ] && [ -d "${SRCROOT}/Kern" ] && [ -d "${SRCROOT}/Scripts" ]; then
+    KERNEL_DIR="${SRCROOT}"
+  else
+    KERNEL_DIR="$(cd "${SCRIPTS_DIR}/.." && pwd)"
+  fi
+fi
+
+# Kernel sources root (Code/OS/Kern)
+: "${KERN_DIR:="${KERNEL_DIR}/Kern"}"
 # Repo root (<CapazOS>/). We keep build artifacts out of the source tree.
 #
 # Typical layouts:
-#   <CapazOS>/Code/Kernel
+#   <CapazOS>/Code/OS
 #   <CapazOS>/Code (Xcode WORKSPACE_DIR)
 if [[ -z "${REPO_ROOT:-}" ]]; then
   if [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
     REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)"
   else
-    # KERNEL_DIR is .../Code/Kernel => go up two
+    # KERNEL_DIR is .../Code/OS => go up two
     REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
   fi
 fi
@@ -81,7 +94,7 @@ Options:
   --platform <name>        (default: aarch64-virt)
   --config <debug|release> (default: debug)
   --target <kernel_c|core> (default: kernel_c)
-  --buildinfo-ini <path>   (default: Kernel/Scripts/buildinfo.ini)
+  --buildinfo-ini <path>   (default: OS/Scripts/buildinfo.ini)
   --out <dir>              (override OUT_DIR)
   -h, --help               show help
 EOF
@@ -326,7 +339,7 @@ emit_buildinfo_header() {
   mkdirp "${gen_dir}"
 
   # Single source-of-truth INI for versioning.
-  # Default location is always Kernel/Scripts/buildinfo.ini.
+  # Default location is always OS/Scripts/buildinfo.ini.
   # If an older build left buildinfo.ini elsewhere, we *migrate* it back.
   local ini="${BUILDINFO_INI:-}"
   local scripts_ini="${KERNEL_DIR}/Scripts/buildinfo.ini"
@@ -356,51 +369,61 @@ emit_buildinfo_header() {
     if [[ ! -f "${ini}" ]]; then
       mkdirp "$(dirname "${ini}")"
       if ! cat >"${ini}" <<'EOF'
-# Build Info
-version = 0.0.0
-kernel_build_number = 0
-core_build_number = 0
-build_version = 0.0.0
-build_environment = macOS Xcode
-build_date =
+# Build info for CapazOS
 
-# Boot Info
-boot_version = 0.0.0
-boot_platform = unknown
+[build]
+# Human-readable build version/tag.
+build_version=0.0.0
+# build environment identifier (debug/dev/ci/release, etc.)
+build_environment=macOS Xcode
+# build date in ISO-8601 format (auto-filled if empty)
+build_date=
 
-# Kernel Info
-kernel_version = 0.0.0
-kernel_name = Capaz Kernel
-kernel_machine = unknown
+[kernel]
+# Kernel semver
+kernel_version=0.0.0
+# Kernel build number (auto-incremented by build.sh)
+kernel_build_number=0
+# Platform identifier used for the running kernel
+kernel_platform=unknown
+# Machine / board identifier
+kernel_machine=unknown
+# Kernel config name
+kernel_config=Debug
 
-# Core Info
-core_version = 0.0.0
-core_name = Capaz Core
+[core]
+core_name=Capaz Core
+core_version=0.0.0
 EOF
       then
         ini="${gen_dir}/buildinfo.ini"
         if [[ ! -f "${ini}" ]]; then
           cat >"${ini}" <<'EOF'
-# Build Info
-version = 0.0.0
-kernel_build_number = 0
-core_build_number = 0
-build_version = 0.0.0
-build_environment = macOS Xcode
-build_date =
+# Build info for CapazOS
 
-# Boot Info
-boot_version = 0.0.0
-boot_platform = unknown
+[build]
+# Human-readable build version/tag.
+build_version=0.0.0
+# build environment identifier (debug/dev/ci/release, etc.)
+build_environment=macOS Xcode
+# build date in ISO-8601 format (auto-filled if empty)
+build_date=
 
-# Kernel Info
-kernel_version = 0.0.0
-kernel_name = Capaz Kernel
-kernel_machine = unknown
+[kernel]
+# Kernel semver
+kernel_version=0.0.0
+# Kernel build number (auto-incremented by build.sh)
+kernel_build_number=0
+# Platform identifier used for the running kernel
+kernel_platform=unknown
+# Machine / board identifier
+kernel_machine=unknown
+# Kernel config name
+kernel_config=Debug
 
-# Core Info
-core_version = 0.0.0
-core_name = Capaz Core
+[core]
+core_name=Capaz Core
+core_version=0.0.0
 EOF
         fi
       fi
@@ -434,13 +457,11 @@ EOF
 
 // Default build numbers
 #define CAPAZ_BUILD_NUMBER 0
-#define CAPAZ_CORE_BUILD_NUMBER 0
 
 // Default machine and version info
 #define CAPAZ_MACHINE "unknown"
 #define CAPAZ_KERNEL_VERSION "0.0.0"
-#define CAPAZ_BOOT_PLATFORM "unknown"
-#define CAPAZ_BOOT_VERSION "0.0.0"
+#define CAPAZ_KERNEL_PLATFORM "unknown"
 
 /* End of fallback buildinfo.h */
 EOF
@@ -477,7 +498,7 @@ emit_dtb_artifacts() {
       "${KERNEL_DIR}/DeviceTree"/*.dtb
       "${KERNEL_DIR}/DeviceTrees"/*.dtb
       "${KERNEL_DIR}/Resources"/*.dtb
-      "${KERNEL_DIR}/Sources"/**/*.dtb
+      "${KERN_DIR}"/**/*.dtb
     )
     for c in "${candidates[@]}"; do
       if [ -f "${c}" ]; then
@@ -492,7 +513,7 @@ emit_dtb_artifacts() {
       "${KERNEL_DIR}/DeviceTree"/*.dts
       "${KERNEL_DIR}/DeviceTrees"/*.dts
       "${KERNEL_DIR}/Resources"/*.dts
-      "${KERNEL_DIR}/Sources"/**/*.dts
+      "${KERN_DIR}"/**/*.dts
     )
     for c in "${candidates_dts[@]}"; do
       if [ -f "${c}" ]; then
@@ -586,7 +607,7 @@ EOF
 #include "dtb.h"
 
 // Stub DTB payload. Provide a real DTB by setting $DTB_INPUT to a *.dtb file
-// (or add a *.dtb under Kernel/DeviceTree or Kernel/Resources).
+// (or add a *.dtb under OS/DeviceTree or OS/Resources).
 const uint8_t g_dtb_blob[] = { };
 const size_t  g_dtb_blob_len = 0;
 EOF
@@ -612,59 +633,59 @@ compile_objects() {
     case "${src}" in
       *.c)
         "${CC}" "${CFLAGS_COMMON_ARR[@]}" \
-          -I "${KERNEL_DIR}/Sources" \
-          -I "${KERNEL_DIR}/Sources/ABI" \
-          -I "${KERNEL_DIR}/Sources/HAL" \
-          -I "${KERNEL_DIR}/Sources/Lib" \
-          -I "${KERNEL_DIR}/Sources/Lib/fdt" \
-          -I "${KERNEL_DIR}/Sources/Arch" \
-          -I "${KERNEL_DIR}/Sources/Arch/aarch64" \
-          -I "${KERNEL_DIR}/Sources/Arch/aarch64/boot" \
-          -I "${KERNEL_DIR}/Sources/Kernel" \
-          -I "${KERNEL_DIR}/Sources/Kernel/boot" \
-          -I "${KERNEL_DIR}/Sources/Kernel/alloc" \
-          -I "${KERNEL_DIR}/Sources/Kernel/cap" \
-          -I "${KERNEL_DIR}/Sources/Kernel/core" \
-          -I "${KERNEL_DIR}/Sources/Kernel/debug" \
-          -I "${KERNEL_DIR}/Sources/Kernel/ipc" \
-          -I "${KERNEL_DIR}/Sources/Kernel/irg" \
-          -I "${KERNEL_DIR}/Sources/Kernel/irq" \
-          -I "${KERNEL_DIR}/Sources/Kernel/mm" \
-          -I "${KERNEL_DIR}/Sources/Kernel/platform" \
-          -I "${KERNEL_DIR}/Sources/Kernel/sched" \
-          -I "${KERNEL_DIR}/Sources/Kernel/task" \
-          -I "${KERNEL_DIR}/Sources/Kernel/util" \
-          -I "${KERNEL_DIR}/Sources/Kernel/work" \
-          -I "${REPO_ROOT}/Code/Core/Sources" \
+          -I "${KERN_DIR}" \
+          -I "${KERN_DIR}/ABI" \
+          -I "${KERN_DIR}/HAL" \
+          -I "${KERN_DIR}/Lib" \
+          -I "${KERN_DIR}/Lib/fdt" \
+          -I "${KERN_DIR}/Arch" \
+          -I "${KERN_DIR}/Arch/aarch64" \
+          -I "${KERN_DIR}/Arch/aarch64/boot" \
+          -I "${KERN_DIR}/Kernel" \
+          -I "${KERN_DIR}/Kernel/boot" \
+          -I "${KERN_DIR}/Kernel/alloc" \
+          -I "${KERN_DIR}/Kernel/cap" \
+          -I "${KERN_DIR}/Kernel/core" \
+          -I "${KERN_DIR}/Kernel/debug" \
+          -I "${KERN_DIR}/Kernel/ipc" \
+          -I "${KERN_DIR}/Kernel/irg" \
+          -I "${KERN_DIR}/Kernel/irq" \
+          -I "${KERN_DIR}/Kernel/mm" \
+          -I "${KERN_DIR}/Kernel/platform" \
+          -I "${KERN_DIR}/Kernel/sched" \
+          -I "${KERN_DIR}/Kernel/task" \
+          -I "${KERN_DIR}/Kernel/util" \
+          -I "${KERN_DIR}/Kernel/work" \
+          -I "${REPO_ROOT}/Code/OS/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
       *.S|*.s)
         "${CC}" "${ASFLAGS_COMMON_ARR[@]}" ${INCLUDE_FLAGS[@]+"${INCLUDE_FLAGS[@]}"} \
-          -I "${KERNEL_DIR}/Sources" \
-          -I "${KERNEL_DIR}/Sources/ABI" \
-          -I "${KERNEL_DIR}/Sources/HAL" \
-          -I "${KERNEL_DIR}/Sources/Lib" \
-          -I "${KERNEL_DIR}/Sources/Lib/fdt" \
-          -I "${KERNEL_DIR}/Sources/Arch" \
-          -I "${KERNEL_DIR}/Sources/Arch/aarch64" \
-          -I "${KERNEL_DIR}/Sources/Arch/aarch64/boot" \
-          -I "${KERNEL_DIR}/Sources/Kernel" \
-          -I "${KERNEL_DIR}/Sources/Kernel/boot" \
-          -I "${KERNEL_DIR}/Sources/Kernel/alloc" \
-          -I "${KERNEL_DIR}/Sources/Kernel/cap" \
-          -I "${KERNEL_DIR}/Sources/Kernel/core" \
-          -I "${KERNEL_DIR}/Sources/Kernel/debug" \
-          -I "${KERNEL_DIR}/Sources/Kernel/ipc" \
-          -I "${KERNEL_DIR}/Sources/Kernel/irg" \
-          -I "${KERNEL_DIR}/Sources/Kernel/irq" \
-          -I "${KERNEL_DIR}/Sources/Kernel/mm" \
-          -I "${KERNEL_DIR}/Sources/Kernel/platform" \
-          -I "${KERNEL_DIR}/Sources/Kernel/sched" \
-          -I "${KERNEL_DIR}/Sources/Kernel/task" \
-          -I "${KERNEL_DIR}/Sources/Kernel/util" \
-          -I "${KERNEL_DIR}/Sources/Kernel/work" \
-          -I "${REPO_ROOT}/Code/Core/Sources" \
+          -I "${KERN_DIR}" \
+          -I "${KERN_DIR}/ABI" \
+          -I "${KERN_DIR}/HAL" \
+          -I "${KERN_DIR}/Lib" \
+          -I "${KERN_DIR}/Lib/fdt" \
+          -I "${KERN_DIR}/Arch" \
+          -I "${KERN_DIR}/Arch/aarch64" \
+          -I "${KERN_DIR}/Arch/aarch64/boot" \
+          -I "${KERN_DIR}/Kernel" \
+          -I "${KERN_DIR}/Kernel/boot" \
+          -I "${KERN_DIR}/Kernel/alloc" \
+          -I "${KERN_DIR}/Kernel/cap" \
+          -I "${KERN_DIR}/Kernel/core" \
+          -I "${KERN_DIR}/Kernel/debug" \
+          -I "${KERN_DIR}/Kernel/ipc" \
+          -I "${KERN_DIR}/Kernel/irg" \
+          -I "${KERN_DIR}/Kernel/irq" \
+          -I "${KERN_DIR}/Kernel/mm" \
+          -I "${KERN_DIR}/Kernel/platform" \
+          -I "${KERN_DIR}/Kernel/sched" \
+          -I "${KERN_DIR}/Kernel/task" \
+          -I "${KERN_DIR}/Kernel/util" \
+          -I "${KERN_DIR}/Kernel/work" \
+          -I "${REPO_ROOT}/Code/OS/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
@@ -739,25 +760,25 @@ build_boot_and_kernel() {
   mkdirp "${gen_inc}"
 
   emit_buildinfo_header "${gen_inc}" "${gen_dir}"
-  # Device-tree parsing lives in Sources/Kernel/platform (dtb.h/dtb.c).
+  # Device-tree parsing lives in Kern/Kernel/platform (dtb.h/dtb.c).
   # The kernel receives the DTB pointer via boot_info; we do not generate/embed a DTB here.
 
   # Collect sources (deterministic order).
   local boot_sources=(
-    "${KERNEL_DIR}/Sources/Arch/aarch64/start.S"
+    "${KERN_DIR}/Arch/aarch64/start.S"
   )
 
   local kernel_sources=()
 
   # Kernel + HAL sources.
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${KERNEL_DIR}/Sources/Kernel" "${KERNEL_DIR}/Sources/HAL" \
+    find "${KERN_DIR}/Kernel" "${KERN_DIR}/HAL" \
       -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
   )
 
   # Arch sources (excluding boot start.S).
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${KERNEL_DIR}/Sources/Arch/aarch64" \
+    find "${KERN_DIR}/Arch/aarch64" \
       -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S" -print | sort
   )
 
@@ -767,9 +788,9 @@ build_boot_and_kernel() {
   # omitted and the weak stubs are used). When enabled and Core sources exist,
   # Core objects are linked into Kernel.elf and core_main() will be the real one.
   local with_core="${CAPAZ_WITH_CORE:-1}"
-  if [ "${with_core}" != "0" ] && [ -d "${REPO_ROOT}/Code/Core/Sources" ]; then
+  if [ "${with_core}" != "0" ] && [ -d "${REPO_ROOT}/Code/OS/Core" ]; then
     while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-      find "${REPO_ROOT}/Code/Core/Sources" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+      find "${REPO_ROOT}/Code/OS/Core" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
     )
   fi
 
@@ -802,7 +823,7 @@ build_boot_and_kernel() {
   make_binary "${kern_elf}" "${kern_bin}"
 
   # Combined boot+kernel image. The boot stage expects the kernel to begin at a
-  # 2MiB boundary from the start of the image (see Sources/Kernel/boot/kernel_image.h).
+  # 2MiB boundary from the start of the image (see Kern/Kernel/boot/kernel_image.h).
   local kern_img="${out_dir}/kernel.img"
   build_kernel_img "${kern_img}" "${boot_bin}" "${kern_bin}"
 

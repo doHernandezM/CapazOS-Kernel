@@ -1,4 +1,4 @@
-// Kernel/Sources/Kernel/thread.h
+// OS/Kern/Kernel/thread.h
 #pragma once
 
 #include <stdint.h>

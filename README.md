@@ -6,7 +6,7 @@ This repository currently targets **AArch64 under QEMU (`virt`)** to establish a
 
 ## Build metadata (current)
 
-Generated from `Code/Kernel/Scripts/buildinfo.ini`:
+Generated from `Code/OS/Scripts/buildinfo.ini`:
 
 - Build date: **2026-01-28**
 - Build version: **0.4**
@@ -33,7 +33,7 @@ Generated from `Code/Kernel/Scripts/buildinfo.ini`:
 - LLVM/LLD via Homebrew (scripts default to `/opt/homebrew/opt/llvm/bin` and `/opt/homebrew/opt/lld/bin`)
 - QEMU: `qemu-system-aarch64`
 
-If your toolchain paths differ, edit `Code/Kernel/Scripts/toolchain.env`.
+If your toolchain paths differ, edit `Code/OS/Scripts/toolchain.env`.
 
 ### Linux (Debian/Ubuntu)
 
@@ -42,20 +42,20 @@ sudo apt-get update
 sudo apt-get install -y clang lld llvm make python3 qemu-system-aarch64 gdb-multiarch
 ```
 
-If your distro does not provide versioned LLVM binaries, set `LLVM_BIN=/usr/bin` and `LLD_BIN=/usr/bin` in `Code/Kernel/Scripts/toolchain.env`.
+If your distro does not provide versioned LLVM binaries, set `LLVM_BIN=/usr/bin` and `LLD_BIN=/usr/bin` in `Code/OS/Scripts/toolchain.env`.
 
 ## Build
 
 From the repository root:
 
 ```bash
-./Code/Kernel/Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
+./Code/OS/Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
 ```
 
 Convenience wrapper (CI/parity):
 
 ```bash
-./Code/Kernel/Scripts/ci_build_kernel.sh --config debug
+./Code/OS/Scripts/ci_build_kernel.sh --config debug
 ```
 
 Outputs:
@@ -65,7 +65,7 @@ Outputs:
   - `boot.elf`, `boot.bin`
   - `kernel.elf`, `kernel.bin`
 
-Note: the build scripts may bump `kernel_build_number` in `Code/Kernel/Scripts/buildinfo.ini` unless you export `CAPAZ_BUMP_BUILD_NUMBER=0`.
+Note: the build scripts may bump `kernel_build_number` in `Code/OS/Scripts/buildinfo.ini` unless you export `CAPAZ_BUMP_BUILD_NUMBER=0`.
 
 ## Boot / run under QEMU
 

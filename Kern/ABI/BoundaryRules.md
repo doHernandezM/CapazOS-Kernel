@@ -4,13 +4,13 @@ This document defines the **only** rules for data and control flow across the Co
 
 ## Boundary headers
 
-Canonical include root: `Kernel/Sources/ABI/`
+Canonical include root: `OS/Kern/ABI/`
 
 * `core_kernel_abi.h` — umbrella include and ABI version
 * `kernel_services_v1.h` — Kernel → Core services table (vtable)
 * `core_entrypoints.h` — Core entrypoints callable by Kernel
 
-**Rule:** there must be exactly one include path for boundary headers: `-I Kernel/Sources/ABI`.
+**Rule:** there must be exactly one include path for boundary headers: `-I OS/Kern/ABI`.
 
 ## Allowed types across the boundary
 

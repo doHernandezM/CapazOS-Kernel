@@ -1,4 +1,4 @@
-/* Kernel/Sources/Arch/aarch64/start.S
+/* OS/Kern/Arch/aarch64/start.S
  *
  * Boot stage for Capaz.
  *
@@ -256,10 +256,11 @@ uart_send:
 /* Data */
     .section .rodata.boot, "a"
 boot_banner:
-    .ascii "\nBoot: "
-    .ascii CAPAZ_BOOT_VERSION
-    .ascii "\nPlatform: "
-    .ascii CAPAZ_BOOT_PLATFORM
+    .ascii "Boot: "
+    .ascii CAPAZ_BUILD_VERSION
+    .ascii "\n"
+    .ascii "Platform: "
+    .ascii CAPAZ_KERNEL_PLATFORM
     .ascii "\n\n"
     .byte 0
 

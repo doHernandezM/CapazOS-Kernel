@@ -1,4 +1,4 @@
-// Kernel/Sources/Kernel/preempt.c
+// OS/Kern/Kernel/preempt.c
 //
 // Preemption bookkeeping: intent + preemption-disable depth.
 

@@ -1,4 +1,4 @@
-// Kernel/Sources/Kernel/sched.h
+// OS/Kern/Kernel/sched.h
 #pragma once
 
 // Set to 1 to enable extra scheduler integrity checks.

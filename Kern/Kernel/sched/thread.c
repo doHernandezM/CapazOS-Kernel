@@ -1,4 +1,4 @@
-// Kernel/Sources/Kernel/thread.c
+// OS/Kern/Kernel/thread.c
 // Cooperative thread creation + bootstrap.
 
 #include "thread.h"

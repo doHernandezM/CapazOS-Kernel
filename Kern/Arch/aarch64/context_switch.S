@@ -1,4 +1,4 @@
-// Kernel/Sources/Arch/aarch64/context_switch.S
+// OS/Kern/Arch/aarch64/context_switch.S
 // Cooperative context switching + initial thread entry trampoline.
 //
 // ctx_switch ABI contract (defined in Sources/Kernel/thread.h):

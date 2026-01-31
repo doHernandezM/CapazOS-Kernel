@@ -10,8 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KERNEL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Repository layout:
-#   <repo>/Code/Kernel/Scripts/build.sh
-# so the repo root is two levels above Kernel/.
+#   <repo>/Code/OS/Scripts/build.sh
+# so the repo root is two levels above OS/.
 REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
 
 source "${SCRIPT_DIR}/build_common.sh"
@@ -21,7 +21,7 @@ preflight_common
 
 # Choose a buildinfo.ini to read versioning from.
 #
-# IMPORTANT: by default we bump kernel_build_number (or core_build_number) on every build so buildinfo.h/.c
+# IMPORTANT: by default we bump kernel_build_number on every build so buildinfo.h/.c
 # reflect the current build. You can disable this behavior by exporting:
 #   CAPAZ_BUMP_BUILD_NUMBER=0
 if [ -z "${BUILDINFO_INI:-}" ]; then
@@ -37,26 +37,23 @@ if [ -z "${BUILDINFO_INI:-}" ]; then
     mkdirp "${OUT_DIR}/gen"
     BUILDINFO_INI="${OUT_DIR}/gen/buildinfo.ini"
     cat >"${BUILDINFO_INI}" <<'EOF'
-# Build Info
-version = 0.0.0
-kernel_build_number = 0
-core_build_number = 0
-build_version = 0.0.0
-build_environment = macOS Xcode
-build_date =
+# Build info for CapazOS
 
-# Boot Info
-boot_version = 0.0.0
-boot_platform = unknown
+[build]
+build_version=0.0.0
+build_environment=macOS Xcode
+build_date=
 
-# Kernel Info
-kernel_version = 0.0.0
-kernel_name = Capaz Kernel
-kernel_machine = unknown
+[kernel]
+kernel_version=0.0.0
+kernel_build_number=0
+kernel_platform=unknown
+kernel_machine=unknown
+kernel_config=Debug
 
-# Core Info
-core_version = 0.0.0
-core_name = Capaz Core
+[core]
+core_name=Core
+core_version=0.0.0
 EOF
   fi
 fi
@@ -64,13 +61,8 @@ export BUILDINFO_INI
 
 # Bump build number once per build invocation unless explicitly disabled.
 if [[ "${CAPAZ_BUMP_BUILD_NUMBER:-1}" != "0" && "${ACTION:-build}" != "clean" ]]; then
-  # Determine which counter to bump based on the target.  Kernel builds bump
-  # kernel_build_number; core builds bump core_build_number.
-  if [[ "${TARGET}" == "core" ]]; then
-    "${SCRIPT_DIR}/bump_build_number.sh" --key core_build_number "${BUILDINFO_INI}" || true
-  else
-    "${SCRIPT_DIR}/bump_build_number.sh" --key kernel_build_number "${BUILDINFO_INI}" || true
-  fi
+  # Bump the kernel build number once per build invocation.
+  "${SCRIPT_DIR}/bump_build_number.sh" --key kernel_build_number "${BUILDINFO_INI}" || true
 fi
 
 build_boot_and_kernel

@@ -15,16 +15,16 @@
 #
 # This file is meant to be sourced by other scripts.
 
-buildinfo__log() {
+buildinfo__log( ) {
   printf "[buildinfo] %s\n" "$*" >&2
 }
 
-buildinfo__die() {
+buildinfo__die( ) {
   printf "[buildinfo] error: %s\n" "$*" >&2
   return 1
 }
 
-buildinfo__write_if_changed() {
+buildinfo__write_if_changed( ) {
   local path="$1"
   local tmp
   tmp="$(mktemp)"
@@ -39,12 +39,12 @@ buildinfo__write_if_changed() {
   mv "${tmp}" "${path}"
 }
 
-buildinfo__read_ini() {
+buildinfo__read_ini( ) {
   local ini="$1"
   [[ -f "${ini}" ]] || buildinfo__die "missing ini: ${ini}"
 
   # Trim helper (portable; no extglob).
-  buildinfo__trim() {
+  buildinfo__trim( ) {
     local s="$1"
     # remove leading whitespace
     s="${s#"${s%%[![:space:]]*}"}"
@@ -54,9 +54,9 @@ buildinfo__read_ini() {
   }
 
   # Clear only the vars we manage.
-  unset build_number version boot_platform machine kernel_name kernel_version boot_version core_name core_version build_date
+  unset build_number version machine kernel_name kernel_version core_name core_version build_date
   # Also clear new variable names used by the enhanced buildinfo schema.
-  unset kernel_build_number kernel_machine core_build_number build_version build_environment
+  unset kernel_build_number kernel_machine build_version build_environment kernel_platform
 
   # shellcheck disable=SC2162
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -86,13 +86,13 @@ buildinfo__read_ini() {
   done <"${ini}"
 }
 
-read_buildinfo_value() {
+read_buildinfo_value( ) {
   local ini="$1" key="$2"
   buildinfo__read_ini "${ini}" || return 1
   printf '%s' "${!key-}"
 }
 
-set_buildinfo_value() {
+set_buildinfo_value( ) {
   local ini="$1" key="$2" val="$3"
   [[ -f "${ini}" ]] || buildinfo__die "missing ini: ${ini}"
 
@@ -105,7 +105,7 @@ set_buildinfo_value() {
   fi
 }
 
-init_buildinfo_ini() {
+init_buildinfo_ini( ) {
   local ini="$1"
   [[ -f "${ini}" ]] || touch "${ini}"
 
@@ -123,11 +123,8 @@ init_buildinfo_ini() {
   cur="$(read_buildinfo_value "${ini}" kernel_version || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" kernel_version "0.0.0"
 
-  cur="$(read_buildinfo_value "${ini}" boot_version || true)"
-  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" boot_version "0.0.0"
-
-  cur="$(read_buildinfo_value "${ini}" boot_platform || true)"
-  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" boot_platform "unknown"
+  cur="$(read_buildinfo_value "${ini}" kernel_platform || true)"
+  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" kernel_platform "unknown"
 
   # Initialize the new kernel_machine key if missing.
   cur="$(read_buildinfo_value "${ini}" kernel_machine || true)"
@@ -136,10 +133,7 @@ init_buildinfo_ini() {
   # Maintain backwards compatibility: ensure the legacy machine key exists.
   cur="$(read_buildinfo_value "${ini}" machine || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" machine "unknown"
-
-  # Initialize new optional keys if missing.
-  cur="$(read_buildinfo_value "${ini}" core_build_number || true)"
-  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" core_build_number "0"
+  # Initialize optional keys if missing.
 
   cur="$(read_buildinfo_value "${ini}" build_version || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" build_version "0.0.0"
@@ -151,14 +145,14 @@ init_buildinfo_ini() {
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" build_date "$(date -u +%Y-%m-%d)"
 }
 
-buildinfo__git_hash() {
+buildinfo__git_hash( ) {
   local repo_root="$1"
   if command -v git >/dev/null 2>&1 && [[ -d "${repo_root}/.git" ]]; then
     (cd "${repo_root}" && git rev-parse --short HEAD 2>/dev/null) || true
   fi
 }
 
-emit_buildinfo_files() {
+emit_buildinfo_files( ) {
   local repo_root="$1"
   local ini="$2"
   local out_h="$3"
@@ -178,7 +172,6 @@ emit_buildinfo_files() {
 
   # Default values for newly introduced fields.  If unset after reading the
   # ini, initialize them so the preprocessor macros always expand.
-  : "${core_build_number:=0}"
   : "${build_version:=0.0.0}"
   : "${build_environment:=macOS Xcode}"
 
@@ -186,8 +179,8 @@ emit_buildinfo_files() {
   # machine so missing kernel_build_number/kernel_machine is handled.
   [[ -n "${build_number-}" ]] || buildinfo__die "build_number missing in ${ini}"
   [[ -n "${kernel_version-}" ]] || buildinfo__die "kernel_version missing in ${ini}"
-  [[ -n "${boot_platform-}" ]] || buildinfo__die "boot_platform missing in ${ini}"
-  [[ -n "${boot_version-}" ]] || buildinfo__die "boot_version missing in ${ini}"
+  [[ -n "${kernel_platform-}" ]] || buildinfo__die "kernel_platform missing in ${ini}"
+  [[ -n "${build_version-}" ]] || buildinfo__die "build_version missing in ${ini}"
   [[ -n "${machine-}" ]] || buildinfo__die "machine missing in ${ini}"
   [[ -n "${build_date-}" ]] || build_date="$(date -u +%Y-%m-%d)"
 
@@ -196,7 +189,7 @@ emit_buildinfo_files() {
 
 // Generated from buildinfo.ini. Do not edit.
 
-// NOTE: start.S includes "buildinfo.h" and expects CAPAZ_BOOT_* macros.
+// NOTE: start.S includes "buildinfo.h" and expects CAPAZ_BUILD_VERSION and CAPAZ_KERNEL_PLATFORM.
 //       kmain.c includes "build_info.h" and expects CAPAZ_* macros below.
 
 #define CAPAZ_BUILD_NUMBER ${build_number}
@@ -205,11 +198,9 @@ emit_buildinfo_files() {
 #define CAPAZ_MACHINE "${machine}"
 
 #define CAPAZ_KERNEL_VERSION "${kernel_version}"
-#define CAPAZ_BOOT_PLATFORM "${boot_platform}"
-#define CAPAZ_BOOT_VERSION "${boot_version}"
+#define CAPAZ_KERNEL_PLATFORM "${kernel_platform}"
 
 // Extended buildinfo macros
-#define CAPAZ_CORE_BUILD_NUMBER ${core_build_number}
 #define CAPAZ_BUILD_VERSION "${build_version}"
 #define CAPAZ_BUILD_ENVIRONMENT "${build_environment}"
 EOF
@@ -232,12 +223,10 @@ __attribute__((used)) const unsigned long capaz_build_number = CAPAZ_BUILD_NUMBE
 __attribute__((used)) const char capaz_build_date[] = CAPAZ_BUILD_DATE;
 __attribute__((used)) const char capaz_machine[] = CAPAZ_MACHINE;
 __attribute__((used)) const char capaz_kernel_version[] = CAPAZ_KERNEL_VERSION;
-__attribute__((used)) const char capaz_boot_platform[] = CAPAZ_BOOT_PLATFORM;
-__attribute__((used)) const char capaz_boot_version[] = CAPAZ_BOOT_VERSION;
-
-// Extended buildinfo symbols.  Useful for core builds and host tools.
-__attribute__((used)) const unsigned long capaz_core_build_number = CAPAZ_CORE_BUILD_NUMBER;
+__attribute__((used)) const char capaz_kernel_platform[] = CAPAZ_KERNEL_PLATFORM;
 __attribute__((used)) const char capaz_build_version[] = CAPAZ_BUILD_VERSION;
+
+// Extended buildinfo symbols.
 __attribute__((used)) const char capaz_build_environment[] = CAPAZ_BUILD_ENVIRONMENT;
 EOF
 }
