@@ -4,76 +4,28 @@
  * Minimal libc-symbol shims used by the Swift runtime when linking Core(Swift)
  * into the kernel image.
  *
- * The kernel is freestanding (no libc). Swift currently expects a small set of
- * POSIX/C runtime entrypoints (e.g. posix_memalign/free/putchar) when certain
- * runtime facilities are pulled in.
+ * The kernel is freestanding (no libc). Swift expects a small set of C runtime
+ * entrypoints (e.g. posix_memalign/free/putchar) when some runtime facilities
+ * are pulled in.
  *
- * These shims route through kernel_services_v1 so the kernel remains in control
- * of allocation and logging.
+ * After the Kernel+Core merge, these shims call kernel primitives directly via
+ * the internal Core-callable API (no versioned services table).
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "core_kernel_abi.h"
-#include "core_kernel_abi_v3.h"
-
-static const kernel_services_v1_t *g_services;
-static const kernel_services_v3_t *g_services_v3;
-// Shadow copy of the v1 subset for back-compat consumers.
-// We keep a copy instead of casting a v3 pointer to v1 to avoid strict-aliasing UB.
-static kernel_services_v1_t g_services_v1_shadow;
-
-// Core is built freestanding (no libc), so <string.h> is not available.
-// Provide a tiny memcpy for the one place we need it.
-static inline void *core_memcpy(void *dst, const void *src, size_t n) {
-    uint8_t *d = (uint8_t *)dst;
-    const uint8_t *s = (const uint8_t *)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dst;
-}
-
-void core_set_services(const kernel_services_v1_t *services) {
-    g_services = services;
-}
-
-void core_set_services_v3(const kernel_services_v3_t *services) {
-    // Seed both the v3 pointer and the legacy v1 pointer. This allows older
-    // Core code that only uses v1 (e.g. early logging) to continue working even
-    // if the kernel only calls core_set_services_v3().
-    g_services_v3 = services;
-    if (!services) {
-        g_services = NULL;
-        return;
-    }
-
-    // v3's initial fields are ABI-compatible with v1; copy just that prefix.
-    // This keeps legacy v1 consumers (e.g. early log) alive without depending on
-    // nested struct layouts inside kernel_services_v3_t.
-    core_memcpy(&g_services_v1_shadow, services, sizeof(kernel_services_v1_t));
-    g_services = &g_services_v1_shadow;
-}
-
-const kernel_services_v1_t *core_services_v1(void) {
-    return g_services;
-}
-
-const kernel_services_v3_t *core_services_v3(void) {
-    return g_services_v3;
-}
+#include "api/core_kernel_api.h"
 
 // ---------- Logging / stdio ----------
 
 __attribute__((weak))
-int putchar(int c) {
-    if (g_services && g_services->log) {
-        char buf[2];
-        buf[0] = (char)c;
-        buf[1] = '\0';
-        g_services->log(buf);
-    }
+int putchar(int c)
+{
+    char buf[2];
+    buf[0] = (char)c;
+    buf[1] = '\0';
+    cka_log_write(buf);
     return c;
 }
 
@@ -93,7 +45,8 @@ static int is_pow2(size_t x) {
 }
 
 __attribute__((weak))
-int posix_memalign(void **memptr, size_t alignment, size_t size) {
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
     if (!memptr) {
         return 22; // EINVAL
     }
@@ -104,14 +57,9 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
         return 22; // EINVAL
     }
 
-    if (!g_services || !g_services->alloc) {
-        *memptr = NULL;
-        return 12; // ENOMEM
-    }
-
     // Allocate enough space for alignment slack + header.
     size_t total = size + alignment + sizeof(shim_hdr_t);
-    void *base = g_services->alloc(total, _Alignof(max_align_t));
+    void *base = cka_malloc(total);
     if (!base) {
         *memptr = NULL;
         return 12; // ENOMEM
@@ -129,43 +77,39 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
 }
 
 __attribute__((weak))
-void free(void *ptr) {
+void free(void *ptr)
+{
     if (!ptr) {
-        return;
-    }
-
-    if (!g_services || !g_services->free) {
         return;
     }
 
     // If the pointer came from posix_memalign above, free the base.
     shim_hdr_t *hdr = (shim_hdr_t *)((uintptr_t)ptr - sizeof(shim_hdr_t));
     if (hdr->magic == SHIM_MAGIC && hdr->base) {
-        g_services->free(hdr->base);
+        cka_free(hdr->base);
         return;
     }
 
-    // Otherwise assume it is a direct kernel_services allocation.
-    g_services->free(ptr);
-}
-
-// Optional convenience shims that some Swift runtime paths may use.
-__attribute__((weak))
-void *malloc(size_t size) {
-    if (!g_services || !g_services->alloc) {
-        return NULL;
-    }
-    return g_services->alloc(size, _Alignof(max_align_t));
+    // Otherwise assume it is a direct allocation.
+    cka_free(ptr);
 }
 
 __attribute__((weak))
-void *calloc(size_t n, size_t size) {
+void *malloc(size_t size)
+{
+    return cka_malloc(size);
+}
+
+__attribute__((weak))
+void *calloc(size_t n, size_t size)
+{
     size_t total = n * size;
     void *p = malloc(total);
     if (!p) {
         return NULL;
     }
-    // No memset in freestanding by default; do a simple byte loop.
+
+    // Freestanding memset is not guaranteed; do a simple byte loop.
     volatile uint8_t *b = (volatile uint8_t *)p;
     for (size_t i = 0; i < total; i++) {
         b[i] = 0;

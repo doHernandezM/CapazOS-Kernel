@@ -8,9 +8,12 @@ fi
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KERNEL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# build_common.sh computes KERNEL_DIR and REPO_ROOT from SCRIPT_DIR and/or the
-# Xcode environment.
+# Let build_common.sh derive REPO_ROOT robustly for both layouts:
+#   <repo>/OS
+#   <repo>/Code/OS
+
 source "${SCRIPT_DIR}/build_common.sh"
 
 parse_args_common "$@"

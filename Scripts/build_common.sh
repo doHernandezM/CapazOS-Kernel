@@ -13,7 +13,7 @@ set -euo pipefail
 : "${SCRIPTS_DIR:="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"}"
 : "${SCRIPT_DIR:="${SCRIPTS_DIR}"}"
 
-# OS root (Code/OS).
+# OS root (repo/OS or Code/OS).
 #
 # This file is sometimes invoked from the Core Xcode target, where SRCROOT points
 # at Code/Core (not Code/OS). So we only trust SRCROOT if it *looks like* the OS
@@ -28,25 +28,35 @@ fi
 
 # Kernel sources root (Code/OS/Kern)
 : "${KERN_DIR:="${KERNEL_DIR}/Kern"}"
-# Repo root (<repo>/). We keep build artifacts out of the source tree.
+# Repo root. We keep build artifacts out of the source tree.
 #
 # Supported layouts:
-#   A) <repo>/Code/OS   (legacy workspace layout)
-#   B) <repo>/OS        (OS is the repo root)
+#   A) <repo>/OS
+#   B) <repo>/Code/OS
 #
+# Build outputs should land in <repo>/build/... for both layouts.
 if [[ -z "${REPO_ROOT:-}" ]]; then
-  if [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
-    REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)"
-  elif [[ "$(basename "${KERNEL_DIR}")" == "OS" && "$(basename "$(dirname "${KERNEL_DIR}")")" == "Code" ]]; then
-    # KERNEL_DIR is .../Code/OS => repo root is two levels up
+  # Legacy layout: <repo>/Code/OS
+  if [[ "$(basename "${KERNEL_DIR}")" == "OS" && "$(basename "$(dirname "${KERNEL_DIR}")")" == "Code" ]]; then
     REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
+  # Repo-root layout: <repo>/OS
+  elif [[ "$(basename "${KERNEL_DIR}")" == "OS" ]]; then
+    # If OS itself is a git root, keep artifacts adjacent.
+    if [[ -d "${KERNEL_DIR}/.git" ]]; then
+      REPO_ROOT="${KERNEL_DIR}"
+    else
+      REPO_ROOT="$(cd "${KERNEL_DIR}/.." && pwd)"
+    fi
+  # Workspace invocation: WORKSPACE_DIR usually points at <repo>/Code
+  elif [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
+    REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)"
   else
-    # OS directory is the repo root
+    # Fallback: treat KERNEL_DIR as repo root.
     REPO_ROOT="${KERNEL_DIR}"
   fi
 fi
 
-# Configuration defaults (can be overridden by parse_args or Xcode CONFIGURATION).
+# Configuration defaults (can be overridden by parse_args or Xcode CONFIGURATION). (can be overridden by parse_args or Xcode CONFIGURATION).
 : "${PLATFORM:=${PLATFORM_NAME:-${PLATFORM:-}}}"
 : "${PLATFORM:=aarch64-virt}"
 : "${CONFIG:=${CONFIGURATION:-debug}}"
@@ -120,7 +130,7 @@ parse_args() {
       --target)
         TARGET="${2:?missing value for --target}"
         if [[ "${TARGET}" != "kernel_c" ]]; then
-          die "Unsupported --target ${TARGET} (Core is always built into the kernel; use --target kernel_c)"
+          die "Unsupported --target ${TARGET} (Core is built into the kernel; use --target kernel_c)"
         fi
         shift 2
         ;;
@@ -641,7 +651,6 @@ compile_objects() {
       *.c)
         "${CC}" "${CFLAGS_COMMON_ARR[@]}" \
           -I "${KERN_DIR}" \
-          -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
@@ -663,14 +672,13 @@ compile_objects() {
           -I "${KERN_DIR}/Kernel/task" \
           -I "${KERN_DIR}/Kernel/util" \
           -I "${KERN_DIR}/Kernel/work" \
-          -I "${REPO_ROOT}/Code/OS/Core" \
+          -I "${KERNEL_DIR}/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
       *.S|*.s)
         "${CC}" "${ASFLAGS_COMMON_ARR[@]}" ${INCLUDE_FLAGS[@]+"${INCLUDE_FLAGS[@]}"} \
           -I "${KERN_DIR}" \
-          -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
@@ -692,7 +700,7 @@ compile_objects() {
           -I "${KERN_DIR}/Kernel/task" \
           -I "${KERN_DIR}/Kernel/util" \
           -I "${KERN_DIR}/Kernel/work" \
-          -I "${REPO_ROOT}/Code/OS/Core" \
+          -I "${KERNEL_DIR}/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
@@ -792,25 +800,11 @@ build_boot_and_kernel() {
   # Compile and link Core into the kernel image.
   #
   # Core is a required component of the system build.
-  #
-  # Supported layouts:
-  #   A) <repo>/Code/OS/Core (legacy)
-  #   B) <repo>/OS/Core      (OS repo-root)
-  local core_dir=""
-  if [[ -d "${KERNEL_DIR}/Core" ]]; then
-    core_dir="${KERNEL_DIR}/Core"
-  elif [[ -d "${REPO_ROOT}/Code/OS/Core" ]]; then
-    core_dir="${REPO_ROOT}/Code/OS/Core"
-  elif [[ -d "${REPO_ROOT}/OS/Core" ]]; then
-    core_dir="${REPO_ROOT}/OS/Core"
+  if [ ! -d "${KERNEL_DIR}/Core" ]; then
+    fatal "Missing Core sources at ${KERNEL_DIR}/Core"
   fi
-
-  if [[ -z "${core_dir}" ]]; then
-    die "Missing Core sources (expected at ${KERNEL_DIR}/Core or ${REPO_ROOT}/Code/OS/Core)"
-  fi
-
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${core_dir}" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+    find "${KERNEL_DIR}/Core" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
   )
 
 

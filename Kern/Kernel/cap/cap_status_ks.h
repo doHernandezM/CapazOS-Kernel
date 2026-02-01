@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "cap_table.h"
-#include "core_kernel_abi_v2.h"
+#include "api/ks_types.h"
 
 // One canonical mapping from internal cap_status_t -> KS ABI v2 codes.
 // All ABI layers should call this instead of duplicating switch statements.

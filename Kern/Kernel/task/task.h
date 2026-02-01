@@ -17,14 +17,18 @@ typedef struct task {
 
     // Bootstrap handles seeded for the initial kernel task.
     cap_handle_t self_cap;
-    cap_handle_t timer_cap;
-    cap_handle_t log_cap;
+    // Console endpoint caps seeded for Core bring-up.
+    // These will become the first “real” capabilities Core uses.
+    cap_handle_t console_req_ep;
+    cap_handle_t console_rsp_ep;
+    cap_handle_t console_ctl_ep;
 } task_t;
 
 static inline void task_init(task_t *t, uint64_t id, cap_table_t *caps) {
     t->id = id;
     t->caps = caps;
     t->self_cap = 0;
-    t->timer_cap = 0;
-    t->log_cap = 0;
+    t->console_req_ep = 0;
+    t->console_rsp_ep = 0;
+    t->console_ctl_ep = 0;
 }

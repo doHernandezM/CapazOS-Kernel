@@ -107,12 +107,12 @@ void cap_ops_selftest(cap_table_t *t)
 
     // Minimal invariants: create -> lookup -> drop; stale handle must fail.
     cap_handle_t h = 0;
-    cap_status_t st = cap_create(t, CAP_TYPE_SERVICE, (CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER), (void *)0x1234, &h);
+    cap_status_t st = cap_create(t, CAP_TYPE_MEMOBJ, (CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER), (void *)0x1234, &h);
     expect(st == CAP_OK, "cap_create failed");
 
     cap_entry_t *e = cap_table_lookup(t, h, CAP_R_READ);
     expect(e != NULL, "cap_lookup failed");
-    expect(e->type == CAP_TYPE_SERVICE, "type mismatch");
+    expect(e->type == CAP_TYPE_MEMOBJ, "type mismatch");
     expect(e->obj == (void *)0x1234, "obj mismatch");
 
     st = cap_drop(t, h);
@@ -124,7 +124,7 @@ void cap_ops_selftest(cap_table_t *t)
 
     // Dup/transfer smoke.
     cap_handle_t h1 = 0;
-    st = cap_create(t, CAP_TYPE_TIMER_TOKEN, (CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER), (void *)0xBEEF, &h1);
+    st = cap_create(t, CAP_TYPE_MEMOBJ, (CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER), (void *)0xBEEF, &h1);
     expect(st == CAP_OK, "cap_create #2 failed");
 
     cap_handle_t h_dup = 0;

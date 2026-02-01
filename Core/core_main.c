@@ -1,24 +1,27 @@
+// core_main.c
+//
+// Stable C boot hook called by the kernel once Core is ready to run.
+//
+// After the Kernel+Core merge, this is intentionally a thin trampoline into
+// Swift policy/services. The Swift entrypoint is optional during bring-up: if
+// it is not linked yet, Core will simply return and the kernel will continue
+// running its background work loop.
+
 #include <stdint.h>
 
 #include "core_sections.h"
-#include "core_kernel_abi.h"
+#include "api/core_kernel_api.h"
 
-// Provided by swift_runtime_shims.c. Returns the last services table provided by
-// the Kernel via core_set_services().
-extern const kernel_services_v1_t *core_services_v1(void);
+// Swift entrypoint. When Swift is linked, it should provide a strong symbol.
+extern int32_t core_main_swift(void) __attribute__((weak));
 
-// Temporary Core entrypoint.
-//
-// Kernel side:
-//   core_set_services(kernel_services_v1());
-//   core_main();
-//
-// This keeps the ABI boundary POD-only while allowing Core to access services
-// through runtime shims.
-int32_t core_main(void) {
-    const kernel_services_v1_t *services = core_services_v1();
-    if (services && services->log) {
-        services->log("[core] core_main entered\n");
+
+int32_t core_main(void)
+{
+    if (core_main_swift) {
+        return core_main_swift();
     }
+
+    cka_log_write("[core] core_main_swift not linked; Core is idle\n");
     return 0;
 }

@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "core_kernel_abi_v3.h"   // ks_ipc_msg_t, ks_ipc_status_t
+#include "api/ks_types.h"        // ks_ipc_msg_t, ks_ipc_status_t
 #include "cap/cap_table.h"        // cap_table_t, cap_handle_t, cap_rights_t
 
 // Forward declaration to avoid pulling sched headers into all users.

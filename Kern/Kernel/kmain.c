@@ -8,8 +8,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Canonical boundary contract (Kernel <-> Core)
-#include "core_kernel_abi.h"
+// Internal Core-callable API surface (single-project build)
+#include "api/ks_types.h"
+#include "api/core_kernel_api.h"
 
 #include "boot_info.h"
 #include "buildinfo.h"
@@ -27,9 +28,9 @@
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
 #include "panic.h"   // panic()
 
-// Core entrypoints are declared in core_entrypoints.h (included via
-// core_kernel_abi.h) and are provided by Core.
-const kernel_services_v1_t *kernel_services_v1(void);
+// Core entrypoint is provided by Core. It is called once from the dedicated
+// Core thread.
+int32_t core_main(void);
 
 #include "config.h"
 
@@ -187,7 +188,8 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 workq_t g_deferred_workq;
 static task_t g_kernel_task;
 static cap_table_t g_kernel_cap_table;
-static uint32_t g_timer_token;
+// (Removed) old placeholder token seeding. Core will instead be seeded with
+// console endpoint capabilities during bootstrap.
 // NOTE: In the current skeleton we seed capabilities for the log service
 // (and other bootstrap objects) directly into the kernel cap table. There is no
 // separate global "token" value to track here, and leaving an unused global
@@ -247,34 +249,36 @@ static void core_thread_entry(void *arg)
         panic("core/main: failed to seed task cap");
     }
 
-    /* Placeholder token objects (mechanism labels only). */
-    g_timer_token = 1;
-    st = cap_create(&g_kernel_cap_table,
-                    CAP_TYPE_TIMER_TOKEN,
-                    (cap_rights_t)(CAP_R_ARM | CAP_R_ACK | CAP_R_DUP | CAP_R_TRANSFER),
-                    &g_timer_token,
-                    &g_kernel_task.timer_cap);
-    if (st != CAP_OK) {
-        panic("core/main: failed to seed timer cap");
+    // Seed console endpoint capabilities for Core.
+    //
+    // This replaces the old CAP_TYPE_SERVICE + timer-token placeholders.
+    // The console service itself may still be minimal; the important part is
+    // that Core's first mechanisms are capability-addressed endpoints.
+    ks_cap_handle_t req = 0, rsp = 0, ctl = 0;
+    (void)req; (void)rsp; (void)ctl;
+
+    // Request endpoint: SEND (+ optional CONTROL via separate ctl endpoint).
+    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_SEND | CAP_R_DUP | CAP_R_TRANSFER), &req) != KS_IPC_OK) {
+        panic("core/main: failed to create console request endpoint");
+    }
+    // Reply endpoint: RECV.
+    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_RECV | CAP_R_DUP | CAP_R_TRANSFER), &rsp) != KS_IPC_OK) {
+        panic("core/main: failed to create console reply endpoint");
+    }
+    // Control endpoint (optional): SEND + CONTROL.
+    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_SEND | CAP_R_CONTROL | CAP_R_DUP | CAP_R_TRANSFER), &ctl) != KS_IPC_OK) {
+        panic("core/main: failed to create console control endpoint");
     }
 
-    st = cap_create(&g_kernel_cap_table,
-                    CAP_TYPE_SERVICE,
-                    (cap_rights_t)(CAP_R_READ | CAP_R_DUP | CAP_R_TRANSFER),
-                    (void *)kernel_services_v1(),
-                    &g_kernel_task.log_cap);
-    if (st != CAP_OK) {
-        panic("core/main: failed to seed log service cap");
-    }
+    g_kernel_task.console_req_ep = (cap_handle_t)req;
+    g_kernel_task.console_rsp_ep = (cap_handle_t)rsp;
+    g_kernel_task.console_ctl_ep = (cap_handle_t)ctl;
 
 #ifdef DEBUG
     cap_ops_selftest(&g_kernel_cap_table);
 #endif
 
     /* Contract: Core runs once in this thread. */
-    // Hand services table to Core, then enter Core.
-    core_set_services(kernel_services_v1());
-    core_set_services_v3(kernel_services_v3());
     (void)core_main();
 
     for (;;) {
