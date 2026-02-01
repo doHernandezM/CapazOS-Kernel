@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Archive CapazOS/Code and build/kernel.img into CapazOS/archive/OS.<kernel_build_number>.zip
+# Archive sources and build/kernel.img into <repo>/archive/OS.<kernel_build_number>.zip
 #
 # Usage:
 #   archive.sh [REPO_ROOT] [KERNEL_IMG_PATH] [BUILDINFO_INI]
@@ -10,13 +10,22 @@ set -euo pipefail
 # If args are omitted, defaults are derived from this script's location.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"          # .../CapazOS/Code/OS
-WORKSPACE_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"       # .../CapazOS/Code
-DEFAULT_REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)" # .../CapazOS
+OS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"  # .../(Code/)OS
+
+# Supported layouts:
+#   A) <repo>/Code/OS   (legacy workspace layout)
+#   B) <repo>/OS        (OS is the repo root)
+
+DEFAULT_REPO_ROOT=""
+if [[ "$(basename "${OS_DIR}")" == "OS" && "$(basename "$(dirname "${OS_DIR}")")" == "Code" ]]; then
+  DEFAULT_REPO_ROOT="$(cd "${OS_DIR}/../.." && pwd)"
+else
+  DEFAULT_REPO_ROOT="${OS_DIR}"
+fi
 
 REPO_ROOT="${1:-${DEFAULT_REPO_ROOT}}"
 KERNEL_IMG_PATH="${2:-${REPO_ROOT}/build/kernel.img}"
-BUILDINFO_INI="${3:-${SCRIPT_DIR}/buildinfo.ini}"
+BUILDINFO_INI="${3:-${OS_DIR}/Scripts/buildinfo.ini}"
 
 ARCHIVE_DIR="${REPO_ROOT}/archive"
 
@@ -64,10 +73,19 @@ OUT_ZIP="${ARCHIVE_DIR}/OS.${BUILD_NUMBER}.zip"
 rm -f "${OUT_ZIP}"
 
 pushd "${REPO_ROOT}" >/dev/null
-  # Keep the archive structure simple and predictable:
-  #   Code/...
-  #   build/kernel.img
-  zip -qry "${OUT_ZIP}" "Code" "build/kernel.img"
+  # First, archive sources (exclude DerivedData-like outputs). Then add kernel.img.
+  if [[ -d "Code" ]]; then
+    zip -qry "${OUT_ZIP}" "Code" -x "__MACOSX/*" 
+  elif [[ -d "OS" ]]; then
+    zip -qry "${OUT_ZIP}" "OS" -x "__MACOSX/*" 
+  else
+    # Repo root is the OS directory itself (or an unknown layout). Archive the
+    # working tree but exclude build products and prior archives.
+    zip -qry "${OUT_ZIP}" "." -x "__MACOSX/*" -x "build/*" -x "archive/*"
+  fi
+
+  # Ensure kernel image is included even if build/ was excluded above.
+  zip -q "${OUT_ZIP}" "build/kernel.img"
 popd >/dev/null
 
 echo "[archive] Wrote -> ${OUT_ZIP}"

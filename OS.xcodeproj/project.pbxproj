@@ -23,7 +23,6 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXFileReference section */
-		AAE3C9B72F2EA62D007F25C3 /* READMECORE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = READMECORE.md; sourceTree = "<group>"; };
 		AAE76CFB2EF76AA9005230EB /* .swift-version */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ".swift-version"; sourceTree = "<group>"; };
 		AAE99A662F09C94000EAB13D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		AAE99A672F09C97D00EAB13D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -60,7 +59,6 @@
 				AAE76CFB2EF76AA9005230EB /* .swift-version */,
 				AAE99A662F09C94000EAB13D /* .gitignore */,
 				AAE99A672F09C97D00EAB13D /* LICENSE */,
-				AAE3C9B72F2EA62D007F25C3 /* READMECORE.md */,
 				AAE99A682F09C97D00EAB13D /* README.md */,
 				AAAF96DC2F1882B300FA62F3 /* Linker */,
 				AAAF96EF2F1882B300FA62F3 /* Scripts */,
@@ -117,7 +115,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --platform aarch64-virt --target core\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -252,6 +250,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -261,6 +260,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;

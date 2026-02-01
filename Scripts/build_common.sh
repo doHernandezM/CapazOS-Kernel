@@ -28,17 +28,21 @@ fi
 
 # Kernel sources root (Code/OS/Kern)
 : "${KERN_DIR:="${KERNEL_DIR}/Kern"}"
-# Repo root (<CapazOS>/). We keep build artifacts out of the source tree.
+# Repo root (<repo>/). We keep build artifacts out of the source tree.
 #
-# Typical layouts:
-#   <CapazOS>/Code/OS
-#   <CapazOS>/Code (Xcode WORKSPACE_DIR)
+# Supported layouts:
+#   A) <repo>/Code/OS   (legacy workspace layout)
+#   B) <repo>/OS        (OS is the repo root)
+#
 if [[ -z "${REPO_ROOT:-}" ]]; then
   if [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
     REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)"
-  else
-    # KERNEL_DIR is .../Code/OS => go up two
+  elif [[ "$(basename "${KERNEL_DIR}")" == "OS" && "$(basename "$(dirname "${KERNEL_DIR}")")" == "Code" ]]; then
+    # KERNEL_DIR is .../Code/OS => repo root is two levels up
     REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
+  else
+    # OS directory is the repo root
+    REPO_ROOT="${KERNEL_DIR}"
   fi
 fi
 
@@ -93,7 +97,7 @@ Usage: build.sh [options]
 Options:
   --platform <name>        (default: aarch64-virt)
   --config <debug|release> (default: debug)
-  --target <kernel_c|core> (default: kernel_c)
+  --target <kernel_c> (default: kernel_c)
   --buildinfo-ini <path>   (default: OS/Scripts/buildinfo.ini)
   --out <dir>              (override OUT_DIR)
   -h, --help               show help
@@ -115,6 +119,9 @@ parse_args() {
         ;;
       --target)
         TARGET="${2:?missing value for --target}"
+        if [[ "${TARGET}" != "kernel_c" ]]; then
+          die "Unsupported --target ${TARGET} (Core is always built into the kernel; use --target kernel_c)"
+        fi
         shift 2
         ;;
       --buildinfo-ini)
@@ -782,17 +789,29 @@ build_boot_and_kernel() {
       -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S" -print | sort
   )
 
-  # Optionally compile and link Core into the kernel image.
+  # Compile and link Core into the kernel image.
   #
-  # CAPAZ_WITH_CORE=0 keeps the Kernel build completely independent (Core is
-  # omitted and the weak stubs are used). When enabled and Core sources exist,
-  # Core objects are linked into Kernel.elf and core_main() will be the real one.
-  local with_core="${CAPAZ_WITH_CORE:-1}"
-  if [ "${with_core}" != "0" ] && [ -d "${REPO_ROOT}/Code/OS/Core" ]; then
-    while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-      find "${REPO_ROOT}/Code/OS/Core" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
-    )
+  # Core is a required component of the system build.
+  #
+  # Supported layouts:
+  #   A) <repo>/Code/OS/Core (legacy)
+  #   B) <repo>/OS/Core      (OS repo-root)
+  local core_dir=""
+  if [[ -d "${KERNEL_DIR}/Core" ]]; then
+    core_dir="${KERNEL_DIR}/Core"
+  elif [[ -d "${REPO_ROOT}/Code/OS/Core" ]]; then
+    core_dir="${REPO_ROOT}/Code/OS/Core"
+  elif [[ -d "${REPO_ROOT}/OS/Core" ]]; then
+    core_dir="${REPO_ROOT}/OS/Core"
   fi
+
+  if [[ -z "${core_dir}" ]]; then
+    die "Missing Core sources (expected at ${KERNEL_DIR}/Core or ${REPO_ROOT}/Code/OS/Core)"
+  fi
+
+  while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
+    find "${core_dir}" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+  )
 
 
   # Compile generated build metadata as part of the kernel, if present.

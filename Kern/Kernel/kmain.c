@@ -28,8 +28,7 @@
 #include "panic.h"   // panic()
 
 // Core entrypoints are declared in core_entrypoints.h (included via
-// core_kernel_abi.h). A weak stub implementation is provided by
-// core_entrypoints_stub.c so the Kernel can build/link without Core.
+// core_kernel_abi.h) and are provided by Core.
 const kernel_services_v1_t *kernel_services_v1(void);
 
 #include "config.h"
@@ -274,7 +273,6 @@ static void core_thread_entry(void *arg)
 
     /* Contract: Core runs once in this thread. */
     // Hand services table to Core, then enter Core.
-    // If Core is not linked, weak stubs (in core_entrypoints_stub.c) make this a no-op.
     core_set_services(kernel_services_v1());
     core_set_services_v3(kernel_services_v3());
     (void)core_main();

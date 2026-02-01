@@ -2,9 +2,8 @@
 // Core entrypoints and ABI handoff between Kernel and Core.
 //
 // Design goals:
-//  - Kernel can build and run without Core (weak stubs in Kernel).
-//  - When Core is linked in, its strong definitions override stubs.
-//  - Kernel can seed newer service ABIs (v3) while Core can still consume v1.
+//  - Core is treated as a required component of the system build.
+//  - Kernel seeds newer service ABIs (v3) while Core can still consume v1.
 //
 
 #ifndef CORE_ENTRYPOINTS_H
