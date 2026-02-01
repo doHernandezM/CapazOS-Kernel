@@ -1,19 +1,26 @@
-// CoreSwift.swift
 //
-// Swift entrypoint for Core (policy/services layer).
+//  CoreSwift.swift
+//  Core
 //
-// When Swift is linked, core_main.c trampolines into core_main_swift.
+//  Created by Cosas on 1/14/26.
+//
+//  This file defines the Swift entrypoint for the Core.  When the
+//  kernel links this file into the kernel image (Option 2), the
+//  exported function `core_main_swift` can be called from C to
+//  transfer control into the Swift portion of Core.  At present
+//  this function is a stub that returns immediately.
 
-@_silgen_name("cka_log_write")
-private func cka_log_write(_ cstr: UnsafePointer<CChar>)
 
+// Expose a C-callable entrypoint into the Swift Core.  This
+// declaration uses @_cdecl to set the exported symbol name.  The
+// kernel will call this function from core_main.c.  The stub
+// implementation currently does nothing and simply returns 0.
 @_cdecl("core_main_swift")
 public func core_main_swift() -> Int32 {
-    "[core] Swift Core brought up (stub)\n".withCString { cka_log_write($0) }
-
-    // TODO: Replace with real Core services bring-up:
-    //  - capability-addressed console client/server
-    //  - service registry
-    //  - filesystem and other OS services
+    
+    // TODO: Implement the Core kernel in Swift.  This stub is
+    // intentionally minimal to allow linking and bootstrap without
+    // requiring the Swift standard library.
     return 0
 }
+

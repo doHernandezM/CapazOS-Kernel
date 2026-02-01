@@ -8,9 +8,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Internal Core-callable API surface (single-project build)
-#include "api/ks_types.h"
+// Core ↔ Kernel internal API.  The ABI service table has been removed.
+// Core calls kernel mechanisms directly via core_kernel_api.h.
+// Do not include the old core_kernel_abi.h; it no longer exists.
 #include "api/core_kernel_api.h"
+// Kernel -> Core bring-up entrypoint (tiny dispatch interface).
+#include "api/core_boot_if.h"
 
 #include "boot_info.h"
 #include "buildinfo.h"
@@ -28,9 +31,9 @@
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
 #include "panic.h"   // panic()
 
-// Core entrypoint is provided by Core. It is called once from the dedicated
-// Core thread.
-int32_t core_main(void);
+// Core entrypoints are declared in Core (core_main and Swift).  We no longer
+// expose kernel service tables.  The kernel no longer provides
+// kernel_services_v1() or kernel_services_v3().
 
 #include "config.h"
 
@@ -188,12 +191,9 @@ void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
 workq_t g_deferred_workq;
 static task_t g_kernel_task;
 static cap_table_t g_kernel_cap_table;
-// (Removed) old placeholder token seeding. Core will instead be seeded with
-// console endpoint capabilities during bootstrap.
-// NOTE: In the current skeleton we seed capabilities for the log service
-// (and other bootstrap objects) directly into the kernel cap table. There is no
-// separate global "token" value to track here, and leaving an unused global
-// trips -Werror/-Wunused-variable under the Xcode build.
+// Removed: g_timer_token and log service seeding.  Capabilities will be
+// seeded explicitly when services are implemented.  We keep g_tick_work_pending
+// to coordinate deferred tick work.
 static volatile bool g_tick_work_pending = false;
 
 static void tick_work_fn(void *arg);
@@ -249,36 +249,17 @@ static void core_thread_entry(void *arg)
         panic("core/main: failed to seed task cap");
     }
 
-    // Seed console endpoint capabilities for Core.
-    //
-    // This replaces the old CAP_TYPE_SERVICE + timer-token placeholders.
-    // The console service itself may still be minimal; the important part is
-    // that Core's first mechanisms are capability-addressed endpoints.
-    ks_cap_handle_t req = 0, rsp = 0, ctl = 0;
-    (void)req; (void)rsp; (void)ctl;
-
-    // Request endpoint: SEND (+ optional CONTROL via separate ctl endpoint).
-    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_SEND | CAP_R_DUP | CAP_R_TRANSFER), &req) != KS_IPC_OK) {
-        panic("core/main: failed to create console request endpoint");
-    }
-    // Reply endpoint: RECV.
-    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_RECV | CAP_R_DUP | CAP_R_TRANSFER), &rsp) != KS_IPC_OK) {
-        panic("core/main: failed to create console reply endpoint");
-    }
-    // Control endpoint (optional): SEND + CONTROL.
-    if (cka_endpoint_create((ks_cap_rights_t)(CAP_R_SEND | CAP_R_CONTROL | CAP_R_DUP | CAP_R_TRANSFER), &ctl) != KS_IPC_OK) {
-        panic("core/main: failed to create console control endpoint");
-    }
-
-    g_kernel_task.console_req_ep = (cap_handle_t)req;
-    g_kernel_task.console_rsp_ep = (cap_handle_t)rsp;
-    g_kernel_task.console_ctl_ep = (cap_handle_t)ctl;
+    /* Placeholder token objects have been removed.  Timer and log caps
+     * are no longer seeded here; instead, specific service caps will
+     * be seeded when those services are implemented. */
 
 #ifdef DEBUG
     cap_ops_selftest(&g_kernel_cap_table);
 #endif
 
     /* Contract: Core runs once in this thread. */
+    // Enter Core directly; Core accesses kernel mechanisms via the
+    // internal API.  There is no services table handoff.
     (void)core_main();
 
     for (;;) {

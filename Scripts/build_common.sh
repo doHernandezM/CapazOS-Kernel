@@ -13,7 +13,7 @@ set -euo pipefail
 : "${SCRIPTS_DIR:="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"}"
 : "${SCRIPT_DIR:="${SCRIPTS_DIR}"}"
 
-# OS root (repo/OS or Code/OS).
+# OS root (Code/OS).
 #
 # This file is sometimes invoked from the Core Xcode target, where SRCROOT points
 # at Code/Core (not Code/OS). So we only trust SRCROOT if it *looks like* the OS
@@ -28,35 +28,21 @@ fi
 
 # Kernel sources root (Code/OS/Kern)
 : "${KERN_DIR:="${KERNEL_DIR}/Kern"}"
-# Repo root. We keep build artifacts out of the source tree.
+# Repo root (<CapazOS>/). We keep build artifacts out of the source tree.
 #
-# Supported layouts:
-#   A) <repo>/OS
-#   B) <repo>/Code/OS
-#
-# Build outputs should land in <repo>/build/... for both layouts.
+# Typical layouts:
+#   <CapazOS>/Code/OS
+#   <CapazOS>/Code (Xcode WORKSPACE_DIR)
 if [[ -z "${REPO_ROOT:-}" ]]; then
-  # Legacy layout: <repo>/Code/OS
-  if [[ "$(basename "${KERNEL_DIR}")" == "OS" && "$(basename "$(dirname "${KERNEL_DIR}")")" == "Code" ]]; then
-    REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
-  # Repo-root layout: <repo>/OS
-  elif [[ "$(basename "${KERNEL_DIR}")" == "OS" ]]; then
-    # If OS itself is a git root, keep artifacts adjacent.
-    if [[ -d "${KERNEL_DIR}/.git" ]]; then
-      REPO_ROOT="${KERNEL_DIR}"
-    else
-      REPO_ROOT="$(cd "${KERNEL_DIR}/.." && pwd)"
-    fi
-  # Workspace invocation: WORKSPACE_DIR usually points at <repo>/Code
-  elif [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
+  if [[ -n "${WORKSPACE_DIR:-}" && "$(basename "${WORKSPACE_DIR}")" == "Code" ]]; then
     REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)"
   else
-    # Fallback: treat KERNEL_DIR as repo root.
-    REPO_ROOT="${KERNEL_DIR}"
+    # KERNEL_DIR is .../Code/OS => go up two
+    REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
   fi
 fi
 
-# Configuration defaults (can be overridden by parse_args or Xcode CONFIGURATION). (can be overridden by parse_args or Xcode CONFIGURATION).
+# Configuration defaults (can be overridden by parse_args or Xcode CONFIGURATION).
 : "${PLATFORM:=${PLATFORM_NAME:-${PLATFORM:-}}}"
 : "${PLATFORM:=aarch64-virt}"
 : "${CONFIG:=${CONFIGURATION:-debug}}"
@@ -99,6 +85,15 @@ declare -a INCLUDE_FLAGS=()
 # Build metadata generator (buildinfo.h/buildinfo.c).
 source "${SCRIPT_DIR}/buildinfo.sh"
 
+# Pull in Swift compilation helpers if they exist.  These helpers
+# define functions for compiling Swift sources directly into object
+# files using swiftc.  The helpers are optional: if the file is not
+# present, Swift compilation will be skipped.
+if [[ -f "${SCRIPT_DIR}/lib/swift.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/lib/swift.sh"
+fi
+
 
 usage() {
   cat <<EOF
@@ -107,7 +102,7 @@ Usage: build.sh [options]
 Options:
   --platform <name>        (default: aarch64-virt)
   --config <debug|release> (default: debug)
-  --target <kernel_c> (default: kernel_c)
+  --target <kernel_c|core> (default: kernel_c)
   --buildinfo-ini <path>   (default: OS/Scripts/buildinfo.ini)
   --out <dir>              (override OUT_DIR)
   -h, --help               show help
@@ -129,9 +124,6 @@ parse_args() {
         ;;
       --target)
         TARGET="${2:?missing value for --target}"
-        if [[ "${TARGET}" != "kernel_c" ]]; then
-          die "Unsupported --target ${TARGET} (Core is built into the kernel; use --target kernel_c)"
-        fi
         shift 2
         ;;
       --buildinfo-ini)
@@ -651,6 +643,7 @@ compile_objects() {
       *.c)
         "${CC}" "${CFLAGS_COMMON_ARR[@]}" \
           -I "${KERN_DIR}" \
+          -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
@@ -672,13 +665,14 @@ compile_objects() {
           -I "${KERN_DIR}/Kernel/task" \
           -I "${KERN_DIR}/Kernel/util" \
           -I "${KERN_DIR}/Kernel/work" \
-          -I "${KERNEL_DIR}/Core" \
+          -I "${REPO_ROOT}/Code/OS/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
       *.S|*.s)
         "${CC}" "${ASFLAGS_COMMON_ARR[@]}" ${INCLUDE_FLAGS[@]+"${INCLUDE_FLAGS[@]}"} \
           -I "${KERN_DIR}" \
+          -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
@@ -700,7 +694,7 @@ compile_objects() {
           -I "${KERN_DIR}/Kernel/task" \
           -I "${KERN_DIR}/Kernel/util" \
           -I "${KERN_DIR}/Kernel/work" \
-          -I "${KERNEL_DIR}/Core" \
+          -I "${REPO_ROOT}/Code/OS/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"
         ;;
@@ -800,11 +794,11 @@ build_boot_and_kernel() {
   # Compile and link Core into the kernel image.
   #
   # Core is a required component of the system build.
-  if [ ! -d "${KERNEL_DIR}/Core" ]; then
-    fatal "Missing Core sources at ${KERNEL_DIR}/Core"
+  if [ ! -d "${REPO_ROOT}/Code/OS/Core" ]; then
+    fatal "Missing Core sources at ${REPO_ROOT}/Code/OS/Core"
   fi
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
-    find "${KERNEL_DIR}/Core" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+    find "${REPO_ROOT}/Code/OS/Core" -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
   )
 
 
@@ -823,6 +817,43 @@ build_boot_and_kernel() {
 
   while IFS= read -r -d '' f; do boot_objs+=("$f"); done < <(find "${boot_obj_dir}" -name '*.o' -print0)
   while IFS= read -r -d '' f; do kern_objs+=("$f"); done < <(find "${kern_obj_dir}" -name '*.o' -print0)
+
+  # -------------------------------------------------------------------------
+  # Swift (Option 2) compilation: compile any Swift sources found in Core.
+  #
+  # We detect Swift files in the same Core directory used for C sources.
+  # When found, we use swift_embed_compile (from lib/swift.sh) to compile
+  # them into a single object file and append it to kern_objs for linking.
+  #
+  # Determine the Core source root.  Prefer Code/OS/Core if it exists in the
+  # repository (historic layout).  Fall back to KERNEL_DIR/../Core when the
+  # OS is at the repo root (flattened layout).  If neither exists, no Swift
+  # sources will be compiled.
+  local core_dir=""
+  if [[ -d "${REPO_ROOT}/Code/OS/Core" ]]; then
+    core_dir="${REPO_ROOT}/Code/OS/Core"
+  elif [[ -d "${KERNEL_DIR}/../Core" ]]; then
+    core_dir="$(cd "${KERNEL_DIR}/../Core" && pwd)"
+  fi
+
+  if [[ -n "${core_dir}" ]]; then
+    # Gather Swift source files.
+    local swift_files=()
+    while IFS= read -r f; do swift_files+=("$f"); done < <(
+      find "${core_dir}" -type f -name "*.swift" -print | sort
+    )
+    if [[ ${#swift_files[@]} -gt 0 ]]; then
+      # Only compile Swift sources if a Swift compiler is available.
+      if [[ -n "${SWIFTC:-}" ]]; then
+        local swift_obj="${kern_obj_dir}/core_swift.o"
+        echo "[build] Swift sources detected (${#swift_files[@]}) -> ${swift_obj}"
+        swift_embed_compile "${swift_obj}" "${swift_files[@]}"
+        kern_objs+=("${swift_obj}")
+      else
+        echo "[build] SWIFTC not set; skipping Swift source compilation" >&2
+      fi
+    fi
+  fi
 
   local boot_elf="${out_dir}/boot.elf"
   local kern_elf="${out_dir}/kernel.elf"

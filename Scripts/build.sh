@@ -9,10 +9,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KERNEL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-# Let build_common.sh derive REPO_ROOT robustly for both layouts:
-#   <repo>/OS
-#   <repo>/Code/OS
+# Repository layout:
+#   <repo>/Code/OS/Scripts/build.sh
+# so the repo root is two levels above OS/.
+REPO_ROOT="$(cd "${KERNEL_DIR}/../.." && pwd)"
 
 source "${SCRIPT_DIR}/build_common.sh"
 

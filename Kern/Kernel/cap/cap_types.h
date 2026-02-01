@@ -14,6 +14,8 @@ typedef enum cap_type {
     CAP_TYPE_ENDPOINT,
     CAP_TYPE_MEMOBJ,
     CAP_TYPE_IRQ_TOKEN,
+    CAP_TYPE_TIMER_TOKEN,
+    CAP_TYPE_SERVICE,
 
     CAP_TYPE__MAX
 } cap_type_t;

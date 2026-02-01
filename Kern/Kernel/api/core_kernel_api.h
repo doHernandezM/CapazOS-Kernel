@@ -1,57 +1,52 @@
-#pragma once
+/*
+ * core_kernel_api.h
+ *
+ * Internal API for Core ↔ Kernel interactions. This header declares
+ * kernel mechanisms that are safe for Core to call. Unlike the old
+ * versioned ABI tables, these functions are linked directly and do not
+ * require runtime service injection. All functions must be POD and
+ * freestanding (no reliance on C runtime). Keep the API minimal: only
+ * expose what Core needs for bring‑up and gradually extend as
+ * functionality grows.
+ */
 
-// Core-callable kernel mechanisms.
-//
-// This header is the (small) internal API boundary after merging Core+Kernel.
-// It is intentionally not versioned; stability is maintained by repository
-// discipline (see OS/Docs/BoundaryRules.md).
-//
-// Context rules are documented per function. Unless stated otherwise, functions
-// are THREAD-CONTEXT ONLY (no IRQ).
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
-
-#include "api/ks_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// ---------------- Logging ----------------
+/* Logging: write a null‑terminated string to the early console. This is
+ * safe in early boot and may be routed to the UART until a console
+ * service is registered. This function is thread‑context only (no
+ * allocation). Passing NULL does nothing. */
+void cka_log_write(const char *str);
 
-// THREAD-CONTEXT ONLY for now. Early bring-up routes to UART directly.
-void cka_log_write(const char *cstr);
+/* Allocate a buffer with the given size and alignment. The returned
+ * pointer is guaranteed to be aligned to at least the supplied
+ * alignment (which must be a power of two). Passing an alignment of
+ * zero defaults to max_align_t alignment. On failure returns NULL.
+ * Allocation is thread‑context only. */
+void *cka_malloc(size_t size, size_t alignment);
 
-// ---------------- Allocation ----------------
+/* Free a buffer previously returned by cka_malloc or related APIs. If
+ * ptr is NULL, no action is taken. Thread‑context only. */
+void cka_free(void *ptr);
 
-// THREAD-CONTEXT ONLY.
-void *cka_malloc(size_t size);
-void  cka_free(void *ptr);
+/* Memory copy and set helpers. These provide a minimal memcpy/memset
+ * implementation so Core does not need libc. They return the
+ * destination pointer. */
+void *cka_memcpy(void *dst, const void *src, size_t n);
+void *cka_memset(void *ptr, int value, size_t n);
 
-// ---------------- Scheduler ----------------
-
-// Cooperative yield (THREAD-CONTEXT ONLY).
+/* Yield the CPU voluntarily. This cooperatively yields the current
+ * thread so that other runnable threads may run. It is safe only in
+ * thread context. */
 void cka_yield(void);
 
-// ---------------- Capability operations ----------------
-
-// These operate on the *current task's* capability space.
-ks_cap_status_t cka_cap_dup(ks_cap_handle_t h, ks_cap_rights_t mask, ks_cap_handle_t *out);
-ks_cap_status_t cka_cap_transfer(ks_cap_handle_t h, ks_cap_rights_t mask, ks_cap_handle_t *out);
-ks_cap_status_t cka_cap_drop(ks_cap_handle_t h);
-ks_cap_status_t cka_cap_invalidate(ks_cap_handle_t h);
-
-// ---------------- IPC (endpoint capabilities) ----------------
-
-// Create an endpoint capability in the current task.
-// Rights bits are the kernel's CAP_R_SEND/CAP_R_RECV/etc.
-ks_ipc_status_t cka_endpoint_create(ks_cap_rights_t rights, ks_cap_handle_t *out);
-
-// Send/recv using endpoint capabilities in the current task.
-ks_ipc_status_t cka_ipc_send(ks_cap_handle_t endpoint, const ks_ipc_msg_t *msg);
-ks_ipc_status_t cka_ipc_recv(ks_cap_handle_t endpoint, ks_ipc_msg_t *out);
-
 #ifdef __cplusplus
-}
+} /* extern "C" */
 #endif
