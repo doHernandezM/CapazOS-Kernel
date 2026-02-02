@@ -4,12 +4,20 @@
 #include <stdbool.h>
 
 #include "api/ks_types.h"   // ks_ipc_msg_t, ks_ipc_status_t
+#include "api/ks_status.h"  // ks_status_t
+
 #include "cap/cap_table.h"        // cap_table_t, cap_handle_t, cap_rights_t
 
-// Forward declaration to avoid pulling sched headers into all users.
+// Forward declarations to avoid pulling sched headers into all users.
 typedef struct thread thread_t;
+typedef struct endpoint endpoint_t;
 
-typedef struct endpoint {
+// Allocate and initialize a raw endpoint object (no capability created).
+// Used by early bootstrap code.
+ks_status_t endpoint_create(endpoint_t **out_ep);
+
+
+struct endpoint {
     uint64_t id;
 
     // Message queue (doubly-linked list of ipc_msg_t)
@@ -20,7 +28,7 @@ typedef struct endpoint {
     thread_t *waiting_recv;
 
     bool closed;
-} endpoint_t;
+};
 
 // Slab-backed endpoint objects (dynamic allocation).
 void endpoint_cache_init(void);

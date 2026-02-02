@@ -12,7 +12,6 @@
 // Core calls kernel mechanisms directly via core_kernel_api.h.
 // Do not include the old core_kernel_abi.h; it no longer exists.
 #include "api/core_kernel_api.h"
-// Kernel -> Core bring-up entrypoint (tiny dispatch interface).
 #include "api/core_boot_if.h"
 
 #include "boot_info.h"
@@ -40,11 +39,11 @@
 #include "MathHelper.h"
 #include "sched/thread.h"
 #include "ipc/ipc_message.h"
+#include "ipc/endpoint.h"
 #include "cap/cap_entry.h"
 #include "cap/cap_table.h"
 #include "cap/cap_ops.h"
 #include "ipc/ipc_selftest.h"
-#include "ipc/endpoint.h"
 #include "task/task.h"
 
 /*
@@ -234,32 +233,60 @@ static void core_thread_entry(void *arg)
 {
     (void)arg;
 
-    /* Seed initial caps for kernel task in core/main thread entry (before core_main()). */
+    /* Seed initial caps for kernel task. */
     cap_table_init(&g_kernel_cap_table);
-    task_init(&g_kernel_task, 0, &g_kernel_cap_table);
+    task_init(&g_kernel_task, &g_kernel_cap_table);
 
-    cap_status_t st;
+    // Provide Core access to the kernel task's cap space through the internal API.
+    cka_attach_core_caps(&g_kernel_cap_table);
 
-    st = cap_create(&g_kernel_cap_table,
-                    CAP_TYPE_TASK,
-                    (cap_rights_t)(CAP_R_DUP | CAP_R_TRANSFER | CAP_R_CONTROL),
-                    &g_kernel_task,
-                    &g_kernel_task.self_cap);
+    // 1) Task self-cap (used for bookkeeping and future capability-mediated task ops).
+    cap_status_t st = cap_create(&g_kernel_cap_table,
+                                CAP_TYPE_TASK,
+                                (cap_rights_t)(CAP_R_DUP | CAP_R_DROP),
+                                &g_kernel_task,
+                                &g_kernel_task.self_cap);
     if (st != CAP_OK) {
-        panic("core/main: failed to seed task cap");
+        uart_puts("cap_create TASK failed st=");
+        uart_putu64_dec((uint64_t)st);
+        uart_puts(" free_top=");
+        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        uart_puts("\n");
+        panic("kmain: cap_create(CAP_TYPE_TASK) failed");
     }
 
-    /* Placeholder token objects have been removed.  Timer and log caps
-     * are no longer seeded here; instead, specific service caps will
-     * be seeded when those services are implemented. */
+    // 2) Console endpoint cap seeded to Core at bootstrap (A2).
+    endpoint_t *console_ep = NULL;
+    // endpoint_create creates the endpoint object; rights are applied when creating the cap.
+    ks_status_t ep_st = endpoint_create(&console_ep);
+    if (ep_st != KS_STATUS_OK || console_ep == NULL) {
+        panic("kmain: endpoint_create(console) failed");
+    }
 
-#ifdef DEBUG
-    cap_ops_selftest(&g_kernel_cap_table);
-#endif
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_ENDPOINT,
+                    (cap_rights_t)(CAP_R_SEND | CAP_R_RECV | CAP_R_DUP | CAP_R_DROP),
+                    console_ep,
+                    &g_kernel_task.console_ep_cap);
+    if (st != CAP_OK) {
+        uart_puts("cap_create ENDPOINT failed st=");
+        uart_putu64_dec((uint64_t)st);
+        uart_puts(" free_top=");
+        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        uart_puts("\n");
+        panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
+    }
+
+    // Publish the minimal boot interface to Core (A0).
+    const core_boot_if_t core_if = {
+        .version = 1,
+        .core_caps = &g_kernel_cap_table,
+        .core_task = &g_kernel_task,
+        .console_ep = g_kernel_task.console_ep_cap,
+    };
+    core_boot_attach(&core_if);
 
     /* Contract: Core runs once in this thread. */
-    // Enter Core directly; Core accesses kernel mechanisms via the
-    // internal API.  There is no services table handoff.
     (void)core_main();
 
     for (;;) {

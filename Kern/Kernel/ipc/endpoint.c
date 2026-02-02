@@ -38,6 +38,18 @@ endpoint_t *endpoint_alloc(void) {
     e->id = s_next_endpoint_id++;
     return e;
 }
+ks_status_t endpoint_create(endpoint_t **out_ep) {
+    if (!out_ep) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    endpoint_t *ep = endpoint_alloc();
+    if (!ep) {
+        return KS_STATUS_OUT_OF_MEMORY;
+    }
+    *out_ep = ep;
+    return KS_STATUS_OK;
+}
+
 
 void endpoint_free(endpoint_t *e) {
     ASSERT_THREAD_CONTEXT();

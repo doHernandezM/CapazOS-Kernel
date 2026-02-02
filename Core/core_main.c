@@ -1,28 +1,34 @@
 #include <stdint.h>
 
-#include "core_sections.h"
-// Core ↔ Kernel internal API.  Core calls kernel mechanisms directly.
+// The build scripts compile Core with include paths rooted at the Kernel
+// directory (e.g. -I .../Kern/Kernel). Keep includes relative to that.
+#include "api/core_boot_if.h"
 #include "api/core_kernel_api.h"
 
-// The old services table no longer exists.  Core calls kernel
-// mechanisms directly via the internal API.
+// A3: keep a stable C boot hook and immediately transfer control to Swift.
+// If Swift is not available yet, keep the system alive and log.
+extern __attribute__((weak)) int32_t core_main_swift(void);
 
-// Temporary Core entrypoint.
-//
-// Kernel side:
-//   core_set_services(kernel_services_v1());
-//   core_main();
-//
-// This keeps the ABI boundary POD-only while allowing Core to access services
-// through runtime shims.
-int32_t core_main(void) {
-    // Early log entry via the internal API.
-    cka_log_write("[core] core_main entered\n");
-    // Call into the Swift Core if available.  The Swift side exports
-    // core_main_swift() with a C symbol via @_cdecl.  This call will
-    // transfer control into Swift and return its exit code.  If the
-    // Swift object was not linked (no Swift sources), this symbol
-    // resolves to zero by weak linking semantics and falls through.
-    extern int32_t core_main_swift(void);
-    return core_main_swift();
+static const core_boot_if_t *g_core_boot;
+
+void core_boot_attach(const core_boot_if_t *boot_if)
+{
+    g_core_boot = boot_if;
+}
+
+const core_boot_if_t *core_boot_if(void)
+{
+    return g_core_boot;
+}
+
+int32_t core_main(void)
+{
+    if (core_main_swift) {
+        return core_main_swift();
+    }
+
+    cka_early_log("[core] Swift core_main_swift missing; staying in C\n");
+    for (;;) {
+        cka_yield();
+    }
 }

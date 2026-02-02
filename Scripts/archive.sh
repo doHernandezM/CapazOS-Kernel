@@ -1,73 +1,90 @@
-#!/bin/bash
+#!/bin/sh
+set -eu
 
-set -euo pipefail
+REPO_ROOT="${1:?repo root required}"
+BUILD_DIR="${2:?build dir required}"
+BUILDINFO_INI="${3:?buildinfo.ini required}"
 
-# Archive CapazOS/Code and build/kernel.img into CapazOS/archive/OS.<kernel_build_number>.zip
-#
-# Usage:
-#   archive.sh [REPO_ROOT] [KERNEL_IMG_PATH] [BUILDINFO_INI]
-#
-# If args are omitted, defaults are derived from this script's location.
+log() { printf "%s\n" "$*"; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"          # .../CapazOS/Code/OS
-WORKSPACE_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"       # .../CapazOS/Code
-DEFAULT_REPO_ROOT="$(cd "${WORKSPACE_DIR}/.." && pwd)" # .../CapazOS
-
-REPO_ROOT="${1:-${DEFAULT_REPO_ROOT}}"
-KERNEL_IMG_PATH="${2:-${REPO_ROOT}/build/kernel.img}"
-BUILDINFO_INI="${3:-${SCRIPT_DIR}/buildinfo.ini}"
+# Read build number from ini (works with your existing buildinfo format)
+BUILD_NUMBER="$(
+python3 - <<'PY' "$BUILDINFO_INI"
+import configparser, sys
+p = configparser.ConfigParser()
+p.read(sys.argv[1])
+print(p.get("build", "number"))
+PY
+)"
 
 ARCHIVE_DIR="${REPO_ROOT}/archive"
-
-ini_get() {
-  local key="$1"
-  local file="$2"
-  # Match "key = value" or "key=value"; trim whitespace.
-  awk -F= -v k="$key" '
-    $1 ~ /^[[:space:]]*[^#;].*/ {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
-      if ($1 == k) {
-        $1=""; sub(/^=/, "")
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0)
-        print $0
-        exit
-      }
-    }
-  ' "$file"
-}
-
-if [[ ! -f "${BUILDINFO_INI}" ]]; then
-  echo "[archive] error: missing buildinfo.ini at ${BUILDINFO_INI}" >&2
-  exit 1
-fi
-
-BUILD_NUMBER="$(ini_get kernel_build_number "${BUILDINFO_INI}" || true)"
-if [[ -z "${BUILD_NUMBER}" ]]; then
-  # Fall back to legacy key for backwards compatibility
-  BUILD_NUMBER="$(ini_get build_number "${BUILDINFO_INI}" || true)"
-fi
-
-if [[ -z "${BUILD_NUMBER}" ]]; then
-  echo "[archive] error: kernel_build_number missing in ${BUILDINFO_INI}" >&2
-  exit 1
-fi
-
-if [[ ! -f "${KERNEL_IMG_PATH}" ]]; then
-  echo "[archive] error: kernel.img missing at ${KERNEL_IMG_PATH}" >&2
-  exit 1
-fi
+CODE_DIR="${REPO_ROOT}/Code"
+CODE_OS_DIR="${CODE_DIR}/OS"
 
 mkdir -p "${ARCHIVE_DIR}"
 
-OUT_ZIP="${ARCHIVE_DIR}/OS.${BUILD_NUMBER}.zip"
-rm -f "${OUT_ZIP}"
+SRC_ZIP_NAME="OS.${BUILD_NUMBER}.zip"
+SRC_ZIP_ARCHIVE="${ARCHIVE_DIR}/${SRC_ZIP_NAME}"
+SRC_ZIP_CODE="${CODE_DIR}/${SRC_ZIP_NAME}"
 
-pushd "${REPO_ROOT}" >/dev/null
-  # Keep the archive structure simple and predictable:
-  #   Code/...
-  #   build/kernel.img
-  zip -qry "${OUT_ZIP}" "Code" "build/kernel.img"
-popd >/dev/null
+KERNEL_IMG="${BUILD_DIR}/kernel.img"
+KERNEL_ZIP_NAME="Kernel.${BUILD_NUMBER}.zip"
+KERNEL_ZIP="${ARCHIVE_DIR}/${KERNEL_ZIP_NAME}"
 
-echo "[archive] Wrote -> ${OUT_ZIP}"
+# Move previous build's source zip to Trash (from both archive/ and Code/)
+# If Trash doesn't exist (non-mac), delete instead.
+trash_file() {
+    f="$1"
+    [ -e "$f" ] || return 0
+    if [ -d "${HOME}/.Trash" ]; then
+        log "Move to Trash: $f"
+        mv -f "$f" "${HOME}/.Trash/"
+    else
+        log "Remove old archive: $f"
+        rm -f "$f"
+    fi
+}
+
+# compute previous build number if numeric
+case "$BUILD_NUMBER" in
+    ''|*[!0-9]*)
+        PREV_BUILD=""
+        ;;
+    *)
+        if [ "$BUILD_NUMBER" -gt 0 ]; then
+            PREV_BUILD=$((BUILD_NUMBER - 1))
+        else
+            PREV_BUILD=""
+        fi
+        ;;
+esac
+
+if [ -n "${PREV_BUILD:-}" ]; then
+    trash_file "${ARCHIVE_DIR}/OS.${PREV_BUILD}.zip"
+    trash_file "${CODE_DIR}/OS.${PREV_BUILD}.zip"
+fi
+
+# A) Zip Code/OS/ into archive/ and Code/ as OS.<build>.zip
+log "Create source archive: ${SRC_ZIP_ARCHIVE} (from Code/OS/)"
+rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
+
+# zip the OS folder (so the zip contains OS/...)
+(
+    cd "${CODE_DIR}"
+    zip -qry "${SRC_ZIP_ARCHIVE}" "OS"
+)
+
+# copy the same zip into Code/
+cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
+
+# C) Zip kernel.img on its own into archive/
+if [ ! -f "${KERNEL_IMG}" ]; then
+    log "WARNING: missing ${KERNEL_IMG}; skipping kernel zip"
+else
+    log "Create kernel archive: ${KERNEL_ZIP}"
+    rm -f "${KERNEL_ZIP}"
+    # -j to avoid storing full path; zip contains just kernel.img
+    zip -jqry "${KERNEL_ZIP}" "${KERNEL_IMG}"
+fi
+
+log "Archive complete."

@@ -44,7 +44,7 @@ Source: `Code/OS/Scripts/buildinfo.ini`
 - Blocking receive with wakeup
 
 ### Kernel↔Core boundary (Swift-friendly)
-- Documented, POD-only boundary rules (`OS/Kern/ABI/BoundaryRules.md`)
+- Documented, POD-only boundary rules (`OS/Docs/BoundaryRules.md`)
 - Services tables exposed to Core:
   - v1: logging/panic/alloc/free/time/IRQ primitives/yield
   - v3: cap ops + IPC entrypoints
@@ -118,7 +118,8 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 
 - `Code/OS/Kern` — boot + kernel (C + AArch64 asm)
 - `Code/OS/Core` — Core layer (Swift + small C shims)
-- `Code/OS/Kern/ABI` — boundary headers + boundary rules
+- `Code/OS/Docs` — design docs (boundary rules, etc.)
+- `Code/OS/Kern/Kernel/api` — internal Core↔Kernel API surface
 
 ---
 

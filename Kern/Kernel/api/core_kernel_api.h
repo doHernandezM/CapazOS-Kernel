@@ -1,52 +1,80 @@
-/*
- * core_kernel_api.h
- *
- * Internal API for Core ↔ Kernel interactions. This header declares
- * kernel mechanisms that are safe for Core to call. Unlike the old
- * versioned ABI tables, these functions are linked directly and do not
- * require runtime service injection. All functions must be POD and
- * freestanding (no reliance on C runtime). Keep the API minimal: only
- * expose what Core needs for bring‑up and gradually extend as
- * functionality grows.
- */
-
 #pragma once
+
+// Internal Core<->Kernel API surface.
+//
+// A0/A1 boundary rule: Kernel provides mechanisms; Core provides policy.
+// This header is an internal API (not a versioned ABI) and may evolve with
+// the repo as long as Kernel and Core are updated together.
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "cap/cap_table.h"
+#include "cap/cap_rights.h"
+#include "cap/cap_types.h"
+#include "ipc/endpoint.h"
+#include "ks_status.h"
+
+// Internal capability identifier type used across the Core<->Kernel API.
+// The kernel's canonical handle type is cap_handle_t.
+typedef cap_handle_t cap_id_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Logging: write a null‑terminated string to the early console. This is
- * safe in early boot and may be routed to the UART until a console
- * service is registered. This function is thread‑context only (no
- * allocation). Passing NULL does nothing. */
-void cka_log_write(const char *str);
+// ---- Bring-up / attachment ----
 
-/* Allocate a buffer with the given size and alignment. The returned
- * pointer is guaranteed to be aligned to at least the supplied
- * alignment (which must be a power of two). Passing an alignment of
- * zero defaults to max_align_t alignment. On failure returns NULL.
- * Allocation is thread‑context only. */
+// Called by Kernel during bootstrap to identify the Core task's capability
+// space. Core-callable wrappers that operate on capability IDs use this table.
+void cka_attach_core_caps(cap_table_t *core_caps);
+
+// Returns the attached Core cap table (may be NULL if not attached yet).
+cap_table_t *cka_core_caps(void);
+
+// ---- Logging ----
+
+void cka_early_log(const char *s);
+void cka_console_write(const char *s, size_t len);
+
+// Convenience helper for logging a NUL-terminated string.
+// This is intentionally tiny and can be used from Core shims.
+void cka_log_write(const char *s);
+
+// ---- Memory ----
+
+void *cka_kmalloc(size_t size);
+void cka_kfree(void *ptr);
+
+// Aligned allocation helpers for Core.
+// These are intentionally minimal and exist primarily for Swift runtime shims.
 void *cka_malloc(size_t size, size_t alignment);
-
-/* Free a buffer previously returned by cka_malloc or related APIs. If
- * ptr is NULL, no action is taken. Thread‑context only. */
 void cka_free(void *ptr);
 
-/* Memory copy and set helpers. These provide a minimal memcpy/memset
- * implementation so Core does not need libc. They return the
- * destination pointer. */
 void *cka_memcpy(void *dst, const void *src, size_t n);
-void *cka_memset(void *ptr, int value, size_t n);
+void *cka_memset(void *dst, int c, size_t n);
 
-/* Yield the CPU voluntarily. This cooperatively yields the current
- * thread so that other runnable threads may run. It is safe only in
- * thread context. */
+// ---- Scheduling ----
+
 void cka_yield(void);
 
+// Placeholder sleep hook. Until the kernel exposes a timer-based sleep,
+// this yields in a loop.
+void cka_sleep_ticks(uint64_t ticks);
+
+// ---- Capability operations (Core-callable) ----
+
+// Create and insert a capability into the Core task's cap table.
+ks_status_t cka_cap_create(cap_type_t type, cap_rights_t rights, void *obj, cap_id_t *out_id);
+
+ks_status_t cka_cap_retain(cap_id_t id);
+ks_status_t cka_cap_release(cap_id_t id);
+
+// ---- IPC (Core-callable) ----
+
+ks_status_t cka_ipc_send(cap_id_t endpoint_cap, const ks_ipc_msg_t *msg);
+ks_status_t cka_ipc_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg);
+
 #ifdef __cplusplus
-} /* extern "C" */
+} // extern "C"
 #endif

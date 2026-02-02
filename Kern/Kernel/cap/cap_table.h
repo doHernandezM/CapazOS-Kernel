@@ -14,6 +14,14 @@
 // Stable opaque handle type.
 // Packing (v1): [gen:32][index:32]
 typedef uint64_t cap_handle_t;
+
+// A capability handle with generation/index == 0 is never issued by the table
+// (see cap_table_init which seeds generations starting at 1). Using 0 as the
+// sentinel keeps code simple and matches earlier builds that referenced
+// CAP_HANDLE_INVALID.
+#ifndef CAP_HANDLE_INVALID
+#define CAP_HANDLE_INVALID ((cap_handle_t)0)
+#endif
 #define CAP_HANDLE_T_DEFINED 1
 
 static inline uint32_t cap_handle_index(cap_handle_t h) { return (uint32_t)(h & 0xFFFFFFFFu); }

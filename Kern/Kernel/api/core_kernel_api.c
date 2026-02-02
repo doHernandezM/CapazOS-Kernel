@@ -1,112 +1,186 @@
-/*
- * core_kernel_api.c
- *
- * Implementation of the Core ↔ Kernel internal API. These functions
- * forward into kernel mechanisms such as UART logging, the heap, and
- * the scheduler. They intentionally avoid exposing kernel internal
- * structures and keep their contracts simple. See core_kernel_api.h
- * for documentation.
- */
+#include "core_kernel_api.h"
 
-#include "api/core_kernel_api.h"
+#include "kheap.h"
+#include "cap/cap_ops.h"
+#include "mm/mem.h"
+#include "sched/sched.h"
+#include "serial/uart.h"
 
-#include <stddef.h>
-#include <stdint.h>
+static cap_table_t *g_core_caps;
 
-#include "uart_pl011.h"    /* uart_putc */
-#include "kheap.h"        /* kbuf_alloc/kbuf_free */
-#include "sched/sched.h"  /* yield() */
-
-/* Write a null‑terminated string to the UART. Characters are
- * transmitted one at a time via uart_putc to avoid requiring a
- * contiguous buffer. NULL is a no‑op. */
-void cka_log_write(const char *str)
+void cka_attach_core_caps(cap_table_t *core_caps)
 {
-    if (!str) {
+    g_core_caps = core_caps;
+}
+
+cap_table_t *cka_core_caps(void)
+{
+    return g_core_caps;
+}
+
+// ---- Logging ----
+
+void cka_early_log(const char *s)
+{
+    uart_puts(s);
+}
+
+void cka_console_write(const char *s, size_t len)
+{
+    // During early bring-up the console is UART-only.
+    // Later this can forward to a console server endpoint.
+    uart_write(s, len);
+}
+
+void cka_log_write(const char *s)
+{
+    if (!s) {
         return;
     }
-    const char *p = str;
-    while (*p) {
-        uart_putc((int)*p++);
+    cka_console_write(s, strlen(s));
+}
+
+static ks_status_t ks_from_ipc_status(ks_ipc_status_t st)
+{
+    switch (st) {
+        case KS_IPC_OK:          return KS_STATUS_OK;
+        case KS_IPC_ERR_INVALID: return KS_STATUS_INVALID_ARG;
+        case KS_IPC_ERR_RIGHTS:  return KS_STATUS_NO_RIGHTS;
+        case KS_IPC_ERR_NO_MEM:  return KS_STATUS_OUT_OF_MEMORY;
+        case KS_IPC_ERR_CLOSED:  return KS_STATUS_BUSY;
+        default:                 return KS_STATUS_INVALID_ARG;
     }
 }
 
-/* Allocate memory from the kernel heap. Alignment must be a power of
- * two; if zero, default to the maximum alignment for the platform.
- * We do not currently support custom alignment in the underlying
- * allocator; small alignments are satisfied by kbuf_alloc. For
- * non‑standard alignments, we over‑allocate and adjust the returned
- * pointer. */
+// ---- Memory ----
+
+void *cka_kmalloc(size_t size)
+{
+    return kmalloc(size);
+}
+
+void cka_kfree(void *ptr)
+{
+    kfree(ptr);
+}
+
+static size_t round_up_pow2_size(size_t x)
+{
+    if (x <= 1) {
+        return 1;
+    }
+    // Round up to the next power of two.
+    size_t p = 1;
+    while (p < x) {
+        p <<= 1;
+    }
+    return p;
+}
+
 void *cka_malloc(size_t size, size_t alignment)
 {
-    if (size == 0) {
+    if (alignment < sizeof(void *)) {
+        alignment = sizeof(void *);
+    }
+    alignment = round_up_pow2_size(alignment);
+
+    // We store the original pointer in the word immediately before the
+    // returned aligned pointer.
+    size_t extra = (alignment - 1) + sizeof(void *);
+    void *raw = cka_kmalloc(size + extra);
+    if (!raw) {
         return NULL;
     }
-    /* Default to max_align_t if alignment is zero. */
-    if (alignment == 0) {
-        alignment = _Alignof(max_align_t);
-    }
-    /* If alignment is 1 or equal to max_align_t, we can use kbuf_alloc directly. */
-    if (alignment <= _Alignof(max_align_t)) {
-        return kbuf_alloc(size);
-    }
-    /* Over‑allocate: header + alignment slack. */
-    size_t total = size + alignment + sizeof(void *);
-    uint8_t *base = (uint8_t *)kbuf_alloc(total);
-    if (!base) {
-        return NULL;
-    }
-    uintptr_t p = (uintptr_t)(base + sizeof(void *));
-    uintptr_t aligned = (p + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
-    /* Store the base pointer immediately before the aligned region so
-     * cka_free can recover it. */
-    void **hdr = (void **)(aligned - sizeof(void *));
-    *hdr = base;
+
+    uintptr_t base = (uintptr_t)raw + sizeof(void *);
+    uintptr_t aligned = (base + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    ((void **)aligned)[-1] = raw;
     return (void *)aligned;
 }
 
-/* Free memory previously returned by cka_malloc. If the pointer was
- * adjusted for alignment, recover the original base pointer. */
 void cka_free(void *ptr)
 {
     if (!ptr) {
         return;
     }
-    /* Recover potential over‑allocation header. */
-    void **hdr = (void **)((uintptr_t)ptr - sizeof(void *));
-    void *base = *hdr;
-    /* If base lies within the over‑allocated region, free it; otherwise
-     * treat ptr as the original base. */
-    if (base) {
-        kbuf_free(base);
-    } else {
-        kbuf_free(ptr);
-    }
+    void *raw = ((void **)ptr)[-1];
+    cka_kfree(raw);
 }
 
-/* Minimal byte‑wise memcpy. */
 void *cka_memcpy(void *dst, const void *src, size_t n)
 {
-    uint8_t *d = (uint8_t *)dst;
-    const uint8_t *s = (const uint8_t *)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-    return dst;
+    return memcpy(dst, src, n);
 }
 
-/* Minimal byte‑wise memset. */
-void *cka_memset(void *ptr, int value, size_t n)
+void *cka_memset(void *dst, int c, size_t n)
 {
-    uint8_t *p = (uint8_t *)ptr;
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)value;
-    }
-    return ptr;
+    return memset(dst, c, n);
 }
 
-/* Cooperative yield. */
+// ---- Scheduling ----
+
 void cka_yield(void)
 {
     yield();
+}
+
+void cka_sleep_ticks(uint64_t ticks)
+{
+    while (ticks--) {
+        yield();
+    }
+}
+
+// ---- Capability operations ----
+
+ks_status_t cka_cap_create(cap_type_t type, cap_rights_t rights, void *obj, cap_id_t *out_id)
+{
+    if (!g_core_caps || !out_id) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    return cap_create(g_core_caps, type, rights, obj, out_id);
+}
+
+ks_status_t cka_cap_retain(cap_id_t id)
+{
+    if (!g_core_caps) {
+        return KS_STATUS_INVALID_STATE;
+    }
+    // Capabilities are table entries and are not reference-counted. "Retain"
+    // is treated as a validity check so callers can safely gate later use.
+    return cap_table_lookup(g_core_caps, (cap_handle_t)id, 0) ? KS_STATUS_OK
+                                                          : KS_STATUS_NOT_FOUND;
+}
+
+ks_status_t cka_cap_release(cap_id_t id)
+{
+    if (!g_core_caps) {
+        return KS_STATUS_INVALID_STATE;
+    }
+    cap_status_t st = cap_drop(g_core_caps, (cap_handle_t)id);
+    switch (st) {
+        case CAP_OK:             return KS_STATUS_OK;
+        case CAP_ERR_INVALID:    return KS_STATUS_NOT_FOUND;
+        case CAP_ERR_DENIED:     return KS_STATUS_NO_RIGHTS;
+        case CAP_ERR_NO_SPACE:   return KS_STATUS_OUT_OF_MEMORY;
+        default:                 return KS_STATUS_INTERNAL;
+    }
+}
+
+// ---- IPC ----
+
+ks_status_t cka_ipc_send(cap_id_t endpoint_cap, const ks_ipc_msg_t *msg)
+{
+    if (!g_core_caps || !msg) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    return ks_from_ipc_status(ipc_send_cap(g_core_caps, (cap_handle_t)endpoint_cap, msg));
+}
+
+ks_status_t cka_ipc_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg)
+{
+    if (!g_core_caps || !msg) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    return ks_from_ipc_status(ipc_recv_cap(g_core_caps, (cap_handle_t)endpoint_cap, msg));
 }

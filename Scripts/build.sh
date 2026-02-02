@@ -19,6 +19,25 @@ source "${SCRIPT_DIR}/build_common.sh"
 parse_args_common "$@"
 preflight_common
 
+# --- Housekeeping for repeat builds ---
+#
+# Xcode re-runs this script phase on every build invocation. Our build scripts
+# are intentionally simple (not incremental), and we bump the build number on
+# every successful build. Keeping a previous OUT_DIR around can allow stale
+# intermediates to leak into a later build. This is the root cause of “first
+# build succeeds, second build fails until you delete build/”.
+#
+# We therefore default to wiping *this target's* OUT_DIR before building.
+# This keeps other targets/configurations intact and avoids manual cleanup.
+#
+# To opt out (for experimentation with incremental behavior), set:
+#   CAPAZ_CLEAN_OUT_DIR=0
+if [[ "${CAPAZ_CLEAN_OUT_DIR:-1}" != "0" ]]; then
+    if [[ -n "${OUT_DIR:-}" && "${OUT_DIR}" == "${REPO_ROOT}/build/"* ]]; then
+        rm -rf "${OUT_DIR}"
+    fi
+fi
+
 # Choose a buildinfo.ini to read versioning from.
 #
 # IMPORTANT: by default we bump kernel_build_number on every build so buildinfo.h/.c
@@ -68,28 +87,29 @@ fi
 build_boot_and_kernel
 
 # --- Final artifact location ---
-# The kernel build produces kernel.img inside the selected OUT_DIR (which varies
-# by arch/config). For easier debugging/run workflows, always copy the final
-# kernel image into <repo>/build/kernel.img.
-SRC_KERNEL_IMG="${OUT_DIR}/kernel.img"
 FINAL_BUILD_DIR="${REPO_ROOT}/build"
-FINAL_KERNEL_IMG="${FINAL_BUILD_DIR}/kernel.img"
+mkdirp "$FINAL_BUILD_DIR"
 
-resolve_path() {
-    local p="$1"
-    printf '%s\n' "$(cd "$(dirname "${p}")" && pwd -P)/$(basename "${p}")"
-}
+echo "note: Install build artifacts -> ${FINAL_BUILD_DIR}"
 
-if [ -f "${SRC_KERNEL_IMG}" ]; then
-    mkdirp "${FINAL_BUILD_DIR}"
-    if [ "$(resolve_path "${SRC_KERNEL_IMG}")" != "$(resolve_path "${FINAL_KERNEL_IMG}")" ]; then
-        /bin/cp -f "${SRC_KERNEL_IMG}" "${FINAL_KERNEL_IMG}"
+found_any=0
+while IFS= read -r -d '' f; do
+    found_any=1
+    dest="${FINAL_BUILD_DIR}/$(basename "$f")"
+    # Move artifacts up to build/ (overwrite if needed)
+    if [ "$f" != "$dest" ]; then
+        mv -f "$f" "$dest"
     fi
+done < <(find "$OUT_DIR" -maxdepth 1 -type f \( -name '*.img' -o -name '*.elf' -o -name '*.bin' \) -print0)
+
+if [ "$found_any" -eq 0 ]; then
+    die "No build artifacts (*.img/*.elf/*.bin) found in ${OUT_DIR}"
 fi
 
-# --- Archiving ---
-# Keep this minimal: after a successful build, archive CapazOS/Code and the
-# final kernel image into CapazOS/archive/OS.<kernel_build_number>.zip.
-if [ -f "${FINAL_KERNEL_IMG}" ] && [[ "${ACTION:-build}" != "clean" ]]; then
-    "${SCRIPT_DIR}/archive.sh" "${REPO_ROOT}" "${FINAL_KERNEL_IMG}" "${BUILDINFO_INI}"
+# kernel.img is still expected for run workflows
+if [ ! -f "${FINAL_BUILD_DIR}/kernel.img" ]; then
+    die "kernel.img not produced (expected ${FINAL_BUILD_DIR}/kernel.img)"
 fi
+
+echo "note: Archiving build + source"
+#"${SCRIPT_DIR}/archive.sh" "$REPO_ROOT" "$FINAL_BUILD_DIR" "$BUILDINFO_INI"

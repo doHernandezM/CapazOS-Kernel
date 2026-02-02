@@ -1,25 +1,18 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+// Capability types are part of the kernel's internal object model.
+// Core consumes them only through the internal Kernel API surface.
 
-// Capability object types (mechanisms, not policy).
-// Keep values stable once Core starts persisting/serializing handles.
-// For now these are kernel-internal tags.
 typedef enum cap_type {
     CAP_TYPE_INVALID = 0,
 
     CAP_TYPE_TASK,
     CAP_TYPE_THREAD,
+    CAP_TYPE_VMO,
+    CAP_TYPE_VMAP,
     CAP_TYPE_ENDPOINT,
-    CAP_TYPE_MEMOBJ,
-    CAP_TYPE_IRQ_TOKEN,
-    CAP_TYPE_TIMER_TOKEN,
-    CAP_TYPE_SERVICE,
 
-    CAP_TYPE__MAX
+    // NOTE: Do not add placeholder types here.
+    // If a capability type exists, it should correspond to a real mechanism.
+    // Policy/services live in Core.
 } cap_type_t;
-
-static inline bool cap_type_is_valid(cap_type_t t) {
-    return (t > CAP_TYPE_INVALID) && (t < CAP_TYPE__MAX);
-}
