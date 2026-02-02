@@ -64,6 +64,80 @@ private var gKernelLogEp: UInt64 = 0
 private var gUartCmdEp: UInt64 = 0
 private var gUartEvtEp: UInt64 = 0
 private var gUartReady: Bool = false
+private var gConsole: ConsoleService? = nil
+
+private let CAP_R_CONSOLE_WRITE: UInt32 = 1 << 24
+private let CAP_R_CONSOLE_READ: UInt32 = 1 << 25
+private let KS_STATUS_INVALID_ARG: Int32 = -1
+private let KS_STATUS_NO_RIGHTS: Int32 = -3
+private let KS_STATUS_BUSY: Int32 = -8
+
+struct ConsoleService {
+    var uart: UARTClient
+    var inputBuffer: [UInt8] = []
+    var lineQueue: [[UInt8]] = []
+    let prompt: [UInt8] = [0x3E, 0x20] // "> "
+    let ansiYellow: [UInt8] = [0x1B, 0x5B, 0x33, 0x33, 0x6D]
+    let ansiReset: [UInt8] = [0x1B, 0x5B, 0x30, 0x6D]
+
+    mutating func writeKernelLog(_ data: [UInt8]) {
+        if !inputBuffer.isEmpty {
+            uart.write([0x0D, 0x0A])
+        }
+        uart.write(ansiYellow)
+        uart.write(data)
+        uart.write(ansiReset)
+        uart.write([0x0D, 0x0A])
+        redrawPrompt()
+    }
+
+    mutating func writeUserOutput(_ data: [UInt8]) {
+        uart.write(data)
+    }
+
+    mutating func handleRxByte(_ b: UInt8) {
+        switch b {
+        case 0x08, 0x7F: // backspace/delete
+            if !inputBuffer.isEmpty {
+                inputBuffer.removeLast()
+                uart.write([0x08, 0x20, 0x08])
+            }
+        case 0x0D, 0x0A: // CR/LF
+            uart.write([0x0D, 0x0A])
+            if !inputBuffer.isEmpty {
+                enqueueLine(inputBuffer)
+                inputBuffer.removeAll(keepingCapacity: true)
+            }
+            redrawPrompt()
+        default:
+            if inputBuffer.count < KS_IPC_MSG_MAX {
+                inputBuffer.append(b)
+                uart.write([b])
+            }
+        }
+    }
+
+    mutating func enqueueLine(_ line: [UInt8]) {
+        if lineQueue.count >= 8 {
+            lineQueue.removeFirst()
+        }
+        lineQueue.append(line)
+    }
+
+    mutating func popLine() -> [UInt8]? {
+        if lineQueue.isEmpty {
+            return nil
+        }
+        return lineQueue.removeFirst()
+    }
+
+    mutating func redrawPrompt() {
+        uart.write(prompt)
+        if !inputBuffer.isEmpty {
+            uart.write(inputBuffer)
+        }
+    }
+}
 
 private func writeU32LE(_ value: UInt32, _ out: inout [UInt8], _ offset: Int) {
     out[offset + 0] = UInt8(truncatingIfNeeded: value)
@@ -254,21 +328,23 @@ public func core_main_swift() -> Int32 {
         gUartCmdEp = cmd
         gUartEvtEp = evt
         gUartReady = (cmd != 0 && evt != 0)
+        gConsole = ConsoleService(uart: uart)
         let msg: [UInt8] = [
             0x43, 0x6F, 0x72, 0x65, 0x20, 0x55, 0x41, 0x52, 0x54, 0x43, 0x6C, 0x69,
             0x65, 0x6E, 0x74, 0x20, 0x6F, 0x6E, 0x6C, 0x69, 0x6E, 0x65, 0x0A
         ]
         uart.write(msg)
+        gConsole?.redrawPrompt()
     }
     return 0
 }
 
 @_cdecl("core_poll")
 public func core_poll() {
-    if gKernelLogEp == 0 || !gUartReady {
+    if gKernelLogEp == 0 || !gUartReady || gConsole == nil {
         return
     }
-    let uart = UARTClient(cmdEp: gUartCmdEp, evtEp: gUartEvtEp)
+    var console = gConsole!
     let msgSize = 8 + KS_IPC_MSG_MAX
     let buf = UnsafeMutableRawPointer.allocate(byteCount: msgSize, alignment: 8)
     defer { buf.deallocate() }
@@ -290,6 +366,76 @@ public func core_poll() {
                 base.copyMemory(from: buf.advanced(by: 8), byteCount: count)
             }
         }
-        uart.write(data)
+        console.writeKernelLog(data)
     }
+
+    for _ in 0..<64 {
+        let st = cka_ipc_try_recv(gUartEvtEp, buf)
+        if st != KS_STATUS_OK {
+            break
+        }
+        let tag = buf.load(as: UInt32.self)
+        let len = Int(buf.load(fromByteOffset: 4, as: UInt32.self))
+        if tag != UART_TAG_RX_EVENT || len <= 0 {
+            continue
+        }
+        let count = min(len, KS_IPC_MSG_MAX)
+        if count <= 0 {
+            continue
+        }
+        for i in 0..<count {
+            let b = buf.load(fromByteOffset: 8 + i, as: UInt8.self)
+            console.handleRxByte(b)
+        }
+    }
+    gConsole = console
+}
+
+@_cdecl("core_console_write")
+public func core_console_write(_ rights: UInt32,
+                               _ buf: UnsafePointer<UInt8>?,
+                               _ len: Int) -> Int32 {
+    if (rights & CAP_R_CONSOLE_WRITE) == 0 {
+        return KS_STATUS_NO_RIGHTS
+    }
+    if buf == nil || len <= 0 {
+        return KS_STATUS_INVALID_ARG
+    }
+    guard var console = gConsole else {
+        return KS_STATUS_BUSY
+    }
+    var data = [UInt8](repeating: 0, count: len)
+    data.withUnsafeMutableBytes { dst in
+        if let base = dst.baseAddress {
+            base.copyMemory(from: buf!, byteCount: len)
+        }
+    }
+    console.writeUserOutput(data)
+    gConsole = console
+    return KS_STATUS_OK
+}
+
+@_cdecl("core_console_read_line")
+public func core_console_read_line(_ rights: UInt32,
+                                   _ out: UnsafeMutablePointer<UInt8>?,
+                                   _ maxLen: Int) -> Int32 {
+    if (rights & CAP_R_CONSOLE_READ) == 0 {
+        return KS_STATUS_NO_RIGHTS
+    }
+    if out == nil || maxLen <= 0 {
+        return KS_STATUS_INVALID_ARG
+    }
+    guard var console = gConsole else {
+        return KS_STATUS_BUSY
+    }
+    guard let line = console.popLine() else {
+        gConsole = console
+        return KS_STATUS_BUSY
+    }
+    let count = min(line.count, maxLen)
+    for i in 0..<count {
+        out!.advanced(by: i).pointee = line[i]
+    }
+    gConsole = console
+    return Int32(count)
 }
