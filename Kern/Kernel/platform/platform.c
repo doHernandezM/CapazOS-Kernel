@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "uart_pl011.h"
+#include "debug/klog.h"
 
 #define PLATFORM_MAX_RANGES  64
 
@@ -123,18 +124,18 @@ static bool subtract_reserved(const dtb_range_t mem[], uint32_t mem_n,
 }
 
 static void print_ranges(const char *title, const dtb_range_t *r, uint32_t n) {
-    uart_puts(title);
+    klog_puts(title);
     if (n == 0) {
-        uart_puts(" <none>\n");
+        klog_puts(" <none>\n");
         return;
     }
-    uart_putnl();
+    klog_putnl();
     for (uint32_t i = 0; i < n; ++i) {
-        uart_puts("  ["); uart_puthex64(i); uart_puts("] base=");
-        uart_puthex64(r[i].base);
-        uart_puts(" size="); uart_puthex64(r[i].size);
-        uart_puts(" end="); uart_puthex64(range_end(r[i]));
-        uart_putnl();
+        klog_puts("  ["); klog_puthex64(i); klog_puts("] base=");
+        klog_puthex64(r[i].base);
+        klog_puts(" size="); klog_puthex64(r[i].size);
+        klog_puts(" end="); klog_puthex64(range_end(r[i]));
+        klog_putnl();
     }
 }
 
@@ -309,6 +310,6 @@ void platform_dump_memory_map(const boot_info_t *boot_info) {
     if (platform_get_usable_ranges(boot_info, usable, &usable_n)) {
         print_ranges("PLAT: usable ranges:", usable, usable_n);
     } else {
-        uart_puts("PLAT: usable ranges: <unavailable>\n");
+        klog_puts("PLAT: usable ranges: <unavailable>\n");
     }
 }

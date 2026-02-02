@@ -49,6 +49,7 @@
 #include "cap/cap_ops.h"
 #include "ipc/ipc_selftest.h"
 #include "task/task.h"
+#include "debug/klog.h"
 
 /*
  * Enable/disable noisy early-boot diagnostics.
@@ -82,9 +83,9 @@ static void print_total_memory_from_dtb(void)
 
     char buf[32];
     mh_format_bytes_pretty(buf, sizeof(buf), total);
-    uart_puts("Memory: ");
-    uart_puts(buf);
-    uart_putnl();
+    klog_puts("Memory: ");
+    klog_puts(buf);
+    klog_putnl();
 
 }
 
@@ -92,20 +93,20 @@ static void print_total_memory_from_dtb(void)
 static void pmm_print_free_total(const char *label) {
     uint64_t free_pages = 0, total_pages = 0;
     if (!pmm_get_stats(&free_pages, &total_pages)) {
-        uart_puts(label);
-        uart_puts("(free/total): <uninitialized>\n");
+        klog_puts(label);
+        klog_puts("(free/total): <uninitialized>\n");
         return;
     }
-    uart_puts(label);
-    uart_puts("(free/total): ");
-    uart_putu64_dec(free_pages);
-    uart_putc('/');
-    uart_putu64_dec(total_pages);
-    uart_putnl();
+    klog_puts(label);
+    klog_puts("(free/total): ");
+    klog_putu64_dec(free_pages);
+    klog_putc('/');
+    klog_putu64_dec(total_pages);
+    klog_putnl();
 }
 
 static void pmm_quick_alloc_test(void) {
-    uart_puts("PMM\n");
+    klog_puts("PMM\n");
     pmm_print_free_total("Start");
 
     /* Simple allocate/free cycles using a fixed stack buffer of PAs. */
@@ -118,7 +119,7 @@ static void pmm_quick_alloc_test(void) {
         if (!pmm_alloc_page(&pages[i])) break;
         allocated++;
     }
-    uart_puts("Alloc1: "); uart_putu64_dec(allocated); uart_puts(" pages\n");
+    klog_puts("Alloc1: "); klog_putu64_dec(allocated); klog_puts(" pages\n");
     pmm_print_free_total("AfterAlloc1");
 
     /* Free every other page. */
@@ -128,15 +129,15 @@ static void pmm_quick_alloc_test(void) {
         freed++;
         pages[i] = 0;
     }
-    uart_puts("Free1: "); uart_putu64_dec(freed); uart_puts(" pages\n");
+    klog_puts("Free1: "); klog_putu64_dec(freed); klog_puts(" pages\n");
     pmm_print_free_total("AfterFree1");
 
     /* Cycle 2: try a contiguous allocation (64 pages = 256KiB). */
     uint64_t run_pa = 0;
     if (pmm_alloc_pages(64, &run_pa)) {
-        uart_puts("Alloc2: contiguous 64 pages at "); uart_puthex64(run_pa); uart_putnl();
+        klog_puts("Alloc2: contiguous 64 pages at "); klog_puthex64(run_pa); klog_putnl();
     } else {
-        uart_puts("Alloc2: contiguous 64 pages failed\n");
+        klog_puts("Alloc2: contiguous 64 pages failed\n");
     }
     pmm_print_free_total("AfterAlloc2");
 
@@ -144,7 +145,7 @@ static void pmm_quick_alloc_test(void) {
         for (uint32_t i = 0; i < 64; i++) {
             pmm_free_page(run_pa + ((uint64_t)i * 0x1000ULL));
         }
-        uart_puts("Free2: contiguous 64 pages\n");
+        klog_puts("Free2: contiguous 64 pages\n");
         pmm_print_free_total("AfterFree2");
     }
 
@@ -164,19 +165,19 @@ __attribute__((used))
 void kernel_exception_report(uint64_t esr, uint64_t far, uint64_t elr,
                              uint64_t sp, const uint64_t *regs)
 {
-    uart_puts("\n*** EL1 EXCEPTION ***\n");
-    uart_puts("ESR_EL1="); uart_puthex64(esr); uart_putnl();
-    uart_puts("FAR_EL1="); uart_puthex64(far); uart_putnl();
-    uart_puts("ELR_EL1="); uart_puthex64(elr); uart_putnl();
-    uart_puts("SP_EL1 ="); uart_puthex64(sp);  uart_putnl();
+    klog_puts("\n*** EL1 EXCEPTION ***\n");
+    klog_puts("ESR_EL1="); klog_puthex64(esr); klog_putnl();
+    klog_puts("FAR_EL1="); klog_puthex64(far); klog_putnl();
+    klog_puts("ELR_EL1="); klog_puthex64(elr); klog_putnl();
+    klog_puts("SP_EL1 ="); klog_puthex64(sp);  klog_putnl();
 
     if (regs) {
-        uart_puts("x0     ="); uart_puthex64(regs[0]);  uart_putnl();
-        uart_puts("x1     ="); uart_puthex64(regs[1]);  uart_putnl();
-        uart_puts("x2     ="); uart_puthex64(regs[2]);  uart_putnl();
-        uart_puts("x3     ="); uart_puthex64(regs[3]);  uart_putnl();
-        uart_puts("x29(fp)="); uart_puthex64(regs[29]); uart_putnl();
-        uart_puts("x30(lr)="); uart_puthex64(regs[30]); uart_putnl();
+        klog_puts("x0     ="); klog_puthex64(regs[0]);  klog_putnl();
+        klog_puts("x1     ="); klog_puthex64(regs[1]);  klog_putnl();
+        klog_puts("x2     ="); klog_puthex64(regs[2]);  klog_putnl();
+        klog_puts("x3     ="); klog_puthex64(regs[3]);  klog_putnl();
+        klog_puts("x29(fp)="); klog_puthex64(regs[29]); klog_putnl();
+        klog_puts("x30(lr)="); klog_puthex64(regs[30]); klog_putnl();
     }
 
     for (;;) {
@@ -227,9 +228,9 @@ static void uart_driver_pump(void)
                 uart_write((const char *)msg.data, (size_t)msg.len);
             } else if (msg.tag == UART_TAG_QUERY_INTENTS) {
                 static const ks_intent_desc_t k_uart_intents[] = {
-                    { UART_TAG_WRITE, KS_INTENT_DIR_CALL, KS_IPC_MSG_MAX, CAP_R_SEND },
-                    { UART_TAG_RX_EVENT, KS_INTENT_DIR_EVENT, KS_IPC_MSG_MAX, CAP_R_RECV },
-                    { UART_TAG_QUERY_INTENTS, KS_INTENT_DIR_CALL, 0, CAP_R_SEND },
+                    { UART_TAG_WRITE, KS_INTENT_DIR_CALL, KS_IPC_MSG_MAX, 0, CAP_R_SEND },
+                    { UART_TAG_RX_EVENT, KS_INTENT_DIR_EVENT, KS_IPC_MSG_MAX, 0, CAP_R_RECV },
+                    { UART_TAG_QUERY_INTENTS, KS_INTENT_DIR_CALL, 0, 0, CAP_R_SEND },
                 };
                 const uint32_t max_count = (uint32_t)(sizeof(k_uart_intents) / sizeof(k_uart_intents[0]));
                 const uint32_t max_payload = KS_IPC_MSG_MAX;
@@ -350,6 +351,9 @@ static void core_thread_entry(void *arg)
 {
     (void)arg;
 
+    uart_write("[dbg] core_thread_entry: start\n",
+               sizeof("[dbg] core_thread_entry: start\n") - 1);
+
     /* Seed initial caps for kernel task. */
     cap_table_init(&g_kernel_cap_table);
     task_init(&g_kernel_task, &g_kernel_cap_table);
@@ -364,11 +368,11 @@ static void core_thread_entry(void *arg)
                                 &g_kernel_task,
                                 &g_kernel_task.self_cap);
     if (st != CAP_OK) {
-        uart_puts("cap_create TASK failed st=");
-        uart_putu64_dec((uint64_t)st);
-        uart_puts(" free_top=");
-        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
-        uart_puts("\n");
+        klog_puts("cap_create TASK failed st=");
+        klog_putu64_dec((uint64_t)st);
+        klog_puts(" free_top=");
+        klog_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        klog_puts("\n");
         panic("kmain: cap_create(CAP_TYPE_TASK) failed");
     }
 
@@ -396,11 +400,11 @@ static void core_thread_entry(void *arg)
                     uart_cmd_ep,
                     &g_kernel_task.uart_cmd_ep_cap);
     if (st != CAP_OK) {
-        uart_puts("cap_create ENDPOINT failed st=");
-        uart_putu64_dec((uint64_t)st);
-        uart_puts(" free_top=");
-        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
-        uart_puts("\n");
+        klog_puts("cap_create ENDPOINT failed st=");
+        klog_putu64_dec((uint64_t)st);
+        klog_puts(" free_top=");
+        klog_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        klog_puts("\n");
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
@@ -410,11 +414,11 @@ static void core_thread_entry(void *arg)
                     uart_evt_ep,
                     &g_kernel_task.uart_evt_ep_cap);
     if (st != CAP_OK) {
-        uart_puts("cap_create ENDPOINT failed st=");
-        uart_putu64_dec((uint64_t)st);
-        uart_puts(" free_top=");
-        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
-        uart_puts("\n");
+        klog_puts("cap_create ENDPOINT failed st=");
+        klog_putu64_dec((uint64_t)st);
+        klog_puts(" free_top=");
+        klog_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        klog_puts("\n");
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
@@ -425,11 +429,11 @@ static void core_thread_entry(void *arg)
                     kernel_log_ep,
                     &g_kernel_task.kernel_log_send_cap);
     if (st != CAP_OK) {
-        uart_puts("cap_create ENDPOINT failed st=");
-        uart_putu64_dec((uint64_t)st);
-        uart_puts(" free_top=");
-        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
-        uart_puts("\n");
+        klog_puts("cap_create ENDPOINT failed st=");
+        klog_putu64_dec((uint64_t)st);
+        klog_puts(" free_top=");
+        klog_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        klog_puts("\n");
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
@@ -439,11 +443,11 @@ static void core_thread_entry(void *arg)
                     kernel_log_ep,
                     &g_kernel_task.kernel_log_recv_cap);
     if (st != CAP_OK) {
-        uart_puts("cap_create ENDPOINT failed st=");
-        uart_putu64_dec((uint64_t)st);
-        uart_puts(" free_top=");
-        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
-        uart_puts("\n");
+        klog_puts("cap_create ENDPOINT failed st=");
+        klog_putu64_dec((uint64_t)st);
+        klog_puts(" free_top=");
+        klog_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        klog_puts("\n");
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
@@ -465,13 +469,37 @@ static void core_thread_entry(void *arg)
     };
     core_boot_attach(&core_if);
 
+    uart_write("[dbg] core_boot_if: v=3 uart_cmd_ep=",
+               sizeof("[dbg] core_boot_if: v=3 uart_cmd_ep=") - 1);
+    uart_puthex64((uint64_t)g_kernel_task.uart_cmd_ep_cap);
+    uart_write(" uart_evt_ep=",
+               sizeof(" uart_evt_ep=") - 1);
+    uart_puthex64((uint64_t)g_kernel_task.uart_evt_ep_cap);
+    uart_write(" kernel_log_ep=",
+               sizeof(" kernel_log_ep=") - 1);
+    uart_puthex64((uint64_t)g_kernel_task.kernel_log_recv_cap);
+    uart_putnl();
+
+    uart_write("[dbg] core_thread_entry: before core_main\n",
+               sizeof("[dbg] core_thread_entry: before core_main\n") - 1);
+
     /* Contract: Core runs once in this thread. */
     (void)core_main();
+
+    uart_write("[dbg] core_thread_entry: after core_main\n",
+               sizeof("[dbg] core_thread_entry: after core_main\n") - 1);
 
     for (;;) {
         uart_driver_pump();
         if (core_poll) {
             core_poll();
+        } else {
+            static bool s_warned = false;
+            if (!s_warned) {
+                s_warned = true;
+                uart_write("[dbg] core_poll missing\n",
+                           sizeof("[dbg] core_poll missing\n") - 1);
+            }
         }
         /* Drain all pending work items. */
         for (;;) {
@@ -503,26 +531,26 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    uart_puts("Kernel: ");
-    uart_puts(CAPAZ_KERNEL_VERSION);
-    uart_putnl();
+    klog_puts("Kernel: ");
+    klog_puts(CAPAZ_KERNEL_VERSION);
+    klog_putnl();
 
-    uart_puts("Machine: ");
-    uart_puts(CAPAZ_MACHINE);
-    uart_putnl();
+    klog_puts("Machine: ");
+    klog_puts(CAPAZ_MACHINE);
+    klog_putnl();
 
 
     
 #if KMAIN_DEBUG
     if (boot_info) {
-        uart_puts("boot_info: kernel_pa="); uart_puthex64(boot_info->kernel_phys_base);
-        uart_puts(" size="); uart_puthex64(boot_info->kernel_size);
-        uart_puts(" entry_off="); uart_puthex64(boot_info->kernel_entry_offset);
-        uart_putnl();
+        klog_puts("boot_info: kernel_pa="); klog_puthex64(boot_info->kernel_phys_base);
+        klog_puts(" size="); klog_puthex64(boot_info->kernel_size);
+        klog_puts(" entry_off="); klog_puthex64(boot_info->kernel_entry_offset);
+        klog_putnl();
 
-        uart_puts("boot_info: dtb_va="); uart_puthex64(boot_info->dtb_ptr);
-        uart_puts(" dtb_size="); uart_puthex64(boot_info->dtb_size);
-        uart_putnl();
+        klog_puts("boot_info: dtb_va="); klog_puthex64(boot_info->dtb_ptr);
+        klog_puts(" dtb_size="); klog_puthex64(boot_info->dtb_size);
+        klog_putnl();
     }
 #endif
 
@@ -538,10 +566,10 @@ void kmain(const boot_info_t *boot_info)
             uint64_t uart_phys = 0;
             if (dtb_find_pl011_uart(&uart_phys)) {
 #if KMAIN_DEBUG
-                uart_puts("UART: switching to DTB base "); uart_puthex64(uart_phys); uart_putnl();
+                klog_puts("UART: switching to DTB base "); klog_puthex64(uart_phys); klog_putnl();
 #endif
                 uart_init(uart_phys);
-                uart_puts("UART: "); uart_puthex64(uart_phys); uart_putnl();
+                klog_puts("UART: "); klog_puthex64(uart_phys); klog_putnl();
             }
 
             /* Derive allocator-friendly usable RAM spans (RAM - reserved - implicit). */
@@ -549,16 +577,16 @@ void kmain(const boot_info_t *boot_info)
             platform_dump_memory_map(boot_info);
 #endif
         } else {
-            uart_puts("DTB: invalid header (fallback to hardcoded UART)\n");
+            klog_puts("DTB: invalid header (fallback to hardcoded UART)\n");
         }
     } else {
-        uart_puts("DTB: no pointer provided (fallback to hardcoded UART)\n");
+        klog_puts("DTB: no pointer provided (fallback to hardcoded UART)\n");
     }
 
     /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
 #if defined(CAPAZ_FAULT_TEST) && (CAPAZ_FAULT_TEST)
-    uart_puts("CAPAZ_FAULT_TEST: triggering deliberate exception (BRK)\n");
+    klog_puts("CAPAZ_FAULT_TEST: triggering deliberate exception (BRK)\n");
     __asm__ volatile("brk #0");
 #endif
 
@@ -612,7 +640,7 @@ void kmain(const boot_info_t *boot_info)
     /* Create and enqueue a dedicated Core thread. */
     thread_t *core_thr = thread_create_named("core/main", core_thread_entry, NULL);
     if (!core_thr) {
-        uart_puts("kmain: failed to create core thread\n");
+        klog_puts("kmain: failed to create core thread\n");
         for (;;) {
             __asm__ volatile ("wfi");
         }
@@ -622,11 +650,11 @@ void kmain(const boot_info_t *boot_info)
 
     irq_global_enable();
 
-    uart_puts("Build: ");
-    uart_putu64_dec(CAPAZ_BUILD_NUMBER);
-    uart_puts("  ");
-    uart_puts(CAPAZ_BUILD_DATE);
-    uart_putnl();
+    klog_puts("Build: ");
+    klog_putu64_dec(CAPAZ_BUILD_NUMBER);
+    klog_puts("  ");
+    klog_puts(CAPAZ_BUILD_DATE);
+    klog_putnl();
     
     /* Enter the cooperative scheduler. */
     yield();

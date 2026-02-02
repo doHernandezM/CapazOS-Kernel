@@ -7,6 +7,7 @@
 #include "uart_pl011.h"
 #include "mem.h"
 #include "contracts.h"
+#include "debug/klog.h"
 
 #ifndef KMAIN_DEBUG
 #define KMAIN_DEBUG 0
@@ -111,7 +112,7 @@ void kheap_init(void)
     }
 
 #if KMAIN_DEBUG
-    uart_puts("KHEAP: init\n");
+    klog_puts("KHEAP: init\n");
 #endif
 }
 

@@ -1,6 +1,7 @@
 #include "panic.h"
 
 #include "uart_pl011.h"
+#include "debug/klog.h"
 
 static inline __attribute__((noreturn)) void park_cpu(void)
 {
@@ -16,18 +17,18 @@ void panic_with_prefix(const char *prefix, const char *msg)
     uart_init(0);
 
     if (prefix && *prefix) {
-        uart_puts(prefix);
+        klog_puts(prefix);
     } else {
-        uart_puts("PANIC: ");
+        klog_puts("PANIC: ");
     }
 
     if (msg && *msg) {
-        uart_puts(msg);
+        klog_puts(msg);
     } else {
-        uart_puts("<no message>");
+        klog_puts("<no message>");
     }
 
-    uart_puts("\n");
+    klog_puts("\n");
 
     park_cpu();
 }

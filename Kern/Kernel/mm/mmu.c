@@ -22,6 +22,7 @@
 #include "panic.h"
 #include <stdint.h>
 #include <stddef.h>
+#include "debug/klog.h"
 
 /* Symbols exported by the linker marking the end of the loaded
  * kernel image.  We use this to place the page‑table allocator just
@@ -333,7 +334,7 @@ static uint64_t *alloc_l3(void)
 static uint64_t *alloc_l2(void)
 {
     if (l2_tables_used >= (sizeof(l2_tables) / sizeof(l2_tables[0]))) {
-        uart_puts("MMU: out of L2 tables\n");
+        klog_puts("MMU: out of L2 tables\n");
         while (1) { __asm__ volatile ("wfe"); }
     }
     uint64_t *tbl = l2_tables[l2_tables_used++];

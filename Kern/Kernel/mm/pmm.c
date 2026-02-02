@@ -10,6 +10,7 @@
 #include "uart_pl011.h"
 #include "panic.h"
 #include "contracts.h"
+#include "debug/klog.h"
 
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
@@ -427,26 +428,26 @@ pmm_state_t *st = g_pmm;
 void pmm_dump_summary(void) {
     pmm_state_t *st = g_pmm;
     if (!st) {
-        uart_puts("PMM: <uninitialized>\n");
+        klog_puts("PMM: <uninitialized>\n");
         return;
     }
 
     /* Always emit a stable, human-readable summary; add details under KMAIN_DEBUG. */
-    uart_puts("PMM(free/total): ");
-    uart_putu64_dec(st->free_pages);
-    uart_putc('/');
-    uart_putu64_dec(st->total_pages);
-    uart_puts("\n");
+    klog_puts("PMM(free/total): ");
+    klog_putu64_dec(st->free_pages);
+    klog_putc('/');
+    klog_putu64_dec(st->total_pages);
+    klog_puts("\n");
 
 #if KMAIN_DEBUG
-    uart_puts("PMM: base_pa="); uart_puthex64(st->base_pa);
-    uart_puts(" limit_pa="); uart_puthex64(st->limit_pa);
-    uart_puts(" total_pages="); uart_puthex64(st->total_pages);
-    uart_puts(" free_pages="); uart_puthex64(st->free_pages);
-    uart_puts(" meta_pa="); uart_puthex64(st->meta_base_pa);
-    uart_puts(" meta_pages="); uart_puthex64(st->meta_pages);
-    uart_puts(" bitmap_bytes="); uart_puthex64(st->bitmap_bytes);
-    uart_puts("\n");
+    klog_puts("PMM: base_pa="); klog_puthex64(st->base_pa);
+    klog_puts(" limit_pa="); klog_puthex64(st->limit_pa);
+    klog_puts(" total_pages="); klog_puthex64(st->total_pages);
+    klog_puts(" free_pages="); klog_puthex64(st->free_pages);
+    klog_puts(" meta_pa="); klog_puthex64(st->meta_base_pa);
+    klog_puts(" meta_pages="); klog_puthex64(st->meta_pages);
+    klog_puts(" bitmap_bytes="); klog_puthex64(st->bitmap_bytes);
+    klog_puts("\n");
 #endif
 }
 

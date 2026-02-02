@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "uart_pl011.h"
+#include "debug/klog.h"
 
 /*
  * Minimal Flattened Device Tree (FDT/DTB) parser sufficient for QEMU 'virt':
@@ -125,9 +126,9 @@ static uint32_t split_path(const char *path, const char **comps, uint32_t max_co
 }
 
 static void print_hex64(const char *label, uint64_t v) {
-    uart_puts(label);
-    uart_puthex64(v);
-    uart_putnl();
+    klog_puts(label);
+    klog_puthex64(v);
+    klog_putnl();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -903,9 +904,9 @@ bool dtb_find_pl011_uart(uint64_t *out_phys) {
 }
 
 //static void dump_rsvmap(void) {
-//    uart_puts("DTB: memreserve map\n");
+//    klog_puts("DTB: memreserve map\n");
 //    if (!g_rsvmap) {
-//        uart_puts("  (none)\n");
+//        klog_puts("  (none)\n");
 //        return;
 //    }
 //
@@ -915,18 +916,18 @@ bool dtb_find_pl011_uart(uint64_t *out_phys) {
 //        uint64_t size = be64(p); p += 8;
 //        if (addr == 0 && size == 0) break;
 //
-//        uart_puts("  addr="); uart_puthex64(addr);
-//        uart_puts(" size="); uart_puthex64(size);
-//        uart_putnl();
+//        klog_puts("  addr="); klog_puthex64(addr);
+//        klog_puts(" size="); klog_puthex64(size);
+//        klog_putnl();
 //    }
 //}
 
 
 //static void dump_reserved_memory_node(void) {
-//    uart_puts("DTB: /reserved-memory\n");
+//    klog_puts("DTB: /reserved-memory\n");
 //
 //    if (!g_struct || !g_strings) {
-//        uart_puts("  (unavailable)\n");
+//        klog_puts("  (unavailable)\n");
 //        return;
 //    }
 //
@@ -1021,20 +1022,20 @@ bool dtb_find_pl011_uart(uint64_t *out_phys) {
 //        if (pname[0] == 'r' && pname[1] == 'e' && pname[2] == 'g') {
 //            uint64_t addr = 0, size = 0;
 //            if (parse_reg_first(data, len, ctx->parent_addr_cells, ctx->parent_size_cells, &addr, &size)) {
-//                uart_puts("  addr="); uart_puthex64(addr);
-//                uart_puts(" size="); uart_puthex64(size);
-//                uart_putnl();
+//                klog_puts("  addr="); klog_puthex64(addr);
+//                klog_puts(" size="); klog_puthex64(size);
+//                klog_putnl();
 //            }
 //        }
 //    }
 //
 //    if (!seen_reserved) {
-//        uart_puts("  (not present)\n");
+//        klog_puts("  (not present)\n");
 //    }
 //}
 
 void dtb_dump_summary(void) {
-    uart_puts("\nDTB: summary\n");
+    klog_puts("\nDTB: summary\n");
     print_hex64("DTB: va=", (uintptr_t)g_fdt);
     print_hex64("DTB: totalsize=", g_fdt_totalsize);
 
@@ -1043,15 +1044,15 @@ void dtb_dump_summary(void) {
         dtb_range_t mem[DTB_MAX_MEMORY_RANGES];
         uint32_t mem_count = DTB_MAX_MEMORY_RANGES;
         if (dtb_get_memory_ranges(mem, &mem_count) && mem_count) {
-            uart_puts("DTB: memory ranges:\n");
+            klog_puts("DTB: memory ranges:\n");
             for (uint32_t i = 0; i < mem_count; i++) {
-                uart_puts("  ["); uart_puthex64(i); uart_puts("] base=");
-                uart_puthex64(mem[i].base);
-                uart_puts(" size="); uart_puthex64(mem[i].size);
-                uart_putnl();
+                klog_puts("  ["); klog_puthex64(i); klog_puts("] base=");
+                klog_puthex64(mem[i].base);
+                klog_puts(" size="); klog_puthex64(mem[i].size);
+                klog_putnl();
             }
         } else {
-            uart_puts("DTB: memory ranges: <none>\n");
+            klog_puts("DTB: memory ranges: <none>\n");
         }
     }
 
@@ -1060,15 +1061,15 @@ void dtb_dump_summary(void) {
         dtb_range_t rsv[DTB_MAX_RESERVED_RANGES];
         uint32_t rsv_count = DTB_MAX_RESERVED_RANGES;
         if (dtb_get_reserved_ranges(rsv, &rsv_count) && rsv_count) {
-            uart_puts("DTB: reserved ranges:\n");
+            klog_puts("DTB: reserved ranges:\n");
             for (uint32_t i = 0; i < rsv_count; i++) {
-                uart_puts("  ["); uart_puthex64(i); uart_puts("] base=");
-                uart_puthex64(rsv[i].base);
-                uart_puts(" size="); uart_puthex64(rsv[i].size);
-                uart_putnl();
+                klog_puts("  ["); klog_puthex64(i); klog_puts("] base=");
+                klog_puthex64(rsv[i].base);
+                klog_puts(" size="); klog_puthex64(rsv[i].size);
+                klog_putnl();
             }
         } else {
-            uart_puts("DTB: reserved ranges: <none>\n");
+            klog_puts("DTB: reserved ranges: <none>\n");
         }
     }
 
@@ -1083,17 +1084,17 @@ void dtb_dump_summary(void) {
                                    path, (uint32_t)sizeof(path),
                                    key, (uint32_t)sizeof(key)))
         {
-            uart_puts("DTB: chosen "); uart_puts(key[0] ? key : "stdout-path");
-            uart_puts("=\""); uart_puts(chosen); uart_puts("\"\n");
-            uart_puts("DTB: chosen resolved path=\""); uart_puts(path); uart_puts("\"\n");
-            uart_puts("DTB: chosen uart phys="); uart_puthex64(uart_phys); uart_putnl();
+            klog_puts("DTB: chosen "); klog_puts(key[0] ? key : "stdout-path");
+            klog_puts("=\""); klog_puts(chosen); klog_puts("\"\n");
+            klog_puts("DTB: chosen resolved path=\""); klog_puts(path); klog_puts("\"\n");
+            klog_puts("DTB: chosen uart phys="); klog_puthex64(uart_phys); klog_putnl();
         } else {
             /* Fallback: compatible scan (legacy behaviour). */
-            uart_puts("DTB: chosen stdout-path not found; scanning for pl011...\n");
+            klog_puts("DTB: chosen stdout-path not found; scanning for pl011...\n");
             if (dtb_find_pl011_uart(&uart_phys)) {
-                uart_puts("DTB: pl011 uart phys="); uart_puthex64(uart_phys); uart_putnl();
+                klog_puts("DTB: pl011 uart phys="); klog_puthex64(uart_phys); klog_putnl();
             } else {
-                uart_puts("DTB: pl011 uart not found\n");
+                klog_puts("DTB: pl011 uart not found\n");
             }
         }
     }
