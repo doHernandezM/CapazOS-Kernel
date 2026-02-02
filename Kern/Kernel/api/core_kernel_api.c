@@ -48,6 +48,7 @@ static ks_status_t ks_from_ipc_status(ks_ipc_status_t st)
         case KS_IPC_ERR_RIGHTS:  return KS_STATUS_NO_RIGHTS;
         case KS_IPC_ERR_NO_MEM:  return KS_STATUS_OUT_OF_MEMORY;
         case KS_IPC_ERR_CLOSED:  return KS_STATUS_BUSY;
+        case KS_IPC_ERR_EMPTY:   return KS_STATUS_BUSY;
         default:                 return KS_STATUS_INVALID_ARG;
     }
 }

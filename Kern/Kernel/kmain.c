@@ -13,6 +13,7 @@
 // Do not include the old core_kernel_abi.h; it no longer exists.
 #include "api/core_kernel_api.h"
 #include "api/core_boot_if.h"
+#include "api/uart_proto.h"
 
 #include "boot_info.h"
 #include "buildinfo.h"
@@ -20,7 +21,7 @@
 #include "mmu.h"
 #include "pmm.h"
 #include "platform.h"
-#include "uart_pl011.h"
+#include "serial/uart.h"
 #include "irq.h"
 #include "preempt.h"
 #include "gicv2.h"
@@ -196,6 +197,7 @@ static cap_table_t g_kernel_cap_table;
 static volatile bool g_tick_work_pending = false;
 
 static void tick_work_fn(void *arg);
+static void uart_driver_pump(void);
 
 /* Preallocated tick work item: never freed. */
 static work_item_t g_tick_item = { .fn = tick_work_fn, .arg = NULL, .next = NULL };
@@ -207,6 +209,39 @@ static void tick_work_fn(void *arg)
     g_tick_work_pending = false;
     /* Defer scheduler signal out of IRQ context. */
     preempt_set_need_resched();
+}
+
+static void uart_driver_pump(void)
+{
+    ks_ipc_msg_t msg;
+    for (;;) {
+        ks_ipc_status_t st = ipc_try_recv_cap(&g_kernel_cap_table,
+                                              (cap_handle_t)g_kernel_task.uart_cmd_ep_cap,
+                                              &msg);
+        if (st == KS_IPC_OK) {
+            if (msg.tag == UART_TAG_WRITE && msg.len > 0) {
+                uart_write((const char *)msg.data, (size_t)msg.len);
+            }
+            continue;
+        }
+        if (st == KS_IPC_ERR_EMPTY) {
+            break;
+        }
+        // Ignore other errors for now; the pump is best-effort in Phase 1.
+        break;
+    }
+
+    // RX path: poll PL011 and post RX_EVENTs.
+    char ch;
+    while (uart_getc_nonblock(&ch)) {
+        ks_ipc_msg_t evt;
+        evt.tag = UART_TAG_RX_EVENT;
+        evt.len = 1;
+        evt.data[0] = (uint8_t)ch;
+        (void)ipc_send_cap(&g_kernel_cap_table,
+                           (cap_handle_t)g_kernel_task.uart_evt_ep_cap,
+                           &evt);
+    }
 }
 
 /* Timer IRQ handler (allocation-free): ack + enqueue work. */
@@ -255,19 +290,24 @@ static void core_thread_entry(void *arg)
         panic("kmain: cap_create(CAP_TYPE_TASK) failed");
     }
 
-    // 2) Console endpoint cap seeded to Core at bootstrap (A2).
-    endpoint_t *console_ep = NULL;
+    // 2) UART driver endpoints (command + event).
+    endpoint_t *uart_cmd_ep = NULL;
+    endpoint_t *uart_evt_ep = NULL;
     // endpoint_create creates the endpoint object; rights are applied when creating the cap.
-    ks_status_t ep_st = endpoint_create(&console_ep);
-    if (ep_st != KS_STATUS_OK || console_ep == NULL) {
-        panic("kmain: endpoint_create(console) failed");
+    ks_status_t ep_st = endpoint_create(&uart_cmd_ep);
+    if (ep_st != KS_STATUS_OK || uart_cmd_ep == NULL) {
+        panic("kmain: endpoint_create(uart_cmd) failed");
+    }
+    ep_st = endpoint_create(&uart_evt_ep);
+    if (ep_st != KS_STATUS_OK || uart_evt_ep == NULL) {
+        panic("kmain: endpoint_create(uart_evt) failed");
     }
 
     st = cap_create(&g_kernel_cap_table,
                     CAP_TYPE_ENDPOINT,
                     (cap_rights_t)(CAP_R_SEND | CAP_R_RECV | CAP_R_DUP | CAP_R_DROP),
-                    console_ep,
-                    &g_kernel_task.console_ep_cap);
+                    uart_cmd_ep,
+                    &g_kernel_task.uart_cmd_ep_cap);
     if (st != CAP_OK) {
         uart_puts("cap_create ENDPOINT failed st=");
         uart_putu64_dec((uint64_t)st);
@@ -277,12 +317,31 @@ static void core_thread_entry(void *arg)
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_ENDPOINT,
+                    (cap_rights_t)(CAP_R_SEND | CAP_R_RECV | CAP_R_DUP | CAP_R_DROP),
+                    uart_evt_ep,
+                    &g_kernel_task.uart_evt_ep_cap);
+    if (st != CAP_OK) {
+        uart_puts("cap_create ENDPOINT failed st=");
+        uart_putu64_dec((uint64_t)st);
+        uart_puts(" free_top=");
+        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        uart_puts("\n");
+        panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
+    }
+
+    // Keep console_ep_cap as an alias to UART cmd during the transition.
+    g_kernel_task.console_ep_cap = g_kernel_task.uart_cmd_ep_cap;
+
     // Publish the minimal boot interface to Core (A0).
     const core_boot_if_t core_if = {
-        .version = 1,
+        .version = 2,
         .core_caps = &g_kernel_cap_table,
         .core_task = &g_kernel_task,
         .console_ep = g_kernel_task.console_ep_cap,
+        .uart_cmd_ep = g_kernel_task.uart_cmd_ep_cap,
+        .uart_evt_ep = g_kernel_task.uart_evt_ep_cap,
     };
     core_boot_attach(&core_if);
 
@@ -290,6 +349,7 @@ static void core_thread_entry(void *arg)
     (void)core_main();
 
     for (;;) {
+        uart_driver_pump();
         /* Drain all pending work items. */
         for (;;) {
             work_item_t *it = workq_dequeue(&g_deferred_workq);

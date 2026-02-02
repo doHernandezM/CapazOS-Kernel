@@ -36,7 +36,8 @@ typedef enum ks_ipc_status {
     KS_IPC_ERR_INVALID = 1,
     KS_IPC_ERR_RIGHTS = 2,
     KS_IPC_ERR_NO_MEM = 3,
-    KS_IPC_ERR_CLOSED = 4
+    KS_IPC_ERR_CLOSED = 4,
+    KS_IPC_ERR_EMPTY = 5
 } ks_ipc_status_t;
 
 /* Capability status codes returned by capability operations. */

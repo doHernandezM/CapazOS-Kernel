@@ -237,3 +237,38 @@ ks_ipc_status_t ipc_recv_cap(cap_table_t *caps,
         sched_block_current();
     }
 }
+
+ks_ipc_status_t ipc_try_recv_cap(cap_table_t *caps,
+                                 cap_handle_t endpoint_h,
+                                 ks_ipc_msg_t *out) {
+    ASSERT_THREAD_CONTEXT();
+    if (!out) {
+        return KS_IPC_ERR_INVALID;
+    }
+
+    ks_ipc_status_t status = KS_IPC_OK;
+    endpoint_t *e = endpoint_from_handle(caps, endpoint_h, CAP_R_RECV, &status);
+    if (!e) return status;
+
+    uint64_t flags = irq_save();
+    ipc_msg_t *m = q_pop_head(e);
+    if (!m) {
+        irq_restore(flags);
+        if (e->closed) {
+            return KS_IPC_ERR_CLOSED;
+        }
+        return KS_IPC_ERR_EMPTY;
+    }
+    irq_restore(flags);
+
+    out->tag = m->tag;
+    out->len = m->len;
+    if (out->len > KS_IPC_MSG_MAX) {
+        out->len = KS_IPC_MSG_MAX;
+    }
+    if (out->len > 0) {
+        memcpy(out->data, m->data, out->len);
+    }
+    ipc_msg_free(m);
+    return KS_IPC_OK;
+}

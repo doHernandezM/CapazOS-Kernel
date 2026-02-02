@@ -19,6 +19,12 @@ typedef struct core_boot_if {
 
     /// Capability handle for the console endpoint, seeded into the Core task.
     ks_cap_handle_t console_ep;
+
+    /// UART driver command endpoint (write / ioctl).
+    ks_cap_handle_t uart_cmd_ep;
+
+    /// UART driver event endpoint (RX events).
+    ks_cap_handle_t uart_evt_ep;
 } core_boot_if_t;
 
 /// Called by the kernel exactly once before invoking `core_main()`.

@@ -48,3 +48,8 @@ ks_ipc_status_t ipc_send_cap(cap_table_t *caps,
 ks_ipc_status_t ipc_recv_cap(cap_table_t *caps,
                              cap_handle_t endpoint_h,
                              ks_ipc_msg_t *out);
+
+// Non-blocking receive: returns KS_IPC_ERR_EMPTY if the queue is empty.
+ks_ipc_status_t ipc_try_recv_cap(cap_table_t *caps,
+                                 cap_handle_t endpoint_h,
+                                 ks_ipc_msg_t *out);

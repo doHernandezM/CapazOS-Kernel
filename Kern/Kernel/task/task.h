@@ -13,7 +13,9 @@ typedef struct task {
 
     // Capabilities seeded at bootstrap.
     cap_handle_t self_cap;
-    cap_handle_t console_ep_cap; // endpoint capability for early console/logging
+    cap_handle_t console_ep_cap;   // endpoint capability for early console/logging
+    cap_handle_t uart_cmd_ep_cap;  // UART driver command endpoint
+    cap_handle_t uart_evt_ep_cap;  // UART driver event endpoint
 } task_t;
 
 void task_init(task_t *t, cap_table_t *caps);
