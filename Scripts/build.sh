@@ -112,4 +112,4 @@ if [ ! -f "${FINAL_BUILD_DIR}/kernel.img" ]; then
 fi
 
 echo "note: Archiving build + source"
-#"${SCRIPT_DIR}/archive.sh" "$REPO_ROOT" "$FINAL_BUILD_DIR" "$BUILDINFO_INI"
+"${SCRIPT_DIR}/archive.sh" "$REPO_ROOT" "$FINAL_BUILD_DIR" "$BUILDINFO_INI"

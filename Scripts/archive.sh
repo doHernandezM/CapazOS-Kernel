@@ -7,15 +7,72 @@ BUILDINFO_INI="${3:?buildinfo.ini required}"
 
 log() { printf "%s\n" "$*"; }
 
-# Read build number from ini (works with your existing buildinfo format)
+# Read build number from buildinfo.ini.
+#
+# Supported formats across builds:
+#   [kernel] kernel_build_number=NNN   (current)
+#   [build]  build_number=NNN         (legacy)
+#   [build]  number=NNN               (legacy)
 BUILD_NUMBER="$(
-python3 - <<'PY' "$BUILDINFO_INI"
-import configparser, sys
-p = configparser.ConfigParser()
-p.read(sys.argv[1])
-print(p.get("build", "number"))
-PY
+awk '
+function trim(s) {
+    gsub(/^[[:space:]]+/, "", s)
+    gsub(/[[:space:]]+$/, "", s)
+    return s
+}
+BEGIN {
+    sec = ""
+    best = ""
+    bestw = 999999
+}
+function consider(w, v) {
+    if (v == "") return
+    if (w < bestw) { bestw = w; best = v }
+}
+{
+    line = $0
+    gsub(/\r/, "", line)
+
+    # Section header
+    if (line ~ /^[[:space:]]*\[/) {
+        sec = tolower(trim(line))
+        next
+    }
+    # Comment or blank
+    if (line ~ /^[[:space:]]*([#;]|$)/) next
+
+    # key=value line
+    eq = index(line, "=")
+    if (eq == 0) next
+    key = tolower(trim(substr(line, 1, eq-1)))
+    val = trim(substr(line, eq+1))
+    sub(/[[:space:]]*[#;].*$/, "", val)
+    val = trim(val)
+    if (val !~ /^[0-9]+$/) next
+
+    if (sec == "[kernel]") {
+        if (key == "kernel_build_number") consider(1, val)
+        else if (key == "build_number") consider(2, val)
+    } else if (sec == "[build]") {
+        if (key == "kernel_build_number") consider(3, val)
+        else if (key == "build_number") consider(4, val)
+        else if (key == "number") consider(7, val)
+    } else if (sec == "") {
+        if (key == "kernel_build_number") consider(5, val)
+        else if (key == "build_number") consider(6, val)
+        else if (key == "number") consider(8, val)
+    }
+}
+END {
+    if (best != "") { print best; exit 0 }
+    exit 1
+}
+' "$BUILDINFO_INI" 2>/dev/null || true
 )"
+if [ -z "${BUILD_NUMBER:-}" ]; then
+    log "ERROR: Could not read build number from ${BUILDINFO_INI}"
+    exit 1
+fi
 
 ARCHIVE_DIR="${REPO_ROOT}/archive"
 CODE_DIR="${REPO_ROOT}/Code"
@@ -26,12 +83,13 @@ mkdir -p "${ARCHIVE_DIR}"
 SRC_ZIP_NAME="OS.${BUILD_NUMBER}.zip"
 SRC_ZIP_ARCHIVE="${ARCHIVE_DIR}/${SRC_ZIP_NAME}"
 SRC_ZIP_CODE="${CODE_DIR}/${SRC_ZIP_NAME}"
+SRC_ZIP_CODE_OS="${CODE_OS_DIR}/${SRC_ZIP_NAME}"
 
 KERNEL_IMG="${BUILD_DIR}/kernel.img"
 KERNEL_ZIP_NAME="Kernel.${BUILD_NUMBER}.zip"
 KERNEL_ZIP="${ARCHIVE_DIR}/${KERNEL_ZIP_NAME}"
 
-# Move previous build's source zip to Trash (from both archive/ and Code/)
+# Move previous build's source zip to Trash (from archive/, Code/, and Code/OS/)
 # If Trash doesn't exist (non-mac), delete instead.
 trash_file() {
     f="$1"
@@ -47,7 +105,7 @@ trash_file() {
 
 # compute previous build number if numeric
 case "$BUILD_NUMBER" in
-    ''|*[!0-9]*)
+    ""|*[!0-9]*)
         PREV_BUILD=""
         ;;
     *)
@@ -62,11 +120,12 @@ esac
 if [ -n "${PREV_BUILD:-}" ]; then
     trash_file "${ARCHIVE_DIR}/OS.${PREV_BUILD}.zip"
     trash_file "${CODE_DIR}/OS.${PREV_BUILD}.zip"
+    trash_file "${CODE_OS_DIR}/OS.${PREV_BUILD}.zip"
 fi
 
-# A) Zip Code/OS/ into archive/ and Code/ as OS.<build>.zip
+# A) Zip Code/OS/ into archive/ and copy into both Code/ and Code/OS/
 log "Create source archive: ${SRC_ZIP_ARCHIVE} (from Code/OS/)"
-rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
+rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}" "${SRC_ZIP_CODE_OS}"
 
 # zip the OS folder (so the zip contains OS/...)
 (
@@ -74,8 +133,9 @@ rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
     zip -qry "${SRC_ZIP_ARCHIVE}" "OS"
 )
 
-# copy the same zip into Code/
+# copy the same zip into Code/ and Code/OS/
 cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
+cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE_OS}"
 
 # C) Zip kernel.img on its own into archive/
 if [ ! -f "${KERNEL_IMG}" ]; then

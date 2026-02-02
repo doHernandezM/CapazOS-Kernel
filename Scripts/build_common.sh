@@ -166,6 +166,14 @@ mkdirp() {
   mkdir -p "$1"
 }
 
+# Simple aliases used by some scripts/patches.
+ensure_dir() { mkdirp "$1"; }
+
+log() {
+  # Keep logging intentionally minimal and consistent.
+  echo "note: $*"
+}
+
 realpath_fallback() {
   # macOS has realpath, but keep a fallback.
   if command -v realpath >/dev/null 2>&1; then
