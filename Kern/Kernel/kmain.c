@@ -14,6 +14,7 @@
 #include "api/core_kernel_api.h"
 #include "api/core_boot_if.h"
 #include "api/uart_proto.h"
+#include "api/intent_proto.h"
 
 #include "boot_info.h"
 #include "buildinfo.h"
@@ -24,6 +25,7 @@
 #include "serial/uart.h"
 #include "irq.h"
 #include "preempt.h"
+#include "mm/mem.h"   // memcpy
 #include "gicv2.h"
 #include "timer_generic.h"
 #include "work/work_queue.h"
@@ -221,6 +223,84 @@ static void uart_driver_pump(void)
         if (st == KS_IPC_OK) {
             if (msg.tag == UART_TAG_WRITE && msg.len > 0) {
                 uart_write((const char *)msg.data, (size_t)msg.len);
+            } else if (msg.tag == UART_TAG_QUERY_INTENTS) {
+                static const ks_intent_desc_t k_uart_intents[] = {
+                    { UART_TAG_WRITE, KS_INTENT_DIR_CALL, KS_IPC_MSG_MAX, CAP_R_SEND },
+                    { UART_TAG_RX_EVENT, KS_INTENT_DIR_EVENT, KS_IPC_MSG_MAX, CAP_R_RECV },
+                    { UART_TAG_QUERY_INTENTS, KS_INTENT_DIR_CALL, 0, CAP_R_SEND },
+                };
+                const uint32_t max_count = (uint32_t)(sizeof(k_uart_intents) / sizeof(k_uart_intents[0]));
+                const uint32_t max_payload = KS_IPC_MSG_MAX;
+                const uint32_t header_size = (uint32_t)sizeof(uint32_t);
+                uint32_t max_fit = 0;
+                if (max_payload > header_size) {
+                    max_fit = (max_payload - header_size) / (uint32_t)sizeof(ks_intent_desc_t);
+                }
+                uint32_t count = max_count;
+                if (count > max_fit) {
+                    count = max_fit;
+                }
+
+                ks_ipc_msg_t resp;
+                resp.tag = UART_TAG_QUERY_INTENTS;
+                resp.len = header_size + count * (uint32_t)sizeof(ks_intent_desc_t);
+                // Pack: [u32 count][desc...]
+                memcpy(resp.data, &count, sizeof(uint32_t));
+                if (count > 0) {
+                    memcpy(resp.data + header_size, k_uart_intents, count * sizeof(ks_intent_desc_t));
+                }
+                (void)ipc_send_cap(&g_kernel_cap_table,
+                                   (cap_handle_t)g_kernel_task.uart_evt_ep_cap,
+                                   &resp);
+            } else if (msg.tag == UART_TAG_OPEN_CONTRACT) {
+                if (msg.len >= sizeof(uint32_t) * 2) {
+                    uint32_t kind = 0;
+                    uint32_t rights = 0;
+                    memcpy(&kind, msg.data, sizeof(uint32_t));
+                    memcpy(&rights, msg.data + sizeof(uint32_t), sizeof(uint32_t));
+
+                    cap_handle_t src = CAP_HANDLE_INVALID;
+                    if (kind == UART_CONTRACT_CMD) {
+                        src = g_kernel_task.uart_cmd_ep_cap;
+                    } else if (kind == UART_CONTRACT_EVT) {
+                        src = g_kernel_task.uart_evt_ep_cap;
+                    }
+
+                    ks_status_t resp_status = KS_STATUS_INVALID_ARG;
+                    cap_handle_t new_cap = CAP_HANDLE_INVALID;
+                    if (src != CAP_HANDLE_INVALID) {
+                        cap_status_t cap_st = cap_dup(&g_kernel_cap_table,
+                                                      src,
+                                                      &g_kernel_cap_table,
+                                                      (cap_rights_t)rights,
+                                                      &new_cap);
+                        switch (cap_st) {
+                            case CAP_OK:
+                                resp_status = KS_STATUS_OK;
+                                break;
+                            case CAP_ERR_DENIED:
+                                resp_status = KS_STATUS_NO_RIGHTS;
+                                break;
+                            case CAP_ERR_NO_MEM:
+                                resp_status = KS_STATUS_OUT_OF_MEMORY;
+                                break;
+                            default:
+                                resp_status = KS_STATUS_INVALID_ARG;
+                                break;
+                        }
+                    }
+
+                    ks_ipc_msg_t resp;
+                    resp.tag = UART_TAG_OPEN_CONTRACT;
+                    resp.len = 16;
+                    memcpy(resp.data, &resp_status, sizeof(int32_t));
+                    uint32_t pad = 0;
+                    memcpy(resp.data + 4, &pad, sizeof(uint32_t));
+                    memcpy(resp.data + 8, &new_cap, sizeof(uint64_t));
+                    (void)ipc_send_cap(&g_kernel_cap_table,
+                                       (cap_handle_t)g_kernel_task.uart_evt_ep_cap,
+                                       &resp);
+                }
             }
             continue;
         }
