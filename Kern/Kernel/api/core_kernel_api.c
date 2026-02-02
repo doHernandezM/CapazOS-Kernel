@@ -5,8 +5,10 @@
 #include "mm/mem.h"
 #include "sched/sched.h"
 #include "serial/uart.h"
+#include "api/kernel_log_proto.h"
 
 static cap_table_t *g_core_caps;
+static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
 
 void cka_attach_core_caps(cap_table_t *core_caps)
 {
@@ -18,18 +20,49 @@ cap_table_t *cka_core_caps(void)
     return g_core_caps;
 }
 
+void cka_attach_kernel_log_ep(cap_id_t endpoint_cap)
+{
+    g_kernel_log_ep = (cap_handle_t)endpoint_cap;
+}
+
 // ---- Logging ----
 
 void cka_early_log(const char *s)
 {
-    uart_puts(s);
+    if (!s) {
+        return;
+    }
+    cka_console_write(s, strlen(s));
 }
 
 void cka_console_write(const char *s, size_t len)
 {
-    // During early bring-up the console is UART-only.
-    // Later this can forward to a console server endpoint.
-    uart_write(s, len);
+    if (!s || len == 0) {
+        return;
+    }
+    if (!g_core_caps || g_kernel_log_ep == CAP_HANDLE_INVALID) {
+        uart_write(s, len);
+        return;
+    }
+
+    size_t off = 0;
+    while (off < len) {
+        size_t chunk = len - off;
+        if (chunk > KS_IPC_MSG_MAX) {
+            chunk = KS_IPC_MSG_MAX;
+        }
+
+        ks_ipc_msg_t msg;
+        msg.tag = KLOG_TAG_WRITE;
+        msg.len = (uint32_t)chunk;
+        memcpy(msg.data, s + off, chunk);
+        ks_ipc_status_t st = ipc_send_cap(g_core_caps, g_kernel_log_ep, &msg);
+        if (st != KS_IPC_OK) {
+            uart_write(s + off, len - off);
+            return;
+        }
+        off += chunk;
+    }
 }
 
 void cka_log_write(const char *s)
@@ -184,4 +217,12 @@ ks_status_t cka_ipc_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg)
         return KS_STATUS_INVALID_ARG;
     }
     return ks_from_ipc_status(ipc_recv_cap(g_core_caps, (cap_handle_t)endpoint_cap, msg));
+}
+
+ks_status_t cka_ipc_try_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg)
+{
+    if (!g_core_caps || !msg) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    return ks_from_ipc_status(ipc_try_recv_cap(g_core_caps, (cap_handle_t)endpoint_cap, msg));
 }

@@ -74,6 +74,10 @@ ks_status_t cka_cap_release(cap_id_t id);
 
 ks_status_t cka_ipc_send(cap_id_t endpoint_cap, const ks_ipc_msg_t *msg);
 ks_status_t cka_ipc_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg);
+ks_status_t cka_ipc_try_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg);
+
+// Kernel-only hook: attach the kernel log endpoint for forwarding.
+void cka_attach_kernel_log_ep(cap_id_t endpoint_cap);
 
 #ifdef __cplusplus
 } // extern "C"

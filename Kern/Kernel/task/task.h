@@ -16,6 +16,8 @@ typedef struct task {
     cap_handle_t console_ep_cap;   // endpoint capability for early console/logging
     cap_handle_t uart_cmd_ep_cap;  // UART driver command endpoint
     cap_handle_t uart_evt_ep_cap;  // UART driver event endpoint
+    cap_handle_t kernel_log_send_cap; // KernelLog send endpoint
+    cap_handle_t kernel_log_recv_cap; // KernelLog recv endpoint (seeded to Core)
 } task_t;
 
 void task_init(task_t *t, cap_table_t *caps);

@@ -15,6 +15,7 @@
 #include "api/core_boot_if.h"
 #include "api/uart_proto.h"
 #include "api/intent_proto.h"
+#include "api/kernel_log_proto.h"
 
 #include "boot_info.h"
 #include "buildinfo.h"
@@ -200,6 +201,7 @@ static volatile bool g_tick_work_pending = false;
 
 static void tick_work_fn(void *arg);
 static void uart_driver_pump(void);
+extern __attribute__((weak)) void core_poll(void);
 
 /* Preallocated tick work item: never freed. */
 static work_item_t g_tick_item = { .fn = tick_work_fn, .arg = NULL, .next = NULL };
@@ -373,6 +375,7 @@ static void core_thread_entry(void *arg)
     // 2) UART driver endpoints (command + event).
     endpoint_t *uart_cmd_ep = NULL;
     endpoint_t *uart_evt_ep = NULL;
+    endpoint_t *kernel_log_ep = NULL;
     // endpoint_create creates the endpoint object; rights are applied when creating the cap.
     ks_status_t ep_st = endpoint_create(&uart_cmd_ep);
     if (ep_st != KS_STATUS_OK || uart_cmd_ep == NULL) {
@@ -381,6 +384,10 @@ static void core_thread_entry(void *arg)
     ep_st = endpoint_create(&uart_evt_ep);
     if (ep_st != KS_STATUS_OK || uart_evt_ep == NULL) {
         panic("kmain: endpoint_create(uart_evt) failed");
+    }
+    ep_st = endpoint_create(&kernel_log_ep);
+    if (ep_st != KS_STATUS_OK || kernel_log_ep == NULL) {
+        panic("kmain: endpoint_create(kernel_log) failed");
     }
 
     st = cap_create(&g_kernel_cap_table,
@@ -411,17 +418,50 @@ static void core_thread_entry(void *arg)
         panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
     }
 
+    // KernelLog endpoint: send-only for kernel, recv-only for Core.
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_ENDPOINT,
+                    (cap_rights_t)(CAP_R_SEND | CAP_R_DUP | CAP_R_DROP),
+                    kernel_log_ep,
+                    &g_kernel_task.kernel_log_send_cap);
+    if (st != CAP_OK) {
+        uart_puts("cap_create ENDPOINT failed st=");
+        uart_putu64_dec((uint64_t)st);
+        uart_puts(" free_top=");
+        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        uart_puts("\n");
+        panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
+    }
+
+    st = cap_create(&g_kernel_cap_table,
+                    CAP_TYPE_ENDPOINT,
+                    (cap_rights_t)(CAP_R_RECV | CAP_R_DROP),
+                    kernel_log_ep,
+                    &g_kernel_task.kernel_log_recv_cap);
+    if (st != CAP_OK) {
+        uart_puts("cap_create ENDPOINT failed st=");
+        uart_putu64_dec((uint64_t)st);
+        uart_puts(" free_top=");
+        uart_putu64_dec((uint64_t)g_kernel_cap_table.free_top);
+        uart_puts("\n");
+        panic("kmain: cap_create(CAP_TYPE_ENDPOINT) failed");
+    }
+
+    // Allow kernel log forwarding to target KernelLog endpoint.
+    cka_attach_kernel_log_ep(g_kernel_task.kernel_log_send_cap);
+
     // Keep console_ep_cap as an alias to UART cmd during the transition.
     g_kernel_task.console_ep_cap = g_kernel_task.uart_cmd_ep_cap;
 
     // Publish the minimal boot interface to Core (A0).
     const core_boot_if_t core_if = {
-        .version = 2,
+        .version = 3,
         .core_caps = &g_kernel_cap_table,
         .core_task = &g_kernel_task,
         .console_ep = g_kernel_task.console_ep_cap,
         .uart_cmd_ep = g_kernel_task.uart_cmd_ep_cap,
         .uart_evt_ep = g_kernel_task.uart_evt_ep_cap,
+        .kernel_log_ep = g_kernel_task.kernel_log_recv_cap,
     };
     core_boot_attach(&core_if);
 
@@ -430,6 +470,9 @@ static void core_thread_entry(void *arg)
 
     for (;;) {
         uart_driver_pump();
+        if (core_poll) {
+            core_poll();
+        }
         /* Drain all pending work items. */
         for (;;) {
             work_item_t *it = workq_dequeue(&g_deferred_workq);

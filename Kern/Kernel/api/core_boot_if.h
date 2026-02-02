@@ -25,6 +25,9 @@ typedef struct core_boot_if {
 
     /// UART driver event endpoint (RX events).
     ks_cap_handle_t uart_evt_ep;
+
+    /// Kernel log endpoint (recv-only), seeded into Core.
+    ks_cap_handle_t kernel_log_ep;
 } core_boot_if_t;
 
 /// Called by the kernel exactly once before invoking `core_main()`.

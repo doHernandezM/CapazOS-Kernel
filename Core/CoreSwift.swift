@@ -26,6 +26,7 @@ struct core_boot_if_t {
     var console_ep: UInt64
     var uart_cmd_ep: UInt64
     var uart_evt_ep: UInt64
+    var kernel_log_ep: UInt64
 }
 
 @_silgen_name("core_boot_if")
@@ -36,6 +37,9 @@ func cka_ipc_send(_ endpoint: UInt64, _ msg: UnsafeRawPointer) -> Int32
 
 @_silgen_name("cka_ipc_recv")
 func cka_ipc_recv(_ endpoint: UInt64, _ msg: UnsafeMutableRawPointer) -> Int32
+
+@_silgen_name("cka_ipc_try_recv")
+func cka_ipc_try_recv(_ endpoint: UInt64, _ msg: UnsafeMutableRawPointer) -> Int32
 
 private let KS_IPC_MSG_MAX: Int = 128
 private let KS_STATUS_OK: Int32 = 0
@@ -53,6 +57,13 @@ private let KS_INTENT_DIR_EVENT: UInt32 = 2
 
 private let CAP_R_SEND: UInt32 = 1 << 12
 private let CAP_R_RECV: UInt32 = 1 << 13
+
+private let KLOG_TAG_WRITE: UInt32 = 1
+
+private var gKernelLogEp: UInt64 = 0
+private var gUartCmdEp: UInt64 = 0
+private var gUartEvtEp: UInt64 = 0
+private var gUartReady: Bool = false
 
 private func writeU32LE(_ value: UInt32, _ out: inout [UInt8], _ offset: Int) {
     out[offset + 0] = UInt8(truncatingIfNeeded: value)
@@ -239,6 +250,10 @@ public func core_main_swift() -> Int32 {
         let cmd = base.openContract(kind: UART_CONTRACT_CMD, rights: CAP_R_SEND) ?? boot.pointee.uart_cmd_ep
         let evt = base.openContract(kind: UART_CONTRACT_EVT, rights: CAP_R_RECV) ?? boot.pointee.uart_evt_ep
         let uart = UARTClient(cmdEp: cmd, evtEp: evt)
+        gKernelLogEp = boot.pointee.kernel_log_ep
+        gUartCmdEp = cmd
+        gUartEvtEp = evt
+        gUartReady = (cmd != 0 && evt != 0)
         let msg: [UInt8] = [
             0x43, 0x6F, 0x72, 0x65, 0x20, 0x55, 0x41, 0x52, 0x54, 0x43, 0x6C, 0x69,
             0x65, 0x6E, 0x74, 0x20, 0x6F, 0x6E, 0x6C, 0x69, 0x6E, 0x65, 0x0A
@@ -246,4 +261,35 @@ public func core_main_swift() -> Int32 {
         uart.write(msg)
     }
     return 0
+}
+
+@_cdecl("core_poll")
+public func core_poll() {
+    if gKernelLogEp == 0 || !gUartReady {
+        return
+    }
+    let uart = UARTClient(cmdEp: gUartCmdEp, evtEp: gUartEvtEp)
+    let msgSize = 8 + KS_IPC_MSG_MAX
+    let buf = UnsafeMutableRawPointer.allocate(byteCount: msgSize, alignment: 8)
+    defer { buf.deallocate() }
+
+    for _ in 0..<64 {
+        let st = cka_ipc_try_recv(gKernelLogEp, buf)
+        if st != KS_STATUS_OK {
+            break
+        }
+        let tag = buf.load(as: UInt32.self)
+        let len = Int(buf.load(fromByteOffset: 4, as: UInt32.self))
+        if tag != KLOG_TAG_WRITE || len <= 0 {
+            continue
+        }
+        let count = min(len, KS_IPC_MSG_MAX)
+        var data = [UInt8](repeating: 0, count: count)
+        data.withUnsafeMutableBytes { dst in
+            if let base = dst.baseAddress {
+                base.copyMemory(from: buf.advanced(by: 8), byteCount: count)
+            }
+        }
+        uart.write(data)
+    }
 }
