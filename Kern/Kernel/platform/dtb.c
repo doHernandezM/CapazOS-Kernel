@@ -882,6 +882,110 @@ bool dtb_get_reserved_ranges(dtb_range_t out[], uint32_t *inout_count) {
     return true;
 }
 
+bool dtb_get_virtio_mmio_ranges(dtb_range_t *out, uint32_t *count)
+{
+    if (!out || !count) return false;
+    if (!g_struct || !g_strings) return false;
+
+    uint32_t cap = *count;
+    *count = 0;
+    if (cap == 0) return false;
+
+    node_ctx_t stack[64];
+    int depth = -1;
+    const uint8_t *p = g_struct;
+
+    while (true) {
+        uint32_t token = be32(p); p += 4;
+        if (token == FDT_END) break;
+
+        if (token == FDT_BEGIN_NODE) {
+            size_t nlen = 0;
+            while (p[nlen] != '\0') nlen++;
+            p += (nlen + 1);
+            p = align4(p);
+
+            depth++;
+            if (depth >= (int)(sizeof(stack) / sizeof(stack[0]))) {
+                return false;
+            }
+
+            node_ctx_t *ctx = &stack[depth];
+            uint32_t parent_addr = (depth == 0) ? 2 : stack[depth - 1].addr_cells;
+            uint32_t parent_size = (depth == 0) ? 2 : stack[depth - 1].size_cells;
+            ctx->parent_addr_cells = parent_addr;
+            ctx->parent_size_cells = parent_size;
+            ctx->addr_cells = parent_addr;
+            ctx->size_cells = parent_size;
+            ctx->is_memory = false;
+            ctx->is_uart_candidate = false;
+            continue;
+        }
+
+        if (token == FDT_END_NODE) {
+            depth--;
+            continue;
+        }
+
+        if (token == FDT_NOP) continue;
+
+        if (token == FDT_PROP) {
+            uint32_t len = be32(p); p += 4;
+            uint32_t nameoff = be32(p); p += 4;
+            const uint8_t *data = p;
+            p += len;
+            p = align4(p);
+            if (depth < 0) continue;
+
+            const char *pname = str_at(nameoff);
+            node_ctx_t *ctx = &stack[depth];
+
+            if (pname[0] == '#' && pname[1] == 'a') {
+                if (len >= 4) ctx->addr_cells = be32(data);
+                continue;
+            }
+            if (pname[0] == '#' && pname[1] == 's') {
+                if (len >= 4) ctx->size_cells = be32(data);
+                continue;
+            }
+
+            if (pname[0] == 'c' && pname[1] == 'o') {
+                const uint8_t *q = data;
+                const uint8_t *end = data + len;
+                while (q < end && *q) {
+                    const char *s = (const char *)q;
+                    const char *needle = "virtio,mmio";
+                    const char *t = s;
+                    const char *u = needle;
+                    while (*t && *u && *t == *u) { t++; u++; }
+                    if (*u == '\0') {
+                        ctx->is_uart_candidate = true;
+                        break;
+                    }
+                    while (q < end && *q) q++;
+                    while (q < end && *q == '\0') q++;
+                }
+                continue;
+            }
+
+            if (pname[0] == 'r' && pname[1] == 'e' && pname[2] == 'g') {
+                if (ctx->is_uart_candidate) {
+                    parse_reg_all(data, len,
+                                  ctx->parent_addr_cells, ctx->parent_size_cells,
+                                  out, count, cap);
+                    if (*count >= cap) return true;
+                }
+                continue;
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    return *count > 0;
+}
+
 uint32_t dtb_get_totalsize(void) {
     ensure_parsed();
     return g_fdt_totalsize;

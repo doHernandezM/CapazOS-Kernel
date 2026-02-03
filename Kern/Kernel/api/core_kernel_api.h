@@ -65,6 +65,17 @@ typedef struct ks_build_info {
 
 ks_status_t cka_get_build_info(ks_build_info_t *out_info);
 
+// ---- Block device ----
+
+typedef struct ks_block_info {
+    uint32_t sector_size;
+    uint32_t _pad0;
+    uint64_t capacity_sectors;
+} ks_block_info_t;
+
+ks_status_t cka_block_get_info(ks_block_info_t *out_info);
+ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len);
+
 // ---- Scheduling ----
 
 void cka_yield(void);

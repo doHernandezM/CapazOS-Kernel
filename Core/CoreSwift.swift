@@ -57,6 +57,18 @@ struct KsBuildInfo {
 @_silgen_name("cka_get_build_info")
 func cka_get_build_info(_ outInfo: UnsafeMutablePointer<KsBuildInfo>) -> Int32
 
+struct KsBlockInfo {
+    var sector_size: UInt32
+    var _pad0: UInt32
+    var capacity_sectors: UInt64
+}
+
+@_silgen_name("cka_block_get_info")
+func cka_block_get_info(_ outInfo: UnsafeMutablePointer<KsBlockInfo>) -> Int32
+
+@_silgen_name("cka_block_read")
+func cka_block_read(_ lba: UInt64, _ count: UInt32, _ buf: UnsafeMutableRawPointer, _ bufLen: Int) -> Int32
+
 private let KS_IPC_MSG_MAX: Int = 128
 private let KS_STATUS_OK: Int32 = 0
 
@@ -81,6 +93,7 @@ private var gUartCmdEp: UInt64 = 0
 private var gUartEvtEp: UInt64 = 0
 private var gUartReady: Bool = false
 private var gConsole: ConsoleService? = nil
+private var gBlockDevice: BlockDevice? = nil
 
 private let CAP_R_CONSOLE_WRITE: UInt32 = 1 << 24
 private let CAP_R_CONSOLE_READ: UInt32 = 1 << 25
@@ -248,12 +261,19 @@ struct ConsoleService {
             writeUserOutput("\r\n")
             writeUserOutput("help - show help\r\n")
             writeUserOutput("clear - clear screen\r\n")
+            writeUserOutput("ls - list root directory\r\n")
             return
         }
         
         if bytesEqual(line, "clear") {
             uart.write(ansiClearScreen)
             uart.write(ansiHome)
+            return
+        }
+
+        if bytesEqual(line, "ls") {
+            writeUserOutput("\r\n")
+            listFat16RootDirectory()
             return
         }
         
@@ -283,6 +303,13 @@ private func readU32LE(_ data: [UInt8], _ offset: Int) -> UInt32 {
         | (UInt32(data[offset + 3]) << 24)
 }
 
+private func readU16LE(_ data: [UInt8], _ offset: Int) -> UInt16 {
+    if data.count < offset + 2 {
+        return 0
+    }
+    return UInt16(data[offset + 0]) | (UInt16(data[offset + 1]) << 8)
+}
+
 private func readU64LE(_ data: [UInt8], _ offset: Int) -> UInt64 {
     if data.count < offset + 8 {
         return 0
@@ -292,6 +319,127 @@ private func readU64LE(_ data: [UInt8], _ offset: Int) -> UInt64 {
         value |= UInt64(data[offset + i]) << (UInt64(i) * 8)
     }
     return value
+}
+
+private struct BlockDevice {
+    let sectorSize: UInt32
+    let capacitySectors: UInt64
+
+    func read(lba: UInt64, count: UInt32) -> [UInt8]? {
+        if count == 0 {
+            return []
+        }
+        let byteCount = Int(count) * Int(sectorSize)
+        var buf = [UInt8](repeating: 0, count: byteCount)
+        let st = buf.withUnsafeMutableBytes { raw -> Int32 in
+            guard let base = raw.baseAddress else { return KS_STATUS_INVALID_ARG }
+            return cka_block_read(lba, count, base, byteCount)
+        }
+        if st != KS_STATUS_OK {
+            return nil
+        }
+        return buf
+    }
+}
+
+private struct Fat16Volume {
+    let bytesPerSector: UInt16
+    let sectorsPerCluster: UInt8
+    let reservedSectors: UInt16
+    let numFATs: UInt8
+    let rootEntryCount: UInt16
+    let sectorsPerFAT: UInt16
+    let totalSectors: UInt32
+    let rootDirStartLBA: UInt32
+    let rootDirSectors: UInt32
+}
+
+private func parseFat16BootSector(_ data: [UInt8]) -> Fat16Volume? {
+    if data.count < 64 { return nil }
+    let bytesPerSector = readU16LE(data, 11)
+    let sectorsPerCluster = data[13]
+    let reservedSectors = readU16LE(data, 14)
+    let numFATs = data[16]
+    let rootEntryCount = readU16LE(data, 17)
+    let totalSectors16 = readU16LE(data, 19)
+    let sectorsPerFAT = readU16LE(data, 22)
+    let totalSectors32 = readU32LE(data, 32)
+
+    let totalSectors = totalSectors16 != 0 ? UInt32(totalSectors16) : totalSectors32
+    if bytesPerSector == 0 || sectorsPerFAT == 0 || totalSectors == 0 {
+        return nil
+    }
+
+    let rootDirSectors = UInt32((UInt32(rootEntryCount) * 32 + UInt32(bytesPerSector) - 1) / UInt32(bytesPerSector))
+    let rootDirStartLBA = UInt32(reservedSectors) + UInt32(numFATs) * UInt32(sectorsPerFAT)
+
+    return Fat16Volume(bytesPerSector: bytesPerSector,
+                       sectorsPerCluster: sectorsPerCluster,
+                       reservedSectors: reservedSectors,
+                       numFATs: numFATs,
+                       rootEntryCount: rootEntryCount,
+                       sectorsPerFAT: sectorsPerFAT,
+                       totalSectors: totalSectors,
+                       rootDirStartLBA: rootDirStartLBA,
+                       rootDirSectors: rootDirSectors)
+}
+
+private func listFat16RootDirectory() {
+    guard let block = gBlockDevice else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
+        return
+    }
+    guard let boot = block.read(lba: 0, count: 1) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read boot sector\r\n")))
+        return
+    }
+    guard let vol = parseFat16BootSector(boot) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT16 volume\r\n")))
+        return
+    }
+    if vol.rootDirSectors == 0 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty root directory\r\n")))
+        return
+    }
+    var rootData: [UInt8] = []
+    for i in 0..<vol.rootDirSectors {
+        if let part = block.read(lba: UInt64(vol.rootDirStartLBA + i), count: 1) {
+            rootData.append(contentsOf: part)
+        } else {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read root directory\r\n")))
+            return
+        }
+    }
+    let entryCount = rootData.count / 32
+    gConsole?.writeUserOutput(Array(staticStringBytes("FAT16 root:\r\n")))
+    func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
+        var start = 0
+        var end = bytes.count
+        while start < end && bytes[start] == 0x20 { start += 1 }
+        while end > start && bytes[end - 1] == 0x20 { end -= 1 }
+        if start >= end { return [] }
+        return Array(bytes[start..<end])
+    }
+    for i in 0..<entryCount {
+        let off = i * 32
+        let first = rootData[off]
+        if first == 0x00 { break }
+        if first == 0xE5 { continue }
+        let attr = rootData[off + 11]
+        if attr == 0x0F { continue }
+        let nameBytes = trimSpaces(Array(rootData[off..<(off + 8)]))
+        let extBytes = trimSpaces(Array(rootData[(off + 8)..<(off + 11)]))
+        if nameBytes.isEmpty { continue }
+        var line: [UInt8] = [0x20, 0x20]
+        line.append(contentsOf: nameBytes)
+        if !extBytes.isEmpty {
+            line.append(0x2E)
+            line.append(contentsOf: extBytes)
+        }
+        line.append(0x0D)
+        line.append(0x0A)
+        gConsole?.writeUserOutput(line)
+    }
 }
 
 struct IntentDesc {
@@ -459,11 +607,13 @@ public func core_main_swift() -> Int32 {
         gUartEvtEp = evt
         gUartReady = (cmd != 0 && evt != 0)
         gConsole = ConsoleService(uart: uart)
-        let msg: [UInt8] = [
-            0x43, 0x6F, 0x72, 0x65, 0x20, 0x55, 0x41, 0x52, 0x54, 0x43, 0x6C, 0x69,
-            0x65, 0x6E, 0x74, 0x20, 0x6F, 0x6E, 0x6C, 0x69, 0x6E, 0x65, 0x0A
-        ]
-        uart.write(msg)
+        var blkInfo = KsBlockInfo(sector_size: 0, _pad0: 0, capacity_sectors: 0)
+        if cka_block_get_info(&blkInfo) == KS_STATUS_OK && blkInfo.sector_size != 0 {
+            gBlockDevice = BlockDevice(sectorSize: blkInfo.sector_size,
+                                       capacitySectors: blkInfo.capacity_sectors)
+        }
+        
+        gConsole?.writeUserOutput(Array(staticStringBytes("Core is online.\n")))
         gConsole?.redrawPrompt()
     }
     return 0

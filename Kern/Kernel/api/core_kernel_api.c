@@ -8,6 +8,7 @@
 #include "api/kernel_log_proto.h"
 #include "platform/dtb.h"
 #include "buildinfo.h"
+#include "dev/virtio_blk.h"
 
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
@@ -84,6 +85,46 @@ ks_status_t cka_get_build_info(ks_build_info_t *out_info)
     out_info->build_date = CAPAZ_BUILD_DATE;
     out_info->build_version = CAPAZ_BUILD_VERSION;
     out_info->build_environment = CAPAZ_BUILD_ENVIRONMENT;
+    return KS_STATUS_OK;
+}
+
+ks_status_t cka_block_get_info(ks_block_info_t *out_info)
+{
+    if (!out_info) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (!virtio_blk_ready()) {
+        return KS_STATUS_NOT_SUPPORTED;
+    }
+    out_info->sector_size = virtio_blk_sector_size();
+    out_info->capacity_sectors = virtio_blk_capacity_sectors();
+    return KS_STATUS_OK;
+}
+
+ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len)
+{
+    if (!buf || count == 0) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (!virtio_blk_ready()) {
+        return KS_STATUS_NOT_SUPPORTED;
+    }
+    uint64_t need = (uint64_t)count * (uint64_t)virtio_blk_sector_size();
+    if ((uint64_t)buf_len < need) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    uint64_t pages = (need + 0xFFFULL) / 0x1000ULL;
+    uint64_t tmp_pa = 0;
+    void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
+    if (!tmp) {
+        return KS_STATUS_OUT_OF_MEMORY;
+    }
+    if (!virtio_blk_read(lba, count, tmp, (size_t)need)) {
+        kheap_free_pages(tmp, (uint32_t)pages);
+        return KS_STATUS_INTERNAL;
+    }
+    memcpy(buf, tmp, (size_t)need);
+    kheap_free_pages(tmp, (uint32_t)pages);
     return KS_STATUS_OK;
 }
 

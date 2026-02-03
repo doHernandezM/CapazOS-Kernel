@@ -33,6 +33,7 @@
 #include "sched.h"
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
 #include "panic.h"   // panic()
+#include "dev/virtio_blk.h"
 
 // Core entrypoints are declared in Core (core_main and Swift).  We no longer
 // expose kernel service tables.  The kernel no longer provides
@@ -572,6 +573,9 @@ void kmain(const boot_info_t *boot_info)
     /* Initialize bitmap PMM using TTBR1 high-half direct map. */
     pmm_init(boot_info);
 
+    /* Initialize kernel heap before any dynamic allocations. */
+    kheap_init();
+
 #if KMAIN_DEBUG
     /* Quick sanity test: allocate/free cycles and print free/total. */
     pmm_quick_alloc_test();
@@ -594,6 +598,9 @@ void kmain(const boot_info_t *boot_info)
 
     sched_init_bootstrap();
     // Cap-space is initialized and seeded in core/main thread entry (before core_main).
+
+    /* Initialize virtio block device (read-only bring-up). */
+    (void)virtio_blk_init();
 
     /* Bring up interrupts + timer tick after core init. */
     irq_global_disable();
