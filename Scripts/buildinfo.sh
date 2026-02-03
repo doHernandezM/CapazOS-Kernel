@@ -169,11 +169,13 @@ emit_buildinfo_files( ) {
   # CAPAZ_MACHINE working without requiring call-site changes.
   [[ -n "${build_number-}" || -z "${kernel_build_number-}" ]] || build_number="${kernel_build_number}"
   [[ -n "${machine-}" || -z "${kernel_machine-}" ]] || machine="${kernel_machine}"
+  [[ -n "${kernel_build_number-}" || -z "${build_number-}" ]] || kernel_build_number="${build_number}"
 
   # Default values for newly introduced fields.  If unset after reading the
   # ini, initialize them so the preprocessor macros always expand.
   : "${build_version:=0.0.0}"
   : "${build_environment:=macOS Xcode}"
+  : "${core_version:=0.0.0}"
 
   # Validate mandatory fields.  Use the remapped variables for build_number and
   # machine so missing kernel_build_number/kernel_machine is handled.
@@ -193,6 +195,7 @@ emit_buildinfo_files( ) {
 //       kmain.c includes "build_info.h" and expects CAPAZ_* macros below.
 
 #define CAPAZ_BUILD_NUMBER ${build_number}
+#define CAPAZ_KERNEL_BUILD_NUMBER ${kernel_build_number}
 #define CAPAZ_BUILD_DATE "${build_date}"
 
 #define CAPAZ_MACHINE "${machine}"
@@ -203,6 +206,8 @@ emit_buildinfo_files( ) {
 // Extended buildinfo macros
 #define CAPAZ_BUILD_VERSION "${build_version}"
 #define CAPAZ_BUILD_ENVIRONMENT "${build_environment}"
+#define CAPAZ_CORE_NAME "${core_name}"
+#define CAPAZ_CORE_VERSION "${core_version}"
 EOF
 
   # kmain.c uses build_info.h (underscore). Keep it as a thin wrapper so
@@ -220,6 +225,7 @@ EOF
 #include "buildinfo.h"
 
 __attribute__((used)) const unsigned long capaz_build_number = CAPAZ_BUILD_NUMBER;
+__attribute__((used)) const unsigned long capaz_kernel_build_number = CAPAZ_KERNEL_BUILD_NUMBER;
 __attribute__((used)) const char capaz_build_date[] = CAPAZ_BUILD_DATE;
 __attribute__((used)) const char capaz_machine[] = CAPAZ_MACHINE;
 __attribute__((used)) const char capaz_kernel_version[] = CAPAZ_KERNEL_VERSION;
@@ -228,5 +234,7 @@ __attribute__((used)) const char capaz_build_version[] = CAPAZ_BUILD_VERSION;
 
 // Extended buildinfo symbols.
 __attribute__((used)) const char capaz_build_environment[] = CAPAZ_BUILD_ENVIRONMENT;
+__attribute__((used)) const char capaz_core_name[] = CAPAZ_CORE_NAME;
+__attribute__((used)) const char capaz_core_version[] = CAPAZ_CORE_VERSION;
 EOF
 }

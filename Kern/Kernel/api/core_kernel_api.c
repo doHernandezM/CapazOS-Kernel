@@ -81,10 +81,15 @@ ks_status_t cka_get_build_info(ks_build_info_t *out_info)
     if (!out_info) {
         return KS_STATUS_INVALID_ARG;
     }
-    out_info->build_number = (uint64_t)CAPAZ_BUILD_NUMBER;
+    out_info->kernel_build_number = (uint64_t)CAPAZ_KERNEL_BUILD_NUMBER;
     out_info->build_date = CAPAZ_BUILD_DATE;
     out_info->build_version = CAPAZ_BUILD_VERSION;
     out_info->build_environment = CAPAZ_BUILD_ENVIRONMENT;
+    out_info->kernel_version = CAPAZ_KERNEL_VERSION;
+    out_info->kernel_platform = CAPAZ_KERNEL_PLATFORM;
+    out_info->kernel_machine = CAPAZ_MACHINE;
+    out_info->core_name = CAPAZ_CORE_NAME;
+    out_info->core_version = CAPAZ_CORE_VERSION;
     return KS_STATUS_OK;
 }
 
@@ -103,6 +108,11 @@ ks_status_t cka_block_get_info(ks_block_info_t *out_info)
 
 ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len)
 {
+    return cka_block_read_intent(lba, count, buf, buf_len, KS_IO_INTENT_LATENCY);
+}
+
+ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_t buf_len, uint32_t intent)
+{
     if (!buf || count == 0) {
         return KS_STATUS_INVALID_ARG;
     }
@@ -113,18 +123,48 @@ ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_l
     if ((uint64_t)buf_len < need) {
         return KS_STATUS_INVALID_ARG;
     }
-    uint64_t pages = (need + 0xFFFULL) / 0x1000ULL;
-    uint64_t tmp_pa = 0;
-    void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
-    if (!tmp) {
-        return KS_STATUS_OUT_OF_MEMORY;
+
+    uint32_t max_chunk = count;
+    if (intent == KS_IO_INTENT_THROUGHPUT) {
+        max_chunk = 8;
+    } else if (intent == KS_IO_INTENT_BACKGROUND) {
+        max_chunk = 1;
     }
-    if (!virtio_blk_read(lba, count, tmp, (size_t)need)) {
+
+    uint32_t remaining = count;
+    uint32_t offset_sectors = 0;
+    uint8_t *dst = (uint8_t *)buf;
+    uint32_t sector_size = virtio_blk_sector_size();
+
+    while (remaining > 0) {
+        uint32_t chunk = remaining;
+        if (chunk > max_chunk) {
+            chunk = max_chunk;
+        }
+        uint64_t chunk_bytes = (uint64_t)chunk * (uint64_t)sector_size;
+        uint64_t pages = (chunk_bytes + 0xFFFULL) / 0x1000ULL;
+        uint64_t tmp_pa = 0;
+        void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
+        if (!tmp) {
+            return KS_STATUS_OUT_OF_MEMORY;
+        }
+        if (!virtio_blk_read(lba + offset_sectors, chunk, tmp, (size_t)chunk_bytes)) {
+            kheap_free_pages(tmp, (uint32_t)pages);
+            return KS_STATUS_INTERNAL;
+        }
+        memcpy(dst + ((uint64_t)offset_sectors * (uint64_t)sector_size), tmp, (size_t)chunk_bytes);
         kheap_free_pages(tmp, (uint32_t)pages);
-        return KS_STATUS_INTERNAL;
+
+        remaining -= chunk;
+        offset_sectors += chunk;
+
+        if (intent == KS_IO_INTENT_BACKGROUND) {
+            /* Throttle background reads. */
+            for (uint32_t i = 0; i < 2000; i++) {
+                yield();
+            }
+        }
     }
-    memcpy(buf, tmp, (size_t)need);
-    kheap_free_pages(tmp, (uint32_t)pages);
     return KS_STATUS_OK;
 }
 

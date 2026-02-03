@@ -62,7 +62,7 @@ These are the core “Apple Silicon OS” ideas that remain **design-only** at t
 - **Unified memory locality management** across compute blocks (beyond basic kernel mapping)
 - **Energy contracts / deterministic power budgeting** and OS-enforced power allocation
 - **Hardware-rooted identity and sealing** (Secure Enclave, pointer auth, secure boot chains, attestation)
-  - QEMU `virt` does not model SEP/AMX/ANE/ISP/media engines; those integrations will be Apple-Silicon-specific
+- QEMU `virt` does not model SEP/AMX/ANE/ISP/media engines; those integrations will be Apple-Silicon-specific
 - **Sandboxed user space** with a real process model, user/kernel isolation policy, and mandatory capability boundaries
 - **Driver model redesign** (user-space drivers, device virtualization, strong contracts)
 - **POSIX compatibility layer** (not started)
@@ -134,12 +134,16 @@ After building, from the repository root:
 
 ```bash
 qemu-system-aarch64 \
-  -machine virt \
-  -cpu cortex-a53 \
-  -m 128M \
-  -nographic \
-  -serial mon:stdio \
-  -kernel build/Kernel.img
+-machine virt,gic-version=2 \
+-cpu cortex-a53 -smp 2 \
+-m 128M \
+-nographic \
+-serial stdio \
+-monitor none \
+-kernel build/Kernel.img \
+-drive if=none,file=/Users/cosas/CapazOS/disk_fat16.img,format=raw,id=hd0 \
+-device virtio-blk-device,drive=hd0 \
+-device virtio-rng-device
 ```
 
 Expected behavior today is a bring-up oriented boot log (UART/PL011) with early MMU init, PMM init, IRQ/timer baseline, and a Core console prompt.

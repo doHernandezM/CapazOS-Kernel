@@ -57,10 +57,15 @@ void *cka_memset(void *dst, int c, size_t n);
 // ---- Build Info ----
 
 typedef struct ks_build_info {
-    uint64_t build_number;
+    uint64_t kernel_build_number;
     const char *build_date;
     const char *build_version;
     const char *build_environment;
+    const char *kernel_version;
+    const char *kernel_platform;
+    const char *kernel_machine;
+    const char *core_name;
+    const char *core_version;
 } ks_build_info_t;
 
 ks_status_t cka_get_build_info(ks_build_info_t *out_info);
@@ -73,8 +78,15 @@ typedef struct ks_block_info {
     uint64_t capacity_sectors;
 } ks_block_info_t;
 
+typedef enum ks_io_intent {
+    KS_IO_INTENT_LATENCY = 1,
+    KS_IO_INTENT_THROUGHPUT = 2,
+    KS_IO_INTENT_BACKGROUND = 3,
+} ks_io_intent_t;
+
 ks_status_t cka_block_get_info(ks_block_info_t *out_info);
 ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len);
+ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_t buf_len, uint32_t intent);
 
 // ---- Scheduling ----
 

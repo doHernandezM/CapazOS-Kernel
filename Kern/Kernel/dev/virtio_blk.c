@@ -153,16 +153,16 @@ static bool virtio_blk_probe(uint64_t base)
     uint32_t version = mmio_read(mmio, VIRTIO_MMIO_VERSION);
     uint32_t devid = mmio_read(mmio, VIRTIO_MMIO_DEVICE_ID);
 
-    uart_write("virtio: probe base=", sizeof("virtio: probe base=") - 1);
-    uart_puthex64(base);
-    uart_write("\n", 1);
-    uart_write("virtio: magic=", sizeof("virtio: magic=") - 1);
-    uart_puthex64(magic);
-    uart_write(" version=", sizeof(" version=") - 1);
-    uart_putu64_dec((uint64_t)version);
-    uart_write(" dev=", sizeof(" dev=") - 1);
-    uart_putu64_dec((uint64_t)devid);
-    uart_write("\n", 1);
+//    uart_write("virtio: probe base=", sizeof("virtio: probe base=") - 1);
+//    uart_puthex64(base);
+//    uart_write("\n", 1);
+//    uart_write("virtio: magic=", sizeof("virtio: magic=") - 1);
+//    uart_puthex64(magic);
+//    uart_write(" version=", sizeof(" version=") - 1);
+//    uart_putu64_dec((uint64_t)version);
+//    uart_write(" dev=", sizeof(" dev=") - 1);
+//    uart_putu64_dec((uint64_t)devid);
+//    uart_write("\n", 1);
 
     if (magic != VIRTIO_MMIO_MAGIC) {
         return false;
@@ -292,8 +292,8 @@ bool virtio_blk_init(void)
     dtb_range_t ranges[64];
     uint32_t count = (uint32_t)(sizeof(ranges) / sizeof(ranges[0]));
     if (!dtb_get_virtio_mmio_ranges(ranges, &count) || count == 0) {
-        uart_write("virtio: no mmio ranges; using fallback\n",
-                   sizeof("virtio: no mmio ranges; using fallback\n") - 1);
+//        uart_write("virtio: no mmio ranges; using fallback\n",
+//                   sizeof("virtio: no mmio ranges; using fallback\n") - 1);
         const uint64_t base0 = 0x0A000000ULL;
         const uint64_t step = 0x200ULL;
         const uint32_t max = 32;
@@ -305,18 +305,18 @@ bool virtio_blk_init(void)
         }
     }
 
-    uart_write("virtio: mmio ranges=", sizeof("virtio: mmio ranges=") - 1);
-    uart_putu64_dec((uint64_t)count);
-    uart_write("\n", 1);
+//    uart_write("virtio: mmio ranges=", sizeof("virtio: mmio ranges=") - 1);
+//    uart_putu64_dec((uint64_t)count);
+//    uart_write("\n", 1);
 
     for (uint32_t i = 0; i < count; i++) {
         if (virtio_blk_probe(ranges[i].base)) {
-            uart_write("virtio: blk ready\n", sizeof("virtio: blk ready\n") - 1);
+//            uart_write("virtio: blk ready\n", sizeof("virtio: blk ready\n") - 1);
             return true;
         }
     }
 
-    uart_write("virtio: blk not found\n", sizeof("virtio: blk not found\n") - 1);
+//    uart_write("virtio: blk not found\n", sizeof("virtio: blk not found\n") - 1);
     return false;
 }
 

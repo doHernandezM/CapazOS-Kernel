@@ -510,15 +510,7 @@ void kmain(const boot_info_t *boot_info)
     /* Ensure we have a working UART even before DTB parsing. */
     uart_init(0);
 
-    klog_puts("Kernel: ");
-    klog_puts(CAPAZ_KERNEL_VERSION);
-    klog_putnl();
-
-    klog_puts("Machine: ");
-    klog_puts(CAPAZ_MACHINE);
-    klog_putnl();
-
-
+    
     
 #if KMAIN_DEBUG
     if (boot_info) {
@@ -622,6 +614,14 @@ void kmain(const boot_info_t *boot_info)
      */
     timer_init_hz(CONFIG_TICK_HZ);
 
+    klog_puts("Kernel: ");
+    klog_puts(CAPAZ_KERNEL_PLATFORM);
+    klog_puts(" - ");
+    klog_puts(CAPAZ_MACHINE);
+    klog_puts(" ");
+    klog_puts(CAPAZ_KERNEL_VERSION);
+    klog_putnl();
+
     /* Create and enqueue a dedicated Core thread. */
     thread_t *core_thr = thread_create_named("core/main", core_thread_entry, NULL);
     if (!core_thr) {
@@ -635,10 +635,6 @@ void kmain(const boot_info_t *boot_info)
 
     irq_global_enable();
 
-    klog_puts("Build: ");
-    klog_putu64_dec(CAPAZ_BUILD_NUMBER);
-    klog_puts("  ");
-    klog_puts(CAPAZ_BUILD_DATE);
     klog_putnl();
     
     /* Enter the cooperative scheduler. */

@@ -89,6 +89,11 @@ KERNEL_IMG="${BUILD_DIR}/kernel.img"
 KERNEL_ZIP_NAME="Kernel.${BUILD_NUMBER}.zip"
 KERNEL_ZIP="${ARCHIVE_DIR}/${KERNEL_ZIP_NAME}"
 
+cleanup_on_error() {
+    rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}" "${SRC_ZIP_CODE_OS}" "${KERNEL_ZIP}"
+}
+trap cleanup_on_error ERR
+
 # Move previous build's source zip to Trash (from archive/, Code/, and Code/OS/)
 # If Trash doesn't exist (non-mac), delete instead.
 trash_file() {
@@ -96,7 +101,10 @@ trash_file() {
     [ -e "$f" ] || return 0
     if [ -d "${HOME}/.Trash" ]; then
         log "Move to Trash: $f"
-        mv -f "$f" "${HOME}/.Trash/"
+        if ! mv -f "$f" "${HOME}/.Trash/"; then
+            log "Trash move failed; removing: $f"
+            rm -f "$f"
+        fi
     else
         log "Remove old archive: $f"
         rm -f "$f"
@@ -133,10 +141,6 @@ rm -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}" "${SRC_ZIP_CODE_OS}"
     zip -qry "${SRC_ZIP_ARCHIVE}" "OS"
 )
 
-# copy the same zip into Code/ and Code/OS/
-cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
-cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE_OS}"
-
 # C) Zip kernel.img on its own into archive/
 if [ ! -f "${KERNEL_IMG}" ]; then
     log "WARNING: missing ${KERNEL_IMG}; skipping kernel zip"
@@ -146,5 +150,9 @@ else
     # -j to avoid storing full path; zip contains just kernel.img
     zip -jqry "${KERNEL_ZIP}" "${KERNEL_IMG}"
 fi
+
+# copy the same zip into Code/ and Code/OS/ after all archive steps succeed
+cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE}"
+cp -f "${SRC_ZIP_ARCHIVE}" "${SRC_ZIP_CODE_OS}"
 
 log "Archive complete."

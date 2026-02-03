@@ -59,8 +59,7 @@ _start:
     isb
 
     /* 4) Banner (pre-MMU; works without MMIO mappings) */
-    adrp    x1, boot_banner
-    add     x1, x1, :lo12:boot_banner
+// (boot banner removed)
 2:
     ldrb    w2, [x1], #1
     cbz     w2, 3f
@@ -254,16 +253,8 @@ uart_send:
 
 /* ------------------------------------------------------------------ */
 /* Data */
-    .section .rodata.boot, "a"
-boot_banner:
-    .ascii "Boot: "
-    .ascii CAPAZ_BUILD_VERSION
-    .ascii "\n"
-    .ascii "Platform: "
-    .ascii CAPAZ_KERNEL_PLATFORM
-    .ascii "\n\n"
-    .byte 0
-
+;    .section .rodata.boot, "a"
+// (boot banner data removed)
 
 
     .section .data.boot, "aw"

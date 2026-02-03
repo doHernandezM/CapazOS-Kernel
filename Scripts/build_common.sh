@@ -471,6 +471,7 @@ EOF
 #define CAPAZ_BUILD_DATE ""
 #define CAPAZ_BUILD_VERSION "0.0.0"
 #define CAPAZ_BUILD_ENVIRONMENT "macOS Xcode"
+#define CAPAZ_CORE_NAME "Capaz"
 
 // Default build numbers
 #define CAPAZ_BUILD_NUMBER 0
