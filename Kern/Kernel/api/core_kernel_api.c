@@ -6,6 +6,7 @@
 #include "sched/sched.h"
 #include "serial/uart.h"
 #include "api/kernel_log_proto.h"
+#include "platform/dtb.h"
 
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
@@ -225,4 +226,13 @@ ks_status_t cka_ipc_try_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg)
         return KS_STATUS_INVALID_ARG;
     }
     return ks_from_ipc_status(ipc_try_recv_cap(g_core_caps, (cap_handle_t)endpoint_cap, msg));
+}
+
+ks_status_t cka_dtb_dump_devices(void)
+{
+    if (dtb_get_totalsize() == 0) {
+        return KS_STATUS_NOT_SUPPORTED;
+    }
+    dtb_dump_devices();
+    return KS_STATUS_OK;
 }

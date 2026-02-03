@@ -44,6 +44,9 @@ func cka_ipc_try_recv(_ endpoint: UInt64, _ msg: UnsafeMutableRawPointer) -> Int
 @_silgen_name("core_dbg_uart_write")
 func core_dbg_uart_write(_ buf: UnsafePointer<UInt8>?, _ len: Int) -> Void
 
+@_silgen_name("cka_dtb_dump_devices")
+func cka_dtb_dump_devices() -> Int32
+
 private let KS_IPC_MSG_MAX: Int = 128
 private let KS_STATUS_OK: Int32 = 0
 
@@ -226,6 +229,12 @@ struct ConsoleService {
         if line == [0x63, 0x6C, 0x65, 0x61, 0x72] { // "clear"
             uart.write(ansiClearScreen)
             uart.write(ansiHome)
+            return
+        }
+        if line == [0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x73] { // "devices"
+            writeUserOutput([0x0D, 0x0A])
+            writeUserOutput([0x5B, 0x64, 0x65, 0x76, 0x5D, 0x20, 0x6C, 0x69, 0x73, 0x74, 0x69, 0x6E, 0x67, 0x20, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x73, 0x2E, 0x2E, 0x2E, 0x0D, 0x0A])
+            _ = cka_dtb_dump_devices()
             return
         }
     }

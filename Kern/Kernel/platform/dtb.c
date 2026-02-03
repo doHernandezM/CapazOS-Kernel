@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "uart_pl011.h"
+#include "serial/uart.h"
 #include "debug/klog.h"
 
 /*
@@ -44,6 +45,8 @@ static uint32_t g_fdt_totalsize;
 static const uint8_t *g_struct;
 static const uint8_t *g_strings;
 static const uint8_t *g_rsvmap;
+static uint32_t g_struct_size;
+static uint32_t g_strings_size;
 
 /* Parsed results (bounded; no allocator yet). */
 /* DTB_MAX_MEMORY_RANGES / DTB_MAX_RESERVED_RANGES are defined in dtb.h */
@@ -73,8 +76,9 @@ static inline const char *str_at(uint32_t off) {
 }
 
 static inline const uint8_t *align4(const uint8_t *p) {
-    uintptr_t x = (uintptr_t)p;
-    return (const uint8_t *)((x + 3u) & ~3u);
+    uint64_t x = (uint64_t)(void *)p;
+    x = (x + 3u) & ~3ull;
+    return (const uint8_t *)(void *)x;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -426,12 +430,19 @@ bool dtb_init(const void *fdt, uint64_t fdt_size) {
     uint32_t off_struct  = be32(&h->off_dt_struct);
     uint32_t off_strings = be32(&h->off_dt_strings);
     uint32_t off_rsvmap  = be32(&h->off_mem_rsvmap);
+    uint32_t size_struct = be32(&h->size_dt_struct);
+    uint32_t size_strings = be32(&h->size_dt_strings);
 
     if (off_struct >= totalsize || off_strings >= totalsize || off_rsvmap >= totalsize) return false;
+    if (size_struct == 0 || size_strings == 0) return false;
+    if (off_struct + size_struct > totalsize) return false;
+    if (off_strings + size_strings > totalsize) return false;
 
     g_struct  = g_fdt + off_struct;
     g_strings = g_fdt + off_strings;
     g_rsvmap  = g_fdt + off_rsvmap;
+    g_struct_size = size_struct;
+    g_strings_size = size_strings;
 
     /* Build structured results up front (bounded, no allocator yet). */
     g_mem_count = 0;
@@ -1096,6 +1107,145 @@ void dtb_dump_summary(void) {
             } else {
                 klog_puts("DTB: pl011 uart not found\n");
             }
+        }
+    }
+}
+
+static void build_path(char *out, uint32_t cap, const char *names[], int depth)
+{
+    if (!out || cap == 0) return;
+    uint32_t w = 0;
+    out[w++] = '/';
+    for (int i = 1; i <= depth; i++) {
+        const char *name = names[i];
+        if (!name || name[0] == '\0') continue;
+        for (uint32_t j = 0; name[j] != '\0' && w + 1 < cap; j++) {
+            out[w++] = name[j];
+        }
+        if (i != depth && w + 1 < cap) {
+            out[w++] = '/';
+        }
+    }
+    out[w] = '\0';
+}
+
+static size_t strnlen0(const char *s, size_t max)
+{
+    if (!s) return 0;
+    size_t i = 0;
+    while (i < max && s[i] != '\0') {
+        i++;
+    }
+    return i;
+}
+
+void dtb_dump_devices(void)
+{
+    if (!g_struct || !g_strings) {
+        klog_puts("DTB: devices: <no dtb>\n");
+        return;
+    }
+
+    uart_write("DTB: nodes:\n", sizeof("DTB: nodes:\n") - 1);
+
+    int depth = -1;
+    const uint8_t *p = g_struct;
+    const uint8_t *end = g_struct + g_struct_size;
+    uint32_t token_count = 0;
+    const uint8_t *last_p = NULL;
+    for (;;) {
+        if (token_count++ > 200000u) {
+            uart_write("\nDTB: nodes: <token limit>\n",
+                       sizeof("\nDTB: nodes: <token limit>\n") - 1);
+            return;
+        }
+        if ((token_count % 4096u) == 0) {
+            uart_write(".", 1);
+        }
+        if (last_p && p <= last_p) {
+            uart_write("\nDTB: nodes: <no progress>\n",
+                       sizeof("\nDTB: nodes: <no progress>\n") - 1);
+            return;
+        }
+        last_p = p;
+        if (p >= end) {
+            break;
+        }
+        if (p + 4 > end) {
+            uart_write("DTB: nodes: <truncated>\n",
+                       sizeof("DTB: nodes: <truncated>\n") - 1);
+            return;
+        }
+        uint32_t token = be32(p); p += 4;
+
+        if (token == FDT_BEGIN_NODE) {
+            if (p >= end) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+            const char *name = (const char *)p;
+            size_t full_len = 0;
+            while (p + full_len < end && p[full_len] != '\0') {
+                full_len++;
+            }
+            if (p + full_len >= end) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+            p += full_len + 1; p = align4(p);
+            if (p > end) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+
+            depth++;
+            uart_write("DTB: node ", sizeof("DTB: node ") - 1);
+            if (full_len == 0) {
+                uart_write("/", 1);
+            } else {
+                size_t print_len = full_len > 64 ? 64 : full_len;
+                uart_write(name, print_len);
+                if (full_len > 64) {
+                    uart_write("...", 3);
+                }
+            }
+            uart_write(" depth=", sizeof(" depth=") - 1);
+            uart_putu64_dec((uint64_t)depth);
+            uart_write("\n", 1);
+            continue;
+        }
+
+        if (token == FDT_END_NODE) {
+            depth--;
+            continue;
+        }
+
+        if (token == FDT_NOP) continue;
+        if (token == FDT_END) break;
+
+        if (token == FDT_PROP) {
+            if (p + 8 > end) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+            uint32_t len = be32(p); p += 4;
+            p += 4; // nameoff
+            if (len > (uint32_t)(end - p)) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+            p += len; p = align4(p);
+            if (p > end) {
+                uart_write("DTB: nodes: <truncated>\n",
+                           sizeof("DTB: nodes: <truncated>\n") - 1);
+                return;
+            }
+            continue;
         }
     }
 }

@@ -351,9 +351,6 @@ static void core_thread_entry(void *arg)
 {
     (void)arg;
 
-    uart_write("[dbg] core_thread_entry: start\n",
-               sizeof("[dbg] core_thread_entry: start\n") - 1);
-
     /* Seed initial caps for kernel task. */
     cap_table_init(&g_kernel_cap_table);
     task_init(&g_kernel_task, &g_kernel_cap_table);
@@ -469,25 +466,8 @@ static void core_thread_entry(void *arg)
     };
     core_boot_attach(&core_if);
 
-    uart_write("[dbg] core_boot_if: v=3 uart_cmd_ep=",
-               sizeof("[dbg] core_boot_if: v=3 uart_cmd_ep=") - 1);
-    uart_puthex64((uint64_t)g_kernel_task.uart_cmd_ep_cap);
-    uart_write(" uart_evt_ep=",
-               sizeof(" uart_evt_ep=") - 1);
-    uart_puthex64((uint64_t)g_kernel_task.uart_evt_ep_cap);
-    uart_write(" kernel_log_ep=",
-               sizeof(" kernel_log_ep=") - 1);
-    uart_puthex64((uint64_t)g_kernel_task.kernel_log_recv_cap);
-    uart_putnl();
-
-    uart_write("[dbg] core_thread_entry: before core_main\n",
-               sizeof("[dbg] core_thread_entry: before core_main\n") - 1);
-
     /* Contract: Core runs once in this thread. */
     (void)core_main();
-
-    uart_write("[dbg] core_thread_entry: after core_main\n",
-               sizeof("[dbg] core_thread_entry: after core_main\n") - 1);
 
     for (;;) {
         uart_driver_pump();
@@ -497,8 +477,6 @@ static void core_thread_entry(void *arg)
             static bool s_warned = false;
             if (!s_warned) {
                 s_warned = true;
-                uart_write("[dbg] core_poll missing\n",
-                           sizeof("[dbg] core_poll missing\n") - 1);
             }
         }
         /* Drain all pending work items. */

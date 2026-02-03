@@ -24,19 +24,11 @@ const core_boot_if_t *core_boot_if(void)
 
 int32_t core_main(void)
 {
-    uart_write("[dbg] core_main: enter\n",
-               sizeof("[dbg] core_main: enter\n") - 1);
     if (core_main_swift) {
-        uart_write("[dbg] core_main: calling core_main_swift\n",
-                   sizeof("[dbg] core_main: calling core_main_swift\n") - 1);
         int32_t ret = core_main_swift();
-        uart_write("[dbg] core_main: returned from core_main_swift\n",
-                   sizeof("[dbg] core_main: returned from core_main_swift\n") - 1);
         return ret;
     }
 
-    uart_write("[dbg] core_main: core_main_swift missing\n",
-               sizeof("[dbg] core_main: core_main_swift missing\n") - 1);
     cka_early_log("[core] Swift core_main_swift missing; staying in C\n");
     for (;;) {
         cka_yield();

@@ -79,6 +79,9 @@ ks_status_t cka_ipc_try_recv(cap_id_t endpoint_cap, ks_ipc_msg_t *msg);
 // Kernel-only hook: attach the kernel log endpoint for forwarding.
 void cka_attach_kernel_log_ep(cap_id_t endpoint_cap);
 
+// DTB device enumeration (prints to KernelLog/console).
+ks_status_t cka_dtb_dump_devices(void);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

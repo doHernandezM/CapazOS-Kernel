@@ -49,4 +49,7 @@ bool dtb_get_reserved_ranges(dtb_range_t *out, uint32_t *count);
 /* Return DTB header totalsize (bytes). Returns 0 if DTB is not initialized. */
 uint32_t dtb_get_totalsize(void);
 
+/* Print a list of device nodes with compatible/reg info. */
+void dtb_dump_devices(void);
+
 #endif /* CAPAZ_DTB_H */
