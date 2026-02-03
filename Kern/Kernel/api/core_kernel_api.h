@@ -54,6 +54,17 @@ void cka_free(void *ptr);
 void *cka_memcpy(void *dst, const void *src, size_t n);
 void *cka_memset(void *dst, int c, size_t n);
 
+// ---- Build Info ----
+
+typedef struct ks_build_info {
+    uint64_t build_number;
+    const char *build_date;
+    const char *build_version;
+    const char *build_environment;
+} ks_build_info_t;
+
+ks_status_t cka_get_build_info(ks_build_info_t *out_info);
+
 // ---- Scheduling ----
 
 void cka_yield(void);

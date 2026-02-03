@@ -78,7 +78,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
 }
 
 /* Free memory previously allocated via posix_memalign or cka_malloc.
- * Detects the shim header to free the correct base pointer. */
+ * Detects the header to free the correct base pointer. */
 __attribute__((weak))
 void free(void *ptr) {
     if (!ptr) {

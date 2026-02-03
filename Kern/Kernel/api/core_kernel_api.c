@@ -7,6 +7,7 @@
 #include "serial/uart.h"
 #include "api/kernel_log_proto.h"
 #include "platform/dtb.h"
+#include "buildinfo.h"
 
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
@@ -72,6 +73,18 @@ void cka_log_write(const char *s)
         return;
     }
     cka_console_write(s, strlen(s));
+}
+
+ks_status_t cka_get_build_info(ks_build_info_t *out_info)
+{
+    if (!out_info) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    out_info->build_number = (uint64_t)CAPAZ_BUILD_NUMBER;
+    out_info->build_date = CAPAZ_BUILD_DATE;
+    out_info->build_version = CAPAZ_BUILD_VERSION;
+    out_info->build_environment = CAPAZ_BUILD_ENVIRONMENT;
+    return KS_STATUS_OK;
 }
 
 static ks_status_t ks_from_ipc_status(ks_ipc_status_t st)

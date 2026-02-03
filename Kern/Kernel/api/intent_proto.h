@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-// Generic intent descriptor definitions (Phase 2).
+// Generic intent descriptor definitions.
 
 typedef enum ks_intent_dir {
     KS_INTENT_DIR_CALL = 1,

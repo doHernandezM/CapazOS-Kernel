@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-// KernelLog IPC contract tags (Phase 4).
+// KernelLog IPC contract tags.
 enum {
     KLOG_TAG_WRITE = 1
 };

@@ -47,6 +47,16 @@ func core_dbg_uart_write(_ buf: UnsafePointer<UInt8>?, _ len: Int) -> Void
 @_silgen_name("cka_dtb_dump_devices")
 func cka_dtb_dump_devices() -> Int32
 
+struct KsBuildInfo {
+    var build_number: UInt64
+    var build_date: UnsafePointer<CChar>?
+    var build_version: UnsafePointer<CChar>?
+    var build_environment: UnsafePointer<CChar>?
+}
+
+@_silgen_name("cka_get_build_info")
+func cka_get_build_info(_ outInfo: UnsafeMutablePointer<KsBuildInfo>) -> Int32
+
 private let KS_IPC_MSG_MAX: Int = 128
 private let KS_STATUS_OK: Int32 = 0
 
@@ -78,6 +88,15 @@ private let KS_STATUS_INVALID_ARG: Int32 = -1
 private let KS_STATUS_NO_RIGHTS: Int32 = -3
 private let KS_STATUS_BUSY: Int32 = -8
 
+private func fetchBuildInfo() -> KsBuildInfo? {
+    var info = KsBuildInfo(build_number: 0,
+                           build_date: nil,
+                           build_version: nil,
+                           build_environment: nil)
+    let st = cka_get_build_info(&info)
+    return st == KS_STATUS_OK ? info : nil
+}
+
 struct ConsoleService {
     var uart: UARTClient
     var inputBuffer: [UInt8] = []
@@ -91,7 +110,12 @@ struct ConsoleService {
     let ansiClearLine: [UInt8] = [0x1B, 0x5B, 0x32, 0x4B] // ESC[2K
     let ansiClearScreen: [UInt8] = [0x1B, 0x5B, 0x32, 0x4A] // ESC[2J
     let ansiHome: [UInt8] = [0x1B, 0x5B, 0x48] // ESC[H
-
+    
+    mutating func writeUserOutput(_ s: StaticString) {
+        let b = staticStringBytes(s)
+        uart.write(Array(b))
+    }
+    
     mutating func writeKernelLog(_ data: [UInt8]) {
         if !inputBuffer.isEmpty {
             uart.write([0x0D, 0x0A])
@@ -102,11 +126,11 @@ struct ConsoleService {
         uart.write([0x0D, 0x0A])
         redrawPrompt()
     }
-
+    
     mutating func writeUserOutput(_ data: [UInt8]) {
         uart.write(data)
     }
-
+    
     mutating func handleRxByte(_ b: UInt8) {
         if escapeState != 0 {
             handleEscapeByte(b)
@@ -139,14 +163,14 @@ struct ConsoleService {
             }
         }
     }
-
+    
     mutating func enqueueLine(_ line: [UInt8]) {
         if lineQueue.count >= 8 {
             lineQueue.removeFirst()
         }
         lineQueue.append(line)
     }
-
+    
     mutating func rememberHistory(_ line: [UInt8]) {
         if line.isEmpty {
             return
@@ -156,28 +180,28 @@ struct ConsoleService {
         }
         history.append(line)
     }
-
+    
     mutating func popLine() -> [UInt8]? {
         if lineQueue.isEmpty {
             return nil
         }
         return lineQueue.removeFirst()
     }
-
+    
     mutating func redrawPrompt() {
         uart.write(prompt)
         if !inputBuffer.isEmpty {
             uart.write(inputBuffer)
         }
     }
-
+    
     mutating func redrawLine(_ line: [UInt8]) {
         uart.write([0x0D])
         uart.write(ansiClearLine)
         inputBuffer = line
         redrawPrompt()
     }
-
+    
     mutating func handleEscapeByte(_ b: UInt8) {
         if escapeState == 1 {
             if b == 0x5B {
@@ -218,22 +242,24 @@ struct ConsoleService {
         }
         escapeState = 0
     }
-
+    
     mutating func processLine(_ line: [UInt8]) {
-        if line == [0x68, 0x65, 0x6C, 0x70] { // "help"
-            writeUserOutput([0x0D, 0x0A])
-            writeUserOutput([0x68, 0x65, 0x6C, 0x70, 0x20, 0x2D, 0x20, 0x73, 0x68, 0x6F, 0x77, 0x20, 0x68, 0x65, 0x6C, 0x70, 0x0D, 0x0A])
-            writeUserOutput([0x63, 0x6C, 0x65, 0x61, 0x72, 0x20, 0x2D, 0x20, 0x63, 0x6C, 0x65, 0x61, 0x72, 0x20, 0x73, 0x63, 0x72, 0x65, 0x65, 0x6E, 0x0D, 0x0A])
+        if bytesEqual(line, "help") {
+            writeUserOutput("\r\n")
+            writeUserOutput("help - show help\r\n")
+            writeUserOutput("clear - clear screen\r\n")
             return
         }
-        if line == [0x63, 0x6C, 0x65, 0x61, 0x72] { // "clear"
+        
+        if bytesEqual(line, "clear") {
             uart.write(ansiClearScreen)
             uart.write(ansiHome)
             return
         }
-        if line == [0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x73] { // "devices"
-            writeUserOutput([0x0D, 0x0A])
-            writeUserOutput([0x5B, 0x64, 0x65, 0x76, 0x5D, 0x20, 0x6C, 0x69, 0x73, 0x74, 0x69, 0x6E, 0x67, 0x20, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x73, 0x2E, 0x2E, 0x2E, 0x0D, 0x0A])
+        
+        if bytesEqual(line, "devices") {
+            writeUserOutput("\r\n")
+            writeUserOutput("[dev] listing devices...\r\n")
             _ = cka_dtb_dump_devices()
             return
         }
@@ -420,20 +446,8 @@ struct UARTClient {
 }
 @_cdecl("core_main_swift")
 public func core_main_swift() -> Int32 {
-    let dbgStart: [UInt8] = [0x5B, 0x64, 0x62, 0x67, 0x5D, 0x20, 0x63, 0x6F, 0x72, 0x65, 0x5F, 0x6D, 0x61, 0x69, 0x6E, 0x5F, 0x73, 0x77, 0x69, 0x66, 0x74, 0x3A, 0x20, 0x65, 0x6E, 0x74, 0x65, 0x72, 0x0A]
-    dbgStart.withUnsafeBytes { raw in
-        if let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) {
-            core_dbg_uart_write(base, dbgStart.count)
-        }
-    }
-    // Phase 1: Initialize a UART client and emit a basic log message.
+    // Initialize a UART client and emit a basic log message.
     if let boot = core_boot_if() {
-        let dbgBoot: [UInt8] = [0x5B, 0x64, 0x62, 0x67, 0x5D, 0x20, 0x63, 0x6F, 0x72, 0x65, 0x5F, 0x6D, 0x61, 0x69, 0x6E, 0x5F, 0x73, 0x77, 0x69, 0x66, 0x74, 0x3A, 0x20, 0x62, 0x6F, 0x6F, 0x74, 0x20, 0x6F, 0x6B, 0x0A]
-        dbgBoot.withUnsafeBytes { raw in
-            if let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) {
-                core_dbg_uart_write(base, dbgBoot.count)
-            }
-        }
         // Do not block in core_main_swift: the UART driver pump only runs after
         // core_main returns. Use boot-seeded endpoints here and negotiate
         // contracts later from core_poll.
@@ -445,24 +459,12 @@ public func core_main_swift() -> Int32 {
         gUartEvtEp = evt
         gUartReady = (cmd != 0 && evt != 0)
         gConsole = ConsoleService(uart: uart)
-        let dbgInit: [UInt8] = [0x5B, 0x64, 0x62, 0x67, 0x5D, 0x20, 0x63, 0x6F, 0x72, 0x65, 0x5F, 0x6D, 0x61, 0x69, 0x6E, 0x5F, 0x73, 0x77, 0x69, 0x66, 0x74, 0x3A, 0x20, 0x69, 0x6E, 0x69, 0x74, 0x20, 0x6F, 0x6B, 0x0A]
-        dbgInit.withUnsafeBytes { raw in
-            if let basePtr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) {
-                core_dbg_uart_write(basePtr, dbgInit.count)
-            }
-        }
         let msg: [UInt8] = [
             0x43, 0x6F, 0x72, 0x65, 0x20, 0x55, 0x41, 0x52, 0x54, 0x43, 0x6C, 0x69,
             0x65, 0x6E, 0x74, 0x20, 0x6F, 0x6E, 0x6C, 0x69, 0x6E, 0x65, 0x0A
         ]
         uart.write(msg)
         gConsole?.redrawPrompt()
-    }
-    let dbgExit: [UInt8] = [0x5B, 0x64, 0x62, 0x67, 0x5D, 0x20, 0x63, 0x6F, 0x72, 0x65, 0x5F, 0x6D, 0x61, 0x69, 0x5F, 0x73, 0x77, 0x69, 0x66, 0x74, 0x3A, 0x20, 0x65, 0x78, 0x69, 0x74, 0x0A]
-    dbgExit.withUnsafeBytes { raw in
-        if let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) {
-            core_dbg_uart_write(base, dbgExit.count)
-        }
     }
     return 0
 }

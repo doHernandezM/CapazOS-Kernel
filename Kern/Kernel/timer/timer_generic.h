@@ -1,4 +1,4 @@
-// Compatibility shim.
+// Timer interface.
 //
 // Older code referenced this header via "timer/timer_generic.h". The generic
 // timer API is part of the HAL.

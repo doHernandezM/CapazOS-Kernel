@@ -1,8 +1,8 @@
-# CapazOS (Build 1710) — AArch64 Kernel Bring-up
+# CapazOS — AArch64 Kernel + Core Bring-up
 
 CapazOS is a from-scratch OS experiment motivated by modern SoCs (especially Apple Silicon) where heterogeneous compute blocks (P/E CPU cores, GPU, Neural Engine–class accelerators, media engines, secure enclaves, etc.) should be treated as first-class system resources with explicit intent and stronger structural guarantees.
 
-**Current focus:** establish a small, capability-oriented kernel “mechanism layer” and a stable Kernel↔Core ABI boundary.
+**Current focus:** a small, capability-oriented kernel “mechanism layer” with a Swift Core policy layer over capability-scoped IPC.
 
 **Current target:** **AArch64 under QEMU (`virt`)**. Apple Silicon–specific scheduling/power/security concepts are design goals and are **not implemented yet** in this bring-up target.
 
@@ -10,12 +10,10 @@ CapazOS is a from-scratch OS experiment motivated by modern SoCs (especially App
 
 ## Build metadata
 
-Source: `Code/OS/Scripts/buildinfo.ini`
+Source: `Scripts/buildinfo.ini` (compiled into `buildinfo.h`).
 
-- Build version: **0.6.0**
-- Build date: **2026-01-31**
-- Kernel: **0.0.10.4** (build **1710**) — `aarch64`, machine **Virt**
-- Core: **0.7.0** (name: **Capaz**)
+- Kernel prints build number and date at boot.
+- Core can query build metadata via `cka_get_build_info()`.
 
 ---
 
@@ -38,17 +36,21 @@ Source: `Code/OS/Scripts/buildinfo.ini`
 - Capability rights model (dup/transfer/drop/invalidate)
 - Initial object types: task, thread, endpoint, memobj (reserved), irq/timer tokens, service
 
-### Capability-scoped IPC (bring-up)
+### Capability-scoped IPC
 - Endpoint capabilities with send/recv rights
 - Fixed-size message payloads (inline copy into kernel-owned message objects)
 - Blocking receive with wakeup
 
 ### Kernel↔Core boundary (Swift-friendly)
 - Documented, POD-only boundary rules (`OS/Docs/BoundaryRules.md`)
-- Services tables exposed to Core:
-  - v1: logging/panic/alloc/free/time/IRQ primitives/yield
-  - v3: cap ops + IPC entrypoints
-- Core currently contains a minimal `core_main()` that logs and returns
+- Core boots via a stable C entrypoint and hands off to Swift
+- Core receives boot-seeded endpoint caps (UART cmd/evt, KernelLog)
+- Core implements a minimal console policy layer and prompt
+
+### Console and serial I/O
+- Kernel provides a UART driver service (TX via cmd endpoint, RX via event endpoint)
+- Core implements the Console policy, line editing, and basic commands
+- `devices` enumerates DTB nodes via the Kernel API
 
 ---
 
@@ -94,26 +96,6 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 
 ---
 
-## Near-term milestones (suggested next steps)
-
-1. **User space boundary**
-   - Add EL0 tasks/processes, user memory isolation, and a minimal syscall boundary
-   - Make capabilities the only way user space can access kernel objects
-
-2. **MEMOBJ + shared memory IPC**
-   - Implement a `MEMOBJ` capability with mapping rights
-   - Extend IPC to transfer capabilities and/or pass shared-memory descriptors
-
-3. **Preemptive scheduling (single CPU)**
-   - Turn on preemption using the existing timer + `sched_irq_exit()` hook
-   - Add basic priority/deadline metadata (still CPU-only) as a stepping stone to “intent”
-
-4. **Core as the policy layer**
-   - Move bootstrap services out of kernel seeding and into Core
-   - Introduce a minimal “service registry” concept in Core on top of endpoint caps
-
----
-
 ## Repository layout
 
 - `Code/OS/Kern` — boot + kernel (C + AArch64 asm)
@@ -128,18 +110,18 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 From the repository root:
 
 ```bash
-./Code/OS/Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
+./Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
 ```
 
 CI/parity wrapper:
 
 ```bash
-./Code/OS/Scripts/ci_build_kernel.sh --config debug
+./Scripts/ci_build_kernel.sh --config debug
 ```
 
 Outputs:
 
-- `build/kernel.img` (boot + padding + kernel; use with QEMU `-kernel`)
+- `build/Kernel.img` (boot + padding + kernel; use with QEMU `-kernel`)
 - Detailed artifacts under `build/aarch64-virt/<debug|release>/kernel_c/`
 
 Note: build scripts may bump `kernel_build_number` in `Code/OS/Scripts/buildinfo.ini` unless you export `CAPAZ_BUMP_BUILD_NUMBER=0`.
@@ -153,11 +135,11 @@ After building, from the repository root:
 ```bash
 qemu-system-aarch64 \
   -machine virt \
-  -cpu cortex-a72 \
-  -m 256M \
+  -cpu cortex-a53 \
+  -m 128M \
   -nographic \
   -serial mon:stdio \
-  -kernel build/kernel.img
+  -kernel build/Kernel.img
 ```
 
-Expected behavior today is a bring-up oriented boot log (UART/PL011) with early MMU init, PMM init, IRQ/timer baseline, capability/IPC selftests (debug builds), and a minimal Core entry (`core_main()`).
+Expected behavior today is a bring-up oriented boot log (UART/PL011) with early MMU init, PMM init, IRQ/timer baseline, and a Core console prompt.

@@ -310,7 +310,7 @@ static void uart_driver_pump(void)
         if (st == KS_IPC_ERR_EMPTY) {
             break;
         }
-        // Ignore other errors for now; the pump is best-effort in Phase 1.
+        // Ignore other errors for now; the pump is best-effort.
         break;
     }
 

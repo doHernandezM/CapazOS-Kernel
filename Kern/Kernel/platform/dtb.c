@@ -1100,7 +1100,7 @@ void dtb_dump_summary(void) {
             klog_puts("DTB: chosen resolved path=\""); klog_puts(path); klog_puts("\"\n");
             klog_puts("DTB: chosen uart phys="); klog_puthex64(uart_phys); klog_putnl();
         } else {
-            /* Fallback: compatible scan (legacy behaviour). */
+            /* Fallback: compatible scan. */
             klog_puts("DTB: chosen stdout-path not found; scanning for pl011...\n");
             if (dtb_find_pl011_uart(&uart_phys)) {
                 klog_puts("DTB: pl011 uart phys="); klog_puthex64(uart_phys); klog_putnl();

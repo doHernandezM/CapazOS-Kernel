@@ -67,7 +67,7 @@ static inline uint64_t mmu_pa_to_va(uint64_t pa)
 }
 
 #define RAM_BLOCK_SIZE (2ULL * 1024 * 1024)
-#define RAM_DIRECTMAP_SIZE (512ULL * RAM_BLOCK_SIZE) /* legacy 1GiB window; no longer clamps DTB RAM mapping */
+#define RAM_DIRECTMAP_SIZE (512ULL * RAM_BLOCK_SIZE) /* 1GiB window; no longer clamps DTB RAM mapping */
 
 /* Fixed PMM metadata reservation (pages) immediately after kernel runtime end. */
 #define PMM_METADATA_PAGES 16ULL
@@ -138,7 +138,7 @@ static inline uint64_t virt_to_phys(uint64_t va)
  * immediately following the kernel image using a simple bump
  * allocator.  That proved fragile when the computed end of the
  * kernel image was wrong, leading to page tables overlapping the
- * kernel itself.  To avoid that class of bug, we now reserve
+ * kernel itself.  To avoid that class of issue, we now reserve
  * dedicated 4 KiB-aligned arrays in .bss for the L0, L1, and L2
  * tables used by TTBR1, as well as a pool of L3 tables.  These
  * tables are zero‑initialised by the loader and are never freed.
@@ -492,14 +492,14 @@ void mmu_init(const boot_info_t *boot_info)
      * kernel image).  Pages in the kernel image are then mapped
      * individually with appropriate permissions in the L3 table.
      */
-    /* Map RAM blocks using DTB-provided memory ranges (fallback to legacy RAM_BASE/RAM_DIRECTMAP_SIZE). */
+    /* Map RAM blocks using DTB-provided memory ranges (fallback to RAM_BASE/RAM_DIRECTMAP_SIZE). */
 
     enum { MMU_MAX_MEMORY_RANGES = 64 };
     dtb_range_t mem_ranges[MMU_MAX_MEMORY_RANGES];
     uint32_t mem_count = MMU_MAX_MEMORY_RANGES;
     bool have_ranges = dtb_get_memory_ranges(mem_ranges, &mem_count);
     if (!have_ranges || mem_count == 0) {
-        /* Conservative fallback: map the legacy 1GiB RAM window. */
+        /* Conservative fallback: map the 1GiB RAM window. */
         mem_ranges[0].base = RAM_BASE;
         mem_ranges[0].size = RAM_DIRECTMAP_SIZE;
         mem_count = 1;

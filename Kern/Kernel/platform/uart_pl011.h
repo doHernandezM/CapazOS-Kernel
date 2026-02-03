@@ -1,4 +1,4 @@
-// Compatibility shim.
+// UART interface.
 //
 // Older code referenced this header via "platform/uart_pl011.h". The PL011
 // driver header lives in the HAL.
