@@ -54,9 +54,9 @@ buildinfo__read_ini( ) {
   }
 
   # Clear only the vars we manage.
-  unset build_number version machine kernel_name kernel_version core_name core_version build_date
+  unset build_number version kernel_name kernel_version core_name core_version build_date
   # Also clear new variable names used by the enhanced buildinfo schema.
-  unset kernel_build_number kernel_machine build_version build_environment kernel_platform
+  unset kernel_build_number kernel_machine build_version build_environment
 
   # shellcheck disable=SC2162
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -123,16 +123,10 @@ init_buildinfo_ini( ) {
   cur="$(read_buildinfo_value "${ini}" kernel_version || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" kernel_version "0.0.0"
 
-  cur="$(read_buildinfo_value "${ini}" kernel_platform || true)"
-  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" kernel_platform "unknown"
-
-  # Initialize the new kernel_machine key if missing.
+  # Initialize the kernel_machine key if missing.
   cur="$(read_buildinfo_value "${ini}" kernel_machine || true)"
   [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" kernel_machine "unknown"
 
-  # Maintain backwards compatibility: ensure the legacy machine key exists.
-  cur="$(read_buildinfo_value "${ini}" machine || true)"
-  [[ -n "${cur}" ]] || set_buildinfo_value "${ini}" machine "unknown"
   # Initialize optional keys if missing.
 
   cur="$(read_buildinfo_value "${ini}" build_version || true)"
@@ -164,11 +158,8 @@ emit_buildinfo_files( ) {
   # Map new key names to legacy variables for backwards compatibility.
   #
   # New schema uses kernel_build_number and kernel_machine.  Older code still
-  # refers to build_number and machine.  Populate the legacy variables if they
-  # were not set in the ini.  This keeps CAPAZ_BUILD_NUMBER and
-  # CAPAZ_MACHINE working without requiring call-site changes.
+  # refers to build_number.  Populate legacy build_number if missing.
   [[ -n "${build_number-}" || -z "${kernel_build_number-}" ]] || build_number="${kernel_build_number}"
-  [[ -n "${machine-}" || -z "${kernel_machine-}" ]] || machine="${kernel_machine}"
   [[ -n "${kernel_build_number-}" || -z "${build_number-}" ]] || kernel_build_number="${build_number}"
 
   # Default values for newly introduced fields.  If unset after reading the
@@ -181,9 +172,8 @@ emit_buildinfo_files( ) {
   # machine so missing kernel_build_number/kernel_machine is handled.
   [[ -n "${build_number-}" ]] || buildinfo__die "build_number missing in ${ini}"
   [[ -n "${kernel_version-}" ]] || buildinfo__die "kernel_version missing in ${ini}"
-  [[ -n "${kernel_platform-}" ]] || buildinfo__die "kernel_platform missing in ${ini}"
   [[ -n "${build_version-}" ]] || buildinfo__die "build_version missing in ${ini}"
-  [[ -n "${machine-}" ]] || buildinfo__die "machine missing in ${ini}"
+  [[ -n "${kernel_machine-}" ]] || buildinfo__die "kernel_machine missing in ${ini}"
   [[ -n "${build_date-}" ]] || build_date="$(date -u +%Y-%m-%d)"
 
   buildinfo__write_if_changed "${out_h}" <<EOF
@@ -191,17 +181,16 @@ emit_buildinfo_files( ) {
 
 // Generated from buildinfo.ini. Do not edit.
 
-// NOTE: start.S includes "buildinfo.h" and expects CAPAZ_BUILD_VERSION and CAPAZ_KERNEL_PLATFORM.
+// NOTE: start.S includes "buildinfo.h" and expects CAPAZ_BUILD_VERSION.
 //       kmain.c includes "build_info.h" and expects CAPAZ_* macros below.
 
 #define CAPAZ_BUILD_NUMBER ${build_number}
 #define CAPAZ_KERNEL_BUILD_NUMBER ${kernel_build_number}
 #define CAPAZ_BUILD_DATE "${build_date}"
 
-#define CAPAZ_MACHINE "${machine}"
+#define CAPAZ_MACHINE "${kernel_machine}"
 
 #define CAPAZ_KERNEL_VERSION "${kernel_version}"
-#define CAPAZ_KERNEL_PLATFORM "${kernel_platform}"
 
 // Extended buildinfo macros
 #define CAPAZ_BUILD_VERSION "${build_version}"
@@ -229,7 +218,6 @@ __attribute__((used)) const unsigned long capaz_kernel_build_number = CAPAZ_KERN
 __attribute__((used)) const char capaz_build_date[] = CAPAZ_BUILD_DATE;
 __attribute__((used)) const char capaz_machine[] = CAPAZ_MACHINE;
 __attribute__((used)) const char capaz_kernel_version[] = CAPAZ_KERNEL_VERSION;
-__attribute__((used)) const char capaz_kernel_platform[] = CAPAZ_KERNEL_PLATFORM;
 __attribute__((used)) const char capaz_build_version[] = CAPAZ_BUILD_VERSION;
 
 // Extended buildinfo symbols.

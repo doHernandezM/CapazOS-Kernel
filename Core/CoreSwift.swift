@@ -53,7 +53,6 @@ struct KsBuildInfo {
     var build_version: UnsafePointer<CChar>?
     var build_environment: UnsafePointer<CChar>?
     var kernel_version: UnsafePointer<CChar>?
-    var kernel_platform: UnsafePointer<CChar>?
     var kernel_machine: UnsafePointer<CChar>?
     var core_name: UnsafePointer<CChar>?
     var core_version: UnsafePointer<CChar>?
@@ -143,7 +142,6 @@ private func fetchBuildInfo() -> KsBuildInfo? {
                            build_version: nil,
                            build_environment: nil,
                            kernel_version: nil,
-                           kernel_platform: nil,
                            kernel_machine: nil,
                            core_name: nil,
                            core_version: nil)

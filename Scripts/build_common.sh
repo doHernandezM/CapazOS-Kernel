@@ -104,9 +104,8 @@ Usage: build.sh [options]
 
 Options:
   --virt                  (alias for --platform aarch64-virt)
+  --rpi3                  (alias for --platform aarch64-rpi3)
   --platform <name>        (default: aarch64-virt)
-  --config <debug|release> (default: debug)
-  --target <kernel_c|core> (default: kernel_c)
   --buildinfo-ini <path>   (default: OS/Scripts/buildinfo.ini)
   --out <dir>              (override OUT_DIR)
   -h, --help               show help
@@ -123,17 +122,19 @@ parse_args() {
         PLATFORM_EXPLICIT=1
         shift 1
         ;;
+      --rpi3)
+        PLATFORM="aarch64-rpi3"
+        PLATFORM_EXPLICIT=1
+        shift 1
+        ;;
       --platform)
         PLATFORM="${2:?missing value for --platform}"
         PLATFORM_EXPLICIT=1
         shift 2
         ;;
-      --config)
-        CONFIG="${2:?missing value for --config}"
-        shift 2
-        ;;
       --target)
-        TARGET="${2:?missing value for --target}"
+        # Deprecated: builds are unified; keep for compatibility.
+        TARGET="kernel_c"
         shift 2
         ;;
       --buildinfo-ini)
@@ -429,8 +430,6 @@ build_date=
 kernel_version=0.0.0
 # Kernel build number (auto-incremented by build.sh)
 kernel_build_number=0
-# Platform identifier used for the running kernel
-kernel_platform=unknown
 # Machine / board identifier
 kernel_machine=unknown
 # Kernel config name
@@ -459,8 +458,6 @@ build_date=
 kernel_version=0.0.0
 # Kernel build number (auto-incremented by build.sh)
 kernel_build_number=0
-# Platform identifier used for the running kernel
-kernel_platform=unknown
 # Machine / board identifier
 kernel_machine=unknown
 # Kernel config name
@@ -507,7 +504,6 @@ EOF
 // Default machine and version info
 #define CAPAZ_MACHINE "unknown"
 #define CAPAZ_KERNEL_VERSION "0.0.0"
-#define CAPAZ_KERNEL_PLATFORM "unknown"
 
 /* End of fallback buildinfo.h */
 EOF
@@ -815,8 +811,17 @@ build_boot_and_kernel() {
   # The kernel receives the DTB pointer via boot_info; we do not generate/embed a DTB here.
 
   # Collect sources (deterministic order).
+  local boot_start="${KERN_DIR}/Arch/aarch64/start.S"
+  local boot_linker="${KERNEL_DIR}/Linker/boot.ld"
+  local kernel_linker="${KERNEL_DIR}/Linker/kernel.ld"
+
+  if [[ "${BOARD:-}" == "rpi3" ]]; then
+    boot_start="${KERN_DIR}/Arch/aarch64/start_rpi3.S"
+    boot_linker="${KERNEL_DIR}/Linker/boot_rpi3.ld"
+  fi
+
   local boot_sources=(
-    "${KERN_DIR}/Arch/aarch64/start.S"
+    "${boot_start}"
   )
 
   local kernel_sources=()
@@ -830,7 +835,8 @@ build_boot_and_kernel() {
   # Arch sources (excluding boot start.S).
   while IFS= read -r f; do kernel_sources+=("${f}"); done < <(
     find "${KERN_DIR}/Arch/aarch64" \
-      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) ! -name "start.S" -print | sort
+      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) \
+      ! -name "start.S" ! -name "start_rpi3.S" -print | sort
   )
 
   # Compile and link Core into the kernel image.
@@ -902,8 +908,8 @@ build_boot_and_kernel() {
   local boot_bin="${out_dir}/boot.bin"
   local kern_bin="${out_dir}/kernel.bin"
 
-  link_kernel "${boot_elf}" "${KERNEL_DIR}/Linker/boot.ld" "${boot_objs[@]}"
-  link_kernel "${kern_elf}" "${KERNEL_DIR}/Linker/kernel.ld" "${kern_objs[@]}"
+  link_kernel "${boot_elf}" "${boot_linker}" "${boot_objs[@]}"
+  link_kernel "${kern_elf}" "${kernel_linker}" "${kern_objs[@]}"
 
   make_binary "${boot_elf}" "${boot_bin}"
   make_binary "${kern_elf}" "${kern_bin}"

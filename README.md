@@ -117,13 +117,13 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 From the repository root:
 
 ```bash
-./Scripts/build.sh --virt --config debug --target kernel_c
+./Scripts/build.sh --virt
 ```
 
 Or explicitly:
 
 ```bash
-./Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
+./Scripts/build.sh --platform aarch64-virt
 ```
 
 Note: `--platform aarch64-rpi3` is planned and tracked in `Docs/Plan-RPi3.md`.
@@ -131,7 +131,7 @@ Note: `--platform aarch64-rpi3` is planned and tracked in `Docs/Plan-RPi3.md`.
 CI/parity wrapper:
 
 ```bash
-./Scripts/ci_build_kernel.sh --config debug
+./Scripts/ci_build_kernel.sh
 ```
 
 Outputs:
@@ -147,6 +147,7 @@ Note: build scripts may bump `kernel_build_number` in `Code/OS/Scripts/buildinfo
 
 After building, from the repository root:
 
+### Virt
 ```bash
 qemu-system-aarch64 \
 -machine virt,gic-version=2 \
@@ -156,6 +157,20 @@ qemu-system-aarch64 \
 -serial stdio \
 -monitor none \
 -kernel build/Kernel.img \
+-drive if=none,file=/Users/cosas/CapazOS/disk_fat16.img,format=raw,id=hd0 \
+-device virtio-blk-device,drive=hd0 \
+-device virtio-rng-device
+```
+
+### Raspbery Pi 3
+```bash
+qemu-system-aarch64 \
+-machine raspi3b \
+-cpu cortex-a53 -smp 2 \
+-m 128M \
+-nographic \
+-serial stdio \
+-kernel build/kernel.img
 -drive if=none,file=/Users/cosas/CapazOS/disk_fat16.img,format=raw,id=hd0 \
 -device virtio-blk-device,drive=hd0 \
 -device virtio-rng-device

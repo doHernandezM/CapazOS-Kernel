@@ -94,7 +94,6 @@ ks_status_t cka_get_build_info(ks_build_info_t *out_info)
     out_info->build_version = CAPAZ_BUILD_VERSION;
     out_info->build_environment = CAPAZ_BUILD_ENVIRONMENT;
     out_info->kernel_version = CAPAZ_KERNEL_VERSION;
-    out_info->kernel_platform = CAPAZ_KERNEL_PLATFORM;
     out_info->kernel_machine = CAPAZ_MACHINE;
     out_info->core_name = CAPAZ_CORE_NAME;
     out_info->core_version = CAPAZ_CORE_VERSION;

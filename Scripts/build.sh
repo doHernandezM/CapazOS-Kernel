@@ -75,7 +75,6 @@ build_date=
 [kernel]
 kernel_version=0.0.0
 kernel_build_number=0
-kernel_platform=unknown
 kernel_machine=unknown
 kernel_config=Debug
 
@@ -86,6 +85,12 @@ EOF
   fi
 fi
 export BUILDINFO_INI
+
+# Ensure buildinfo.ini has the current machine (board) identifier.
+# The board is selected via --virt/--platform and resolved in select_platform.
+if [[ -n "${BOARD:-}" ]]; then
+  set_buildinfo_value "${BUILDINFO_INI}" kernel_machine "${BOARD}"
+fi
 
 # Bump build number once per build invocation unless explicitly disabled.
 if [[ "${CAPAZ_BUMP_BUILD_NUMBER:-1}" != "0" && "${ACTION:-build}" != "clean" ]]; then

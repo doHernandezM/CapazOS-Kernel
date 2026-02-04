@@ -62,7 +62,6 @@ typedef struct ks_build_info {
     const char *build_version;
     const char *build_environment;
     const char *kernel_version;
-    const char *kernel_platform;
     const char *kernel_machine;
     const char *core_name;
     const char *core_version;
