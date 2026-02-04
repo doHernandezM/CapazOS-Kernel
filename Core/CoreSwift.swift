@@ -131,6 +131,7 @@ private func fetchBuildInfo() -> KsBuildInfo? {
 
 private let ansiRed: [UInt8] = [0x1B, 0x5B, 0x33, 0x31, 0x6D]          // ESC[31m
 private let ansiGreen: [UInt8] = [0x1B, 0x5B, 0x33, 0x32, 0x6D]        // ESC[32m
+private let ansiClearScreen: [UInt8] = [0x1B, 0x5B, 0x32, 0x4A] // ESC[2J
 private let ansiYellowBold: [UInt8] = [0x1B, 0x5B, 0x31, 0x3B, 0x33, 0x33, 0x6D] // ESC[1;33m
 private let ansiResetAll: [UInt8] = [0x1B, 0x5B, 0x30, 0x6D]           // ESC[0m
 
@@ -200,7 +201,6 @@ private func writeBoxLine(_ uart: UARTClient,
 }
 
 private func emitCoreBanner(uart: UARTClient, info: KsBuildInfo?) {
-    let coreWord = Array(staticStringBytes(" Core"))
     let buildLabel = Array(staticStringBytes("Build: "))
     let dateLabel = Array(staticStringBytes(" Date: "))
     let unknown = Array(staticStringBytes("unknown"))
@@ -212,18 +212,18 @@ private func emitCoreBanner(uart: UARTClient, info: KsBuildInfo?) {
     let rawDate = info.map { cStringBytes($0.build_date) } ?? unknown
     // Prefer YYYY-MM-DD if it looks like a full timestamp.
     let date = rawDate.count >= 10 ? Array(rawDate[0..<10]) : rawDate
-    let line1Width = name.count + coreWord.count + 1 + ver.count
+    let line1Width = name.count + 1 + ver.count
     let line2Width = buildLabel.count + buildNum.count + dateLabel.count + date.count
     let maxWidth = max(line1Width, line2Width)
     let innerWidth = maxWidth + 2 // 1 space padding on both sides
     
-    writeBoxBorder(uart, innerWidth: innerWidth)
+//    uart.write(ansiClearScreen)
     
+    writeBoxBorder(uart, innerWidth: innerWidth)
     // Line 1: "Core x.x.x" (Core is yellow + bold, rest green)
     writeBoxLine(uart, maxTextWidth: maxWidth, textWidth: line1Width) {
         uart.write(ansiYellowBold)
         uart.write(name)
-        uart.write(coreWord)
         uart.write(ansiResetAll)
         uart.write(ansiGreen)
         uart.write([0x20])
@@ -399,7 +399,7 @@ struct ConsoleService {
             writeUserOutput("\r\n")
             writeUserOutput("help - show help\r\n")
             writeUserOutput("clear - clear screen\r\n")
-            writeUserOutput("ls - list root directory\r\n")
+            writeUserOutput("ls [path] - list directory\r\n")
             writeUserOutput("open <path> - issue file read capability\r\n")
             writeUserOutput("cat <path> - read file using cap\r\n")
             writeUserOutput("testtask <path> - read-only task (no list)\r\n")
@@ -416,7 +416,16 @@ struct ConsoleService {
         if bytesEqual(tokens[0], "ls") {
             writeUserOutput("\r\n")
             if var task = gConsoleTask {
-                listFat16RootDirectory(task: &task)
+                if tokens.count >= 2 {
+                    guard let norm = normalizePath(tokens[1]) else {
+                        writeUserOutput("[fs] ls: invalid path\r\n")
+                        return
+                    }
+                    listFat32Directory(task: &task, path: norm)
+                } else {
+                    let root = NormalizedPath(flat: [0x2F], segments: [], isRoot: true)
+                    listFat32Directory(task: &task, path: root)
+                }
                 gConsoleTask = task
             }
             return
@@ -439,7 +448,11 @@ struct ConsoleService {
                 writeUserOutput("[fs] open: invalid path\r\n")
                 return
             }
-            let cap = issueFileCap(path: norm, rights: CAP_R_FILE_READ)
+            if norm.isRoot {
+                writeUserOutput("[fs] open: cannot open root\r\n")
+                return
+            }
+            let cap = issueFileCap(path: norm.flat, rights: CAP_R_FILE_READ)
             if cap == 0 {
                 writeUserOutput("[fs] open: cap table full\r\n")
                 return
@@ -464,8 +477,12 @@ struct ConsoleService {
                 writeUserOutput("[fs] cat: invalid path\r\n")
                 return
             }
+            if norm.isRoot {
+                writeUserOutput("[fs] cat: invalid path\r\n")
+                return
+            }
             if var task = gConsoleTask {
-                readFat16File(task: &task, path: norm)
+                readFat32File(task: &task, path: norm)
                 gConsoleTask = task
             }
             return
@@ -481,6 +498,10 @@ struct ConsoleService {
                 writeUserOutput("[fs] testtask: invalid path\r\n")
                 return
             }
+            if norm.isRoot {
+                writeUserOutput("[fs] testtask: invalid path\r\n")
+                return
+            }
             runTestTask(path: norm)
             return
         }
@@ -493,6 +514,10 @@ struct ConsoleService {
             }
             guard let pathA = normalizePath(tokens[1]),
                   let pathB = normalizePath(tokens[2]) else {
+                writeUserOutput("[fs] ioreadtest: invalid path\r\n")
+                return
+            }
+            if pathA.isRoot || pathB.isRoot {
                 writeUserOutput("[fs] ioreadtest: invalid path\r\n")
                 return
             }
@@ -571,30 +596,20 @@ private func toUpperASCII(_ b: UInt8) -> UInt8 {
     return b
 }
 
-private func normalizePath(_ raw: [UInt8]) -> [UInt8]? {
+private struct NormalizedPath {
+    let flat: [UInt8]
+    let segments: [[UInt8]]
+    let isRoot: Bool
+}
+
+private func normalizeSegment(_ raw: [UInt8]) -> [UInt8]? {
     if raw.isEmpty { return nil }
-    var start = 0
-    var end = raw.count
-    while start < end && raw[start] == 0x20 { start += 1 }
-    while end > start && raw[end - 1] == 0x20 { end -= 1 }
-    if start >= end { return nil }
-    
-    var path = Array(raw[start..<end])
-    if path.count == 1 && path[0] == 0x2F { return [0x2F] }
-    if path.first == 0x2F { path.removeFirst() }
-    if path.isEmpty { return nil }
-    for b in path {
-        if b == 0x2F || b == 0x5C || b == 0x3A { return nil }
-    }
-    if path.count >= 2 {
-        for i in 0..<(path.count - 1) {
-            if path[i] == 0x2E && path[i + 1] == 0x2E { return nil }
-        }
-    }
+    if raw.count == 1 && raw[0] == 0x2E { return nil } // "."
+    if raw.count == 2 && raw[0] == 0x2E && raw[1] == 0x2E { return nil } // ".."
     var name: [UInt8] = []
     var ext: [UInt8] = []
     var seenDot = false
-    for b in path {
+    for b in raw {
         if b == 0x2E {
             if seenDot { return nil }
             seenDot = true
@@ -618,6 +633,46 @@ private func normalizePath(_ raw: [UInt8]) -> [UInt8]? {
     return out
 }
 
+private func normalizePath(_ raw: [UInt8]) -> NormalizedPath? {
+    if raw.isEmpty { return nil }
+    var start = 0
+    var end = raw.count
+    while start < end && raw[start] == 0x20 { start += 1 }
+    while end > start && raw[end - 1] == 0x20 { end -= 1 }
+    if start >= end { return nil }
+    var trimmed = Array(raw[start..<end])
+    if trimmed.count == 1 && trimmed[0] == 0x2F {
+        return NormalizedPath(flat: [0x2F], segments: [], isRoot: true)
+    }
+    if trimmed.first == 0x2F {
+        trimmed.removeFirst()
+    }
+    var segments: [[UInt8]] = []
+    var current: [UInt8] = []
+    for b in trimmed {
+        if b == 0x5C || b == 0x3A { return nil } // '\' or ':'
+        if b == 0x2F {
+            if current.isEmpty { return nil }
+            guard let norm = normalizeSegment(current) else { return nil }
+            segments.append(norm)
+            current = []
+        } else {
+            current.append(b)
+        }
+    }
+    if !current.isEmpty {
+        guard let norm = normalizeSegment(current) else { return nil }
+        segments.append(norm)
+    }
+    if segments.isEmpty { return nil }
+    var flat: [UInt8] = []
+    for i in 0..<segments.count {
+        if i > 0 { flat.append(0x2F) }
+        flat.append(contentsOf: segments[i])
+    }
+    return NormalizedPath(flat: flat, segments: segments, isRoot: false)
+}
+
 private struct BlockDevice {
     let sectorSize: UInt32
     let capacitySectors: UInt64
@@ -639,56 +694,280 @@ private struct BlockDevice {
     }
 }
 
-private struct Fat16Volume {
+private struct Fat32Volume {
     let bytesPerSector: UInt16
     let sectorsPerCluster: UInt8
     let reservedSectors: UInt16
     let numFATs: UInt8
-    let rootEntryCount: UInt16
-    let sectorsPerFAT: UInt16
+    let sectorsPerFAT: UInt32
     let totalSectors: UInt32
-    let rootDirStartLBA: UInt32
-    let rootDirSectors: UInt32
+    let rootCluster: UInt32
+    let baseLBA: UInt32
     let fatStartLBA: UInt32
     let dataStartLBA: UInt32
 }
 
-private func parseFat16BootSector(_ data: [UInt8]) -> Fat16Volume? {
-    if data.count < 64 { return nil }
+private func parseFat32BootSector(_ data: [UInt8], baseLBA: UInt32) -> Fat32Volume? {
+    if data.count < 90 { return nil }
     let bytesPerSector = readU16LE(data, 11)
     let sectorsPerCluster = data[13]
     let reservedSectors = readU16LE(data, 14)
     let numFATs = data[16]
     let rootEntryCount = readU16LE(data, 17)
     let totalSectors16 = readU16LE(data, 19)
-    let sectorsPerFAT = readU16LE(data, 22)
+    let sectorsPerFAT16 = readU16LE(data, 22)
     let totalSectors32 = readU32LE(data, 32)
-    
+    let sectorsPerFAT = readU32LE(data, 36)
+    let rootCluster = readU32LE(data, 44)
     let totalSectors = totalSectors16 != 0 ? UInt32(totalSectors16) : totalSectors32
-    if bytesPerSector == 0 || sectorsPerFAT == 0 || totalSectors == 0 {
+    if bytesPerSector == 0 || sectorsPerCluster == 0 || sectorsPerFAT == 0 || totalSectors == 0 {
         return nil
     }
-    
-    let rootDirSectors = UInt32((UInt32(rootEntryCount) * 32 + UInt32(bytesPerSector) - 1) / UInt32(bytesPerSector))
-    let rootDirStartLBA = UInt32(reservedSectors) + UInt32(numFATs) * UInt32(sectorsPerFAT)
-    let fatStartLBA = UInt32(reservedSectors)
-    let dataStartLBA = rootDirStartLBA + rootDirSectors
-    
-    return Fat16Volume(bytesPerSector: bytesPerSector,
+    // FAT32 sanity checks.
+    if rootEntryCount != 0 || sectorsPerFAT16 != 0 {
+        return nil
+    }
+    if rootCluster < 2 {
+        return nil
+    }
+    let fatStartLBA = baseLBA + UInt32(reservedSectors)
+    let dataStartLBA = fatStartLBA + UInt32(numFATs) * sectorsPerFAT
+    return Fat32Volume(bytesPerSector: bytesPerSector,
                        sectorsPerCluster: sectorsPerCluster,
                        reservedSectors: reservedSectors,
                        numFATs: numFATs,
-                       rootEntryCount: rootEntryCount,
                        sectorsPerFAT: sectorsPerFAT,
                        totalSectors: totalSectors,
-                       rootDirStartLBA: rootDirStartLBA,
-                       rootDirSectors: rootDirSectors,
+                       rootCluster: rootCluster,
+                       baseLBA: baseLBA,
                        fatStartLBA: fatStartLBA,
                        dataStartLBA: dataStartLBA)
 }
 
-private func listFat16RootDirectory(task: inout TaskContext) {
-    if !task.canListRoot() {
+private func findFat32PartitionLBA(_ mbr: [UInt8]) -> UInt32? {
+    if mbr.count < 512 { return nil }
+    if mbr[510] != 0x55 || mbr[511] != 0xAA {
+        return nil
+    }
+    let partTable = 446
+    for i in 0..<4 {
+        let off = partTable + i * 16
+        if off + 15 >= mbr.count { break }
+        let type = mbr[off + 4]
+        if type == 0x0B || type == 0x0C {
+            let lba = readU32LE(mbr, off + 8)
+            if lba != 0 {
+                return lba
+            }
+        }
+    }
+    return nil
+}
+
+private func gptGuidMatches(_ entry: [UInt8], _ guid: [UInt8]) -> Bool {
+    if entry.count < 16 || guid.count != 16 { return false }
+    for i in 0..<16 {
+        if entry[i] != guid[i] { return false }
+    }
+    return true
+}
+
+private func findFat32PartitionLBAFromGPT(_ block: BlockDevice) -> UInt64? {
+    guard let header = block.read(lba: 1, count: 1, intent: IO_INTENT_THROUGHPUT) else {
+        return nil
+    }
+    if header.count < 92 { return nil }
+    if header[0] != 0x45 || header[1] != 0x46 || header[2] != 0x49 || header[3] != 0x20 ||
+       header[4] != 0x50 || header[5] != 0x41 || header[6] != 0x52 || header[7] != 0x54 {
+        return nil
+    }
+    let entriesLBA = readU64LE(header, 72)
+    let numEntries = readU32LE(header, 80)
+    let entrySize = readU32LE(header, 84)
+    if entriesLBA == 0 || numEntries == 0 || entrySize < 128 {
+        return nil
+    }
+    let sectorSize = UInt64(block.sectorSize)
+    let totalBytes = UInt64(numEntries) * UInt64(entrySize)
+    let sectors = (totalBytes + sectorSize - 1) / sectorSize
+    if sectors == 0 {
+        return nil
+    }
+    guard let entriesData = block.read(lba: entriesLBA, count: UInt32(sectors), intent: IO_INTENT_THROUGHPUT) else {
+        return nil
+    }
+    let efiSystemGuid: [UInt8] = [0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B]
+    let msBasicDataGuid: [UInt8] = [0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7]
+    let entryStride = Int(entrySize)
+    let maxEntries = min(Int(numEntries), entriesData.count / entryStride)
+    for i in 0..<maxEntries {
+        let off = i * entryStride
+        let typeGuid = Array(entriesData[off..<(off + 16)])
+        if gptGuidMatches(typeGuid, efiSystemGuid) || gptGuidMatches(typeGuid, msBasicDataGuid) {
+            let firstLBA = readU64LE(entriesData, off + 32)
+            if firstLBA != 0 {
+                return firstLBA
+            }
+        }
+    }
+    return nil
+}
+
+private func mountFat32(_ block: BlockDevice) -> Fat32Volume? {
+    guard let boot0 = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
+        return nil
+    }
+    if let vol = parseFat32BootSector(boot0, baseLBA: 0) {
+        return vol
+    }
+    if let gptLBA = findFat32PartitionLBAFromGPT(block) {
+        if gptLBA <= UInt64(UInt32.max),
+           let boot = block.read(lba: gptLBA, count: 1, intent: IO_INTENT_THROUGHPUT) {
+            if let vol = parseFat32BootSector(boot, baseLBA: UInt32(gptLBA)) {
+                return vol
+            }
+        }
+    }
+    guard let partLBA = findFat32PartitionLBA(boot0) else {
+        return nil
+    }
+    guard let boot = block.read(lba: UInt64(partLBA), count: 1, intent: IO_INTENT_THROUGHPUT) else {
+        return nil
+    }
+    return parseFat32BootSector(boot, baseLBA: partLBA)
+}
+
+private func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
+    var start = 0
+    var end = bytes.count
+    while start < end && bytes[start] == 0x20 { start += 1 }
+    while end > start && bytes[end - 1] == 0x20 { end -= 1 }
+    if start >= end { return [] }
+    return Array(bytes[start..<end])
+}
+
+private func readFat32FAT(_ block: BlockDevice, _ vol: Fat32Volume) -> [UInt8]? {
+    if vol.sectorsPerFAT == 0 { return nil }
+    var fatData: [UInt8] = []
+    for i in 0..<vol.sectorsPerFAT {
+        if let part = block.read(lba: UInt64(vol.fatStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
+            fatData.append(contentsOf: part)
+        } else {
+            return nil
+        }
+    }
+    return fatData
+}
+
+private func fat32NextCluster(_ fat: [UInt8], _ cluster: UInt32) -> UInt32 {
+    let off = Int(cluster * 4)
+    if off + 3 >= fat.count { return 0x0FFFFFFF }
+    let val = readU32LE(fat, off) & 0x0FFFFFFF
+    return val
+}
+
+private func readCluster(_ block: BlockDevice, _ vol: Fat32Volume, _ cluster: UInt32, intent: UInt32) -> [UInt8]? {
+    let dataLBA = UInt64(vol.dataStartLBA) + UInt64(cluster - 2) * UInt64(vol.sectorsPerCluster)
+    var out: [UInt8] = []
+    for s in 0..<UInt32(vol.sectorsPerCluster) {
+        if let part = block.read(lba: dataLBA + UInt64(s), count: 1, intent: intent) {
+            out.append(contentsOf: part)
+        } else {
+            return nil
+        }
+    }
+    return out
+}
+
+private struct Fat32DirEntry {
+    let name: [UInt8]
+    let attr: UInt8
+    let firstCluster: UInt32
+    let fileSize: UInt32
+    
+    var isDir: Bool { (attr & 0x10) != 0 }
+}
+
+private func readDirEntries(_ block: BlockDevice, _ vol: Fat32Volume, _ fat: [UInt8], startCluster: UInt32) -> [Fat32DirEntry]? {
+    var entries: [Fat32DirEntry] = []
+    var cluster = startCluster
+    var guardCount: UInt32 = 0
+    while cluster >= 2 && guardCount < 0x100000 {
+        guard let data = readCluster(block, vol, cluster, intent: IO_INTENT_THROUGHPUT) else {
+            return nil
+        }
+        let entryCount = data.count / 32
+        for i in 0..<entryCount {
+            let off = i * 32
+            let first = data[off]
+            if first == 0x00 { return entries }
+            if first == 0xE5 { continue }
+            let attr = data[off + 11]
+            if attr == 0x0F { continue }
+            if (attr & 0x08) != 0 { continue }
+            let nameBytes = trimSpaces(Array(data[off..<(off + 8)]))
+            let extBytes = trimSpaces(Array(data[(off + 8)..<(off + 11)]))
+            if nameBytes.isEmpty { continue }
+            var name: [UInt8] = []
+            name.append(contentsOf: nameBytes.map { toUpperASCII($0) })
+            if !extBytes.isEmpty {
+                name.append(0x2E)
+                name.append(contentsOf: extBytes.map { toUpperASCII($0) })
+            }
+            let hi = UInt32(readU16LE(data, off + 20))
+            let lo = UInt32(readU16LE(data, off + 26))
+            let firstCluster = (hi << 16) | lo
+            let fileSize = readU32LE(data, off + 28)
+            entries.append(Fat32DirEntry(name: name, attr: attr, firstCluster: firstCluster, fileSize: fileSize))
+        }
+        let next = fat32NextCluster(fat, cluster)
+        if next >= 0x0FFFFFF8 || next == 0x0FFFFFF7 {
+            break
+        }
+        cluster = next
+        guardCount &+= 1
+    }
+    return entries
+}
+
+private func findEntryInDir(_ block: BlockDevice, _ vol: Fat32Volume, _ fat: [UInt8], dirCluster: UInt32, name: [UInt8]) -> Fat32DirEntry? {
+    guard let entries = readDirEntries(block, vol, fat, startCluster: dirCluster) else {
+        return nil
+    }
+    for entry in entries {
+        if entry.name == name {
+            return entry
+        }
+    }
+    return nil
+}
+
+private func resolvePathEntry(_ block: BlockDevice, _ vol: Fat32Volume, _ fat: [UInt8], _ path: NormalizedPath) -> Fat32DirEntry? {
+    if path.isRoot || path.segments.isEmpty {
+        return Fat32DirEntry(name: [0x2F], attr: 0x10, firstCluster: vol.rootCluster, fileSize: 0)
+    }
+    var dirCluster = vol.rootCluster
+    for i in 0..<path.segments.count {
+        guard let entry = findEntryInDir(block, vol, fat, dirCluster: dirCluster, name: path.segments[i]) else {
+            return nil
+        }
+        if i == path.segments.count - 1 {
+            return entry
+        }
+        if !entry.isDir {
+            return nil
+        }
+        if entry.firstCluster < 2 {
+            return nil
+        }
+        dirCluster = entry.firstCluster
+    }
+    return nil
+}
+
+private func listFat32Directory(task: inout TaskContext, path: NormalizedPath) {
+    let capPath: [UInt8] = path.isRoot ? [0x2F] : path.flat
+    if !task.canListDir(path: capPath) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
         return
     }
@@ -696,53 +975,38 @@ private func listFat16RootDirectory(task: inout TaskContext) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
         return
     }
-    guard let boot = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read boot sector\r\n")))
+    guard let vol = mountFat32(block) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
         return
     }
-    guard let vol = parseFat16BootSector(boot) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT16 volume\r\n")))
+    guard let fat = readFat32FAT(block, vol) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
         return
     }
-    if vol.rootDirSectors == 0 {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty root directory\r\n")))
-        return
-    }
-    var rootData: [UInt8] = []
-    for i in 0..<vol.rootDirSectors {
-        if let part = block.read(lba: UInt64(vol.rootDirStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            rootData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read root directory\r\n")))
+    let entry: Fat32DirEntry
+    if path.isRoot {
+        entry = Fat32DirEntry(name: [0x2F], attr: 0x10, firstCluster: vol.rootCluster, fileSize: 0)
+    } else {
+        guard let found = resolvePathEntry(block, vol, fat, path) else {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] path not found\r\n")))
             return
         }
+        entry = found
     }
-    let entryCount = rootData.count / 32
-    gConsole?.writeUserOutput(Array(staticStringBytes("FAT16 root:\r\n")))
-    func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
-        var start = 0
-        var end = bytes.count
-        while start < end && bytes[start] == 0x20 { start += 1 }
-        while end > start && bytes[end - 1] == 0x20 { end -= 1 }
-        if start >= end { return [] }
-        return Array(bytes[start..<end])
+    if !entry.isDir {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a directory\r\n")))
+        return
     }
-    for i in 0..<entryCount {
-        let off = i * 32
-        let first = rootData[off]
-        if first == 0x00 { break }
-        if first == 0xE5 { continue }
-        let attr = rootData[off + 11]
-        if attr == 0x0F { continue }
-        if (attr & 0x08) != 0 { continue } // volume label
-        let nameBytes = trimSpaces(Array(rootData[off..<(off + 8)]))
-        let extBytes = trimSpaces(Array(rootData[(off + 8)..<(off + 11)]))
-        if nameBytes.isEmpty { continue }
+    guard let entries = readDirEntries(block, vol, fat, startCluster: entry.firstCluster) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read directory\r\n")))
+        return
+    }
+    gConsole?.writeUserOutput(Array(staticStringBytes("FAT32 dir:\r\n")))
+    for entry in entries {
         var line: [UInt8] = [0x20, 0x20]
-        line.append(contentsOf: nameBytes)
-        if !extBytes.isEmpty {
-            line.append(0x2E)
-            line.append(contentsOf: extBytes)
+        line.append(contentsOf: entry.name)
+        if entry.isDir {
+            line.append(0x2F)
         }
         line.append(0x0D)
         line.append(0x0A)
@@ -799,10 +1063,14 @@ private struct TaskContext {
     func canReadFile(path: [UInt8]) -> Bool {
         return hasRights(path: path, rights: CAP_R_FILE_READ)
     }
+    
+    func canListDir(path: [UInt8]) -> Bool {
+        return hasRights(path: path, rights: CAP_R_DIR_LIST)
+    }
 }
 
-private func readFat16File(task: inout TaskContext, path: [UInt8]) {
-    if !task.canReadFile(path: path) {
+private func readFat32File(task: inout TaskContext, path: NormalizedPath) {
+    if !task.canReadFile(path: path.flat) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
         return
     }
@@ -810,114 +1078,63 @@ private func readFat16File(task: inout TaskContext, path: [UInt8]) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
         return
     }
-    guard let boot = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read boot sector\r\n")))
+    guard let vol = mountFat32(block) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
         return
     }
-    guard let vol = parseFat16BootSector(boot) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT16 volume\r\n")))
+    guard let fat = readFat32FAT(block, vol) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
         return
     }
-    
-    var rootData: [UInt8] = []
-    for i in 0..<vol.rootDirSectors {
-        if let part = block.read(lba: UInt64(vol.rootDirStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            rootData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read root directory\r\n")))
-            return
-        }
-    }
-    
-    func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
-        var start = 0
-        var end = bytes.count
-        while start < end && bytes[start] == 0x20 { start += 1 }
-        while end > start && bytes[end - 1] == 0x20 { end -= 1 }
-        if start >= end { return [] }
-        return Array(bytes[start..<end])
-    }
-    
-    var firstCluster: UInt16 = 0
-    var fileSize: UInt32 = 0
-    var found = false
-    let entryCount = rootData.count / 32
-    for i in 0..<entryCount {
-        let off = i * 32
-        let first = rootData[off]
-        if first == 0x00 { break }
-        if first == 0xE5 { continue }
-        let attr = rootData[off + 11]
-        if attr == 0x0F { continue }
-        if (attr & 0x08) != 0 { continue }
-        if (attr & 0x10) != 0 { continue }
-        let nameBytes = trimSpaces(Array(rootData[off..<(off + 8)]))
-        let extBytes = trimSpaces(Array(rootData[(off + 8)..<(off + 11)]))
-        if nameBytes.isEmpty { continue }
-        var norm: [UInt8] = []
-        norm.append(contentsOf: nameBytes.map { toUpperASCII($0) })
-        if !extBytes.isEmpty {
-            norm.append(0x2E)
-            norm.append(contentsOf: extBytes.map { toUpperASCII($0) })
-        }
-        if norm == path {
-            firstCluster = readU16LE(rootData, off + 26)
-            fileSize = readU32LE(rootData, off + 28)
-            found = true
-            break
-        }
-    }
-    if !found {
+    guard let entry = resolvePathEntry(block, vol, fat, path) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] file not found\r\n")))
         return
     }
-    if fileSize == 0 {
+    if entry.isDir {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a file\r\n")))
+        return
+    }
+    if entry.fileSize == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty file\r\n")))
         return
     }
-    
-    var fatData: [UInt8] = []
-    for i in 0..<UInt32(vol.sectorsPerFAT) {
-        if let part = block.read(lba: UInt64(vol.fatStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            fatData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
+    if entry.firstCluster < 2 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] invalid file cluster\r\n")))
+        return
+    }
+    let clusterSizeBytes = UInt32(vol.bytesPerSector) * UInt32(vol.sectorsPerCluster)
+    var remaining = entry.fileSize
+    var cluster = entry.firstCluster
+    var output: [UInt8] = []
+    var guardCount: UInt32 = 0
+    while cluster >= 2 && remaining > 0 && guardCount < 0x100000 {
+        guard let data = readCluster(block, vol, cluster, intent: IO_INTENT_LATENCY) else {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read file data\r\n")))
             return
         }
-    }
-    
-    let clusterSizeBytes = UInt32(vol.bytesPerSector) * UInt32(vol.sectorsPerCluster)
-    var remaining = fileSize
-    var cluster = firstCluster
-    var output: [UInt8] = []
-    while cluster >= 2 && remaining > 0 {
-        let dataLBA = UInt64(vol.dataStartLBA) + UInt64(cluster - 2) * UInt64(vol.sectorsPerCluster)
-        for s in 0..<UInt32(vol.sectorsPerCluster) {
-            if let part = block.read(lba: dataLBA + UInt64(s), count: 1, intent: IO_INTENT_LATENCY) {
-                output.append(contentsOf: part)
-            } else {
-                gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read file data\r\n")))
-                return
-            }
+        output.append(contentsOf: data)
+        let next = fat32NextCluster(fat, cluster)
+        if next >= 0x0FFFFFF8 || next == 0x0FFFFFF7 {
+            break
         }
-        let fatOff = Int(cluster) * 2
-        if fatOff + 1 >= fatData.count { break }
-        let next = readU16LE(fatData, fatOff)
-        if next >= 0xFFF8 { break }
-        if next == 0xFFF7 { break }
         cluster = next
+        if remaining > clusterSizeBytes {
+            remaining -= clusterSizeBytes
+        } else {
+            remaining = 0
+        }
+        guardCount &+= 1
     }
-    
-    if output.count > Int(fileSize) {
-        output = Array(output[0..<Int(fileSize)])
+    if output.count > Int(entry.fileSize) {
+        output = Array(output[0..<Int(entry.fileSize)])
     }
     gConsole?.writeUserOutput(output)
     gConsole?.writeUserOutput([0x0D, 0x0A])
 }
 
-private func runTestTask(path: [UInt8]) {
+private func runTestTask(path: NormalizedPath) {
     var test = TaskContext()
-    let fileCap = issueFileCap(path: path, rights: CAP_R_FILE_READ)
+    let fileCap = issueFileCap(path: path.flat, rights: CAP_R_FILE_READ)
     if fileCap == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] testtask: cap table full\r\n")))
         return
@@ -930,14 +1147,14 @@ private func runTestTask(path: [UInt8]) {
         gConsole?.writeUserOutput(Array(staticStringBytes("denied\r\n")))
     }
     gConsole?.writeUserOutput(Array(staticStringBytes("[fs] testtask: read file\r\n")))
-    readFat16File(task: &test, path: path)
+    readFat32File(task: &test, path: path)
 }
 
-private func runIoReadTest(pathA: [UInt8], pathB: [UInt8]) {
+private func runIoReadTest(pathA: NormalizedPath, pathB: NormalizedPath) {
     var taskA = TaskContext()
     var taskB = TaskContext()
-    let capA = issueFileCap(path: pathA, rights: CAP_R_FILE_READ)
-    let capB = issueFileCap(path: pathB, rights: CAP_R_FILE_READ)
+    let capA = issueFileCap(path: pathA.flat, rights: CAP_R_FILE_READ)
+    let capB = issueFileCap(path: pathB.flat, rights: CAP_R_FILE_READ)
     if capA == 0 || capB == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] ioreadtest: cap table full\r\n")))
         return
@@ -946,8 +1163,8 @@ private func runIoReadTest(pathA: [UInt8], pathB: [UInt8]) {
     taskB.addCap(capB)
     gConsole?.writeUserOutput(Array(staticStringBytes("[iotest] A=LATENCY B=BACKGROUND\r\n")))
     
-    guard var stateA = prepareFat16ReadState(task: taskA, path: pathA, intent: IO_INTENT_LATENCY, label: 0x41),
-          var stateB = prepareFat16ReadState(task: taskB, path: pathB, intent: IO_INTENT_BACKGROUND, label: 0x42) else {
+    guard var stateA = prepareFat32ReadState(task: taskA, path: pathA, intent: IO_INTENT_LATENCY, label: 0x41),
+          var stateB = prepareFat32ReadState(task: taskB, path: pathB, intent: IO_INTENT_BACKGROUND, label: 0x42) else {
         return
     }
     
@@ -963,17 +1180,17 @@ private func runIoReadTest(pathA: [UInt8], pathB: [UInt8]) {
     gConsole?.writeUserOutput(Array(staticStringBytes("[iotest] done\r\n")))
 }
 
-private struct Fat16ReadState {
-    let vol: Fat16Volume
+private struct Fat32ReadState {
+    let vol: Fat32Volume
     let fat: [UInt8]
-    var cluster: UInt16
+    var cluster: UInt32
     var remaining: UInt32
     let intent: UInt32
     let label: UInt8
 }
 
-private func prepareFat16ReadState(task: TaskContext, path: [UInt8], intent: UInt32, label: UInt8) -> Fat16ReadState? {
-    if !task.canReadFile(path: path) {
+private func prepareFat32ReadState(task: TaskContext, path: NormalizedPath, intent: UInt32, label: UInt8) -> Fat32ReadState? {
+    if !task.canReadFile(path: path.flat) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
         return nil
     }
@@ -981,81 +1198,30 @@ private func prepareFat16ReadState(task: TaskContext, path: [UInt8], intent: UIn
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
         return nil
     }
-    guard let boot = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read boot sector\r\n")))
+    guard let vol = mountFat32(block) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
         return nil
     }
-    guard let vol = parseFat16BootSector(boot) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT16 volume\r\n")))
+    guard let fat = readFat32FAT(block, vol) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
         return nil
     }
-    var rootData: [UInt8] = []
-    for i in 0..<vol.rootDirSectors {
-        if let part = block.read(lba: UInt64(vol.rootDirStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            rootData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read root directory\r\n")))
-            return nil
-        }
-    }
-    func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
-        var start = 0
-        var end = bytes.count
-        while start < end && bytes[start] == 0x20 { start += 1 }
-        while end > start && bytes[end - 1] == 0x20 { end -= 1 }
-        if start >= end { return [] }
-        return Array(bytes[start..<end])
-    }
-    var firstCluster: UInt16 = 0
-    var fileSize: UInt32 = 0
-    var found = false
-    let entryCount = rootData.count / 32
-    for i in 0..<entryCount {
-        let off = i * 32
-        let first = rootData[off]
-        if first == 0x00 { break }
-        if first == 0xE5 { continue }
-        let attr = rootData[off + 11]
-        if attr == 0x0F { continue }
-        if (attr & 0x08) != 0 { continue }
-        if (attr & 0x10) != 0 { continue }
-        let nameBytes = trimSpaces(Array(rootData[off..<(off + 8)]))
-        let extBytes = trimSpaces(Array(rootData[(off + 8)..<(off + 11)]))
-        if nameBytes.isEmpty { continue }
-        var norm: [UInt8] = []
-        norm.append(contentsOf: nameBytes.map { toUpperASCII($0) })
-        if !extBytes.isEmpty {
-            norm.append(0x2E)
-            norm.append(contentsOf: extBytes.map { toUpperASCII($0) })
-        }
-        if norm == path {
-            firstCluster = readU16LE(rootData, off + 26)
-            fileSize = readU32LE(rootData, off + 28)
-            found = true
-            break
-        }
-    }
-    if !found {
+    guard let entry = resolvePathEntry(block, vol, fat, path) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] file not found\r\n")))
         return nil
     }
-    if fileSize == 0 {
+    if entry.isDir || entry.fileSize == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty file\r\n")))
         return nil
     }
-    var fatData: [UInt8] = []
-    for i in 0..<UInt32(vol.sectorsPerFAT) {
-        if let part = block.read(lba: UInt64(vol.fatStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            fatData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
-            return nil
-        }
+    if entry.firstCluster < 2 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] invalid file cluster\r\n")))
+        return nil
     }
-    return Fat16ReadState(vol: vol, fat: fatData, cluster: firstCluster, remaining: fileSize, intent: intent, label: label)
+    return Fat32ReadState(vol: vol, fat: fat, cluster: entry.firstCluster, remaining: entry.fileSize, intent: intent, label: label)
 }
 
-private func readOneCluster(_ state: inout Fat16ReadState) -> Bool {
+private func readOneCluster(_ state: inout Fat32ReadState) -> Bool {
     guard let block = gBlockDevice else { return false }
     if state.cluster < 2 || state.remaining == 0 {
         return true
@@ -1074,23 +1240,18 @@ private func readOneCluster(_ state: inout Fat16ReadState) -> Bool {
             return false
         }
     }
-    let fatOff = Int(state.cluster) * 2
-    if fatOff + 1 < state.fat.count {
-        let next = readU16LE(state.fat, fatOff)
-        if next >= 0xFFF8 || next == 0xFFF7 {
-            state.remaining = 0
-        } else {
-            state.cluster = next
-        }
-    } else {
+    let next = fat32NextCluster(state.fat, state.cluster)
+    if next >= 0x0FFFFFF8 || next == 0x0FFFFFF7 {
         state.remaining = 0
+    } else {
+        state.cluster = next
     }
     gConsole?.writeUserOutput([state.label, 0x2E])
     return true
 }
 
-private func readFat16FileWithIntent(task: inout TaskContext, path: [UInt8], intent: UInt32, label: StaticString) {
-    if !task.canReadFile(path: path) {
+private func readFat32FileWithIntent(task: inout TaskContext, path: NormalizedPath, intent: UInt32, label: StaticString) {
+    if !task.canReadFile(path: path.flat) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
         return
     }
@@ -1098,90 +1259,34 @@ private func readFat16FileWithIntent(task: inout TaskContext, path: [UInt8], int
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
         return
     }
-    guard let boot = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read boot sector\r\n")))
+    guard let vol = mountFat32(block) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
         return
     }
-    guard let vol = parseFat16BootSector(boot) else {
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT16 volume\r\n")))
+    guard let fat = readFat32FAT(block, vol) else {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
         return
     }
-    
-    var rootData: [UInt8] = []
-    for i in 0..<vol.rootDirSectors {
-        if let part = block.read(lba: UInt64(vol.rootDirStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            rootData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read root directory\r\n")))
-            return
-        }
-    }
-    
-    func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
-        var start = 0
-        var end = bytes.count
-        while start < end && bytes[start] == 0x20 { start += 1 }
-        while end > start && bytes[end - 1] == 0x20 { end -= 1 }
-        if start >= end { return [] }
-        return Array(bytes[start..<end])
-    }
-    
-    var firstCluster: UInt16 = 0
-    var fileSize: UInt32 = 0
-    var found = false
-    let entryCount = rootData.count / 32
-    for i in 0..<entryCount {
-        let off = i * 32
-        let first = rootData[off]
-        if first == 0x00 { break }
-        if first == 0xE5 { continue }
-        let attr = rootData[off + 11]
-        if attr == 0x0F { continue }
-        if (attr & 0x08) != 0 { continue }
-        if (attr & 0x10) != 0 { continue }
-        let nameBytes = trimSpaces(Array(rootData[off..<(off + 8)]))
-        let extBytes = trimSpaces(Array(rootData[(off + 8)..<(off + 11)]))
-        if nameBytes.isEmpty { continue }
-        var norm: [UInt8] = []
-        norm.append(contentsOf: nameBytes.map { toUpperASCII($0) })
-        if !extBytes.isEmpty {
-            norm.append(0x2E)
-            norm.append(contentsOf: extBytes.map { toUpperASCII($0) })
-        }
-        if norm == path {
-            firstCluster = readU16LE(rootData, off + 26)
-            fileSize = readU32LE(rootData, off + 28)
-            found = true
-            break
-        }
-    }
-    if !found {
+    guard let entry = resolvePathEntry(block, vol, fat, path) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] file not found\r\n")))
         return
     }
-    if fileSize == 0 {
+    if entry.isDir || entry.fileSize == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty file\r\n")))
         return
     }
-    
-    var fatData: [UInt8] = []
-    for i in 0..<UInt32(vol.sectorsPerFAT) {
-        if let part = block.read(lba: UInt64(vol.fatStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            fatData.append(contentsOf: part)
-        } else {
-            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
-            return
-        }
+    if entry.firstCluster < 2 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] invalid file cluster\r\n")))
+        return
     }
-    
     gConsole?.writeUserOutput(Array(staticStringBytes(label)))
     gConsole?.writeUserOutput(Array(staticStringBytes(": start\r\n")))
-    
-    var remaining = fileSize
-    var cluster = firstCluster
     let clusterSizeBytes = UInt32(vol.bytesPerSector) * UInt32(vol.sectorsPerCluster)
+    var remaining = entry.fileSize
+    var cluster = entry.firstCluster
     var totalRead: UInt32 = 0
-    while cluster >= 2 && remaining > 0 {
+    var guardCount: UInt32 = 0
+    while cluster >= 2 && remaining > 0 && guardCount < 0x100000 {
         let dataLBA = UInt64(vol.dataStartLBA) + UInt64(cluster - 2) * UInt64(vol.sectorsPerCluster)
         for s in 0..<UInt32(vol.sectorsPerCluster) {
             if let part = block.read(lba: dataLBA + UInt64(s), count: 1, intent: intent) {
@@ -1194,23 +1299,23 @@ private func readFat16FileWithIntent(task: inout TaskContext, path: [UInt8], int
                 gConsole?.writeUserOutput([0x2E])
             }
         }
-        let fatOff = Int(cluster) * 2
-        if fatOff + 1 >= fatData.count { break }
-        let next = readU16LE(fatData, fatOff)
-        if next >= 0xFFF8 { break }
-        if next == 0xFFF7 { break }
+        let next = fat32NextCluster(fat, cluster)
+        if next >= 0x0FFFFFF8 || next == 0x0FFFFFF7 {
+            break
+        }
         cluster = next
         if remaining > clusterSizeBytes {
             remaining -= clusterSizeBytes
         } else {
             remaining = 0
         }
+        guardCount &+= 1
     }
-    
     gConsole?.writeUserOutput([0x0D, 0x0A])
     gConsole?.writeUserOutput(Array(staticStringBytes(label)))
     gConsole?.writeUserOutput(Array(staticStringBytes(": done\r\n")))
 }
+
 
 struct IntentDesc {
     let intentId: UInt32

@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
+		AA91D5DE2F32C8860030D4C3 /* Make Disk */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = AA91D5E12F32C8860030D4C3 /* Build configuration list for PBXAggregateTarget "Make Disk" */;
+			buildPhases = (
+				AA91D5E22F32C88A0030D4C3 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			name = "Make Disk";
+			packageProductDependencies = (
+			);
+			productName = "Make Disk";
+		};
 		AAE3C9B22F2E80D7007F25C3 /* OS */ = {
 			isa = PBXAggregateTarget;
 			buildConfigurationList = AAE3C9B32F2E80D8007F25C3 /* Build configuration list for PBXAggregateTarget "OS" */;
@@ -76,6 +89,9 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					AA91D5DE2F32C8860030D4C3 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					AAE3C9B22F2E80D7007F25C3 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -95,11 +111,30 @@
 			projectRoot = "";
 			targets = (
 				AAE3C9B22F2E80D7007F25C3 /* OS */,
+				AA91D5DE2F32C8860030D4C3 /* Make Disk */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		AA91D5E22F32C88A0030D4C3 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\"${SRCROOT}/Scripts/MakeDisk.sh\" 64 on\n";
+		};
 		AAE3C9B62F2E80DC007F25C3 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -245,6 +280,26 @@
 			};
 			name = Release;
 		};
+		AA91D5DF2F32C8860030D4C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AA91D5E02F32C8860030D4C3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 		AAE3C9B42F2E80D8007F25C3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -273,6 +328,15 @@
 			buildConfigurations = (
 				AA4605EE2EF726B30018B236 /* Debug */,
 				AA4605EF2EF726B30018B236 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA91D5E12F32C8860030D4C3 /* Build configuration list for PBXAggregateTarget "Make Disk" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA91D5DF2F32C8860030D4C3 /* Debug */,
+				AA91D5E02F32C8860030D4C3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
