@@ -83,6 +83,12 @@ func cka_block_write(_ lba: UInt64, _ count: UInt32, _ buf: UnsafeRawPointer, _ 
 @_silgen_name("cka_block_write_intent")
 func cka_block_write_intent(_ lba: UInt64, _ count: UInt32, _ buf: UnsafeRawPointer, _ bufLen: Int, _ intent: UInt32) -> Int32
 
+@_silgen_name("cka_contract_open")
+func cka_contract_open(_ kind: UInt32, _ rights: UInt32, _ policy: UInt32, _ outHandle: UnsafeMutablePointer<UInt64>) -> Int32
+
+@_silgen_name("cka_contract_get")
+func cka_contract_get(_ handle: UInt64, _ outRights: UnsafeMutablePointer<UInt32>, _ outPolicy: UnsafeMutablePointer<UInt32>) -> Int32
+
 let KS_IPC_MSG_MAX: Int = 128
 let KS_STATUS_OK: Int32 = 0
 
@@ -93,6 +99,8 @@ let UART_TAG_OPEN_CONTRACT: UInt32 = 4
 
 let UART_CONTRACT_CMD: UInt32 = 1
 let UART_CONTRACT_EVT: UInt32 = 2
+
+let KS_CONTRACT_FAT32: UInt32 = 1
 
 let KS_INTENT_DIR_CALL: UInt32 = 1
 let KS_INTENT_DIR_EVENT: UInt32 = 2

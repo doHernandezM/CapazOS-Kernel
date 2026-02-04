@@ -168,6 +168,7 @@ struct ConsoleService {
             writeUserOutput("testtask <path> - read-only task (no list)\r\n")
             writeUserOutput("ioreadtest <a> <b> - latency vs background read\r\n")
             writeUserOutput("kerneltest <path> - read kernel file via caps/contracts\r\n")
+            writeUserOutput("findkernel - locate kernel image\r\n")
             return
         }
         
@@ -408,6 +409,15 @@ struct ConsoleService {
                 return
             }
             runKernelReadTest(path: norm)
+            return
+        }
+
+        if bytesEqual(tokens[0], "findkernel") {
+            writeUserOutput("\r\n")
+            if var task = gConsoleTask {
+                locateKernelImage(task: &task)
+                gConsoleTask = task
+            }
             return
         }
     }

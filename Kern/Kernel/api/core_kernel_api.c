@@ -13,6 +13,14 @@
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
 
+typedef struct ks_contract_entry {
+    uint32_t rights;
+    uint32_t policy;
+    uint8_t in_use;
+} ks_contract_entry_t;
+
+static ks_contract_entry_t g_contracts[64];
+
 void cka_attach_core_caps(cap_table_t *core_caps)
 {
     g_core_caps = core_caps;
@@ -226,6 +234,48 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
             }
         }
     }
+    return KS_STATUS_OK;
+}
+
+// ---- Contracts ----
+
+ks_status_t cka_contract_open(uint32_t kind, uint32_t rights, uint32_t policy, uint64_t *out_handle)
+{
+    if (!out_handle) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (kind != KS_CONTRACT_FAT32) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    for (uint32_t i = 0; i < (uint32_t)(sizeof(g_contracts) / sizeof(g_contracts[0])); i++) {
+        if (!g_contracts[i].in_use) {
+            g_contracts[i].in_use = 1;
+            g_contracts[i].rights = rights;
+            g_contracts[i].policy = policy;
+            *out_handle = (uint64_t)(i + 1);
+            return KS_STATUS_OK;
+        }
+    }
+    return KS_STATUS_OUT_OF_MEMORY;
+}
+
+ks_status_t cka_contract_get(uint64_t handle, uint32_t *out_rights, uint32_t *out_policy)
+{
+    if (!out_rights || !out_policy) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (handle == 0) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    uint64_t idx = handle - 1;
+    if (idx >= (uint64_t)(sizeof(g_contracts) / sizeof(g_contracts[0]))) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (!g_contracts[idx].in_use) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    *out_rights = g_contracts[idx].rights;
+    *out_policy = g_contracts[idx].policy;
     return KS_STATUS_OK;
 }
 

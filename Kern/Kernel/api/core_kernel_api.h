@@ -90,6 +90,15 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
 ks_status_t cka_block_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len);
 ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf, size_t buf_len, uint32_t intent);
 
+// ---- Contracts ----
+
+typedef enum ks_contract_kind {
+    KS_CONTRACT_FAT32 = 1,
+} ks_contract_kind_t;
+
+ks_status_t cka_contract_open(uint32_t kind, uint32_t rights, uint32_t policy, uint64_t *out_handle);
+ks_status_t cka_contract_get(uint64_t handle, uint32_t *out_rights, uint32_t *out_policy);
+
 // ---- Scheduling ----
 
 void cka_yield(void);
