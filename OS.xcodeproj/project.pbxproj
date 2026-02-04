@@ -162,7 +162,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --virt\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --rpi3\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

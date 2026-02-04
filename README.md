@@ -166,10 +166,10 @@ qemu-system-aarch64 \
 ```bash
 qemu-system-aarch64 \
 -machine raspi3b \
--cpu cortex-a53 -smp 2 \
--m 128M \
+-cpu cortex-a53 \
+-m 1G \  
 -nographic \
--serial stdio \
+-serial mon:stdio \
 -kernel build/kernel.img
 -drive if=none,file=/Users/cosas/CapazOS/disk_fat16.img,format=raw,id=hd0 \
 -device virtio-blk-device,drive=hd0 \
