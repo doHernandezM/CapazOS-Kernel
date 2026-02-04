@@ -52,7 +52,8 @@
 #define VIRTQ_DESC_F_NEXT  1U
 #define VIRTQ_DESC_F_WRITE 2U
 
-#define VIRTIO_BLK_T_IN 0U
+#define VIRTIO_BLK_T_IN  0U
+#define VIRTIO_BLK_T_OUT 1U
 
 #define VIRTQ_SIZE 8U
 
@@ -412,6 +413,79 @@ bool virtio_blk_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len)
     dcache_invalidate_range(g_blk.used, sizeof(struct virtq_used));
     dcache_invalidate_range(&g_blk.status, 1);
     dcache_invalidate_range(buf, (size_t)total);
+
+    if (g_blk.status != 0) {
+        return false;
+    }
+
+    return true;
+}
+
+bool virtio_blk_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len)
+{
+    if (!g_blk.ready || !buf || count == 0) {
+        return false;
+    }
+
+    uint64_t total = (uint64_t)count * (uint64_t)g_blk.sector_size;
+    if (buf_len < total) {
+        return false;
+    }
+
+    struct virtio_blk_req *req = &g_blk.req;
+    req->type = VIRTIO_BLK_T_OUT;
+    req->reserved = 0;
+    req->sector = lba;
+    g_blk.status = 0xFFu;
+
+    uint64_t req_pa = pmm_virt_to_phys((uint64_t)(uintptr_t)req);
+    uint64_t buf_pa = pmm_virt_to_phys((uint64_t)(uintptr_t)buf);
+    uint64_t st_pa = pmm_virt_to_phys((uint64_t)(uintptr_t)&g_blk.status);
+
+    g_blk.desc[0].addr = req_pa;
+    g_blk.desc[0].len = sizeof(*req);
+    g_blk.desc[0].flags = VIRTQ_DESC_F_NEXT;
+    g_blk.desc[0].next = 1;
+
+    g_blk.desc[1].addr = buf_pa;
+    g_blk.desc[1].len = (uint32_t)total;
+    g_blk.desc[1].flags = VIRTQ_DESC_F_NEXT;
+    g_blk.desc[1].next = 2;
+
+    g_blk.desc[2].addr = st_pa;
+    g_blk.desc[2].len = 1;
+    g_blk.desc[2].flags = VIRTQ_DESC_F_WRITE;
+    g_blk.desc[2].next = 0;
+
+    dcache_clean_invalidate_range(&g_blk.req, sizeof(g_blk.req));
+    dcache_clean_invalidate_range((void *)buf, (size_t)total);
+    dcache_clean_invalidate_range(&g_blk.status, 1);
+    dcache_clean_invalidate_range(g_blk.desc, sizeof(struct virtq_desc) * g_blk.queue_size);
+    dcache_clean_invalidate_range(g_blk.avail, sizeof(struct virtq_avail));
+
+    uint16_t idx = g_blk.avail->idx;
+    g_blk.avail->ring[idx % g_blk.queue_size] = 0;
+    mb();
+    g_blk.avail->idx = idx + 1;
+    mb();
+    dcache_clean_invalidate_range(g_blk.avail, sizeof(struct virtq_avail));
+
+    mmio_write(g_blk.mmio, VIRTIO_MMIO_QUEUE_NOTIFY, 0);
+
+    uint32_t spin = 0;
+    while (g_blk.used->idx == g_blk.last_used) {
+        dcache_invalidate_range(g_blk.used, sizeof(struct virtq_used));
+        __asm__ volatile("nop");
+        if (++spin > 2000000U) {
+            uart_write("virtio: write timeout\n", sizeof("virtio: write timeout\n") - 1);
+            return false;
+        }
+    }
+    mb();
+    g_blk.last_used = g_blk.used->idx;
+
+    dcache_invalidate_range(g_blk.used, sizeof(struct virtq_used));
+    dcache_invalidate_range(&g_blk.status, 1);
 
     if (g_blk.status != 0) {
         return false;

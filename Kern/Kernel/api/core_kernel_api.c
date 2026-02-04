@@ -168,6 +168,67 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
     return KS_STATUS_OK;
 }
 
+ks_status_t cka_block_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len)
+{
+    return cka_block_write_intent(lba, count, buf, buf_len, KS_IO_INTENT_LATENCY);
+}
+
+ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf, size_t buf_len, uint32_t intent)
+{
+    if (!buf || count == 0) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    if (!virtio_blk_ready()) {
+        return KS_STATUS_NOT_SUPPORTED;
+    }
+    uint64_t need = (uint64_t)count * (uint64_t)virtio_blk_sector_size();
+    if ((uint64_t)buf_len < need) {
+        return KS_STATUS_INVALID_ARG;
+    }
+
+    uint32_t max_chunk = count;
+    if (intent == KS_IO_INTENT_THROUGHPUT) {
+        max_chunk = 8;
+    } else if (intent == KS_IO_INTENT_BACKGROUND) {
+        max_chunk = 1;
+    }
+
+    uint32_t remaining = count;
+    uint32_t offset_sectors = 0;
+    const uint8_t *src = (const uint8_t *)buf;
+    uint32_t sector_size = virtio_blk_sector_size();
+
+    while (remaining > 0) {
+        uint32_t chunk = remaining;
+        if (chunk > max_chunk) {
+            chunk = max_chunk;
+        }
+        uint64_t chunk_bytes = (uint64_t)chunk * (uint64_t)sector_size;
+        uint64_t pages = (chunk_bytes + 0xFFFULL) / 0x1000ULL;
+        uint64_t tmp_pa = 0;
+        void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
+        if (!tmp) {
+            return KS_STATUS_OUT_OF_MEMORY;
+        }
+        memcpy(tmp, src + ((uint64_t)offset_sectors * (uint64_t)sector_size), (size_t)chunk_bytes);
+        if (!virtio_blk_write(lba + offset_sectors, chunk, tmp, (size_t)chunk_bytes)) {
+            kheap_free_pages(tmp, (uint32_t)pages);
+            return KS_STATUS_INTERNAL;
+        }
+        kheap_free_pages(tmp, (uint32_t)pages);
+
+        remaining -= chunk;
+        offset_sectors += chunk;
+
+        if (intent == KS_IO_INTENT_BACKGROUND) {
+            for (uint32_t i = 0; i < 2000; i++) {
+                yield();
+            }
+        }
+    }
+    return KS_STATUS_OK;
+}
+
 static ks_status_t ks_from_ipc_status(ks_ipc_status_t st)
 {
     switch (st) {

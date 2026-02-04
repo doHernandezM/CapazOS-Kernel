@@ -10,3 +10,4 @@ uint32_t virtio_blk_sector_size(void);
 uint64_t virtio_blk_capacity_sectors(void);
 
 bool virtio_blk_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len);
+bool virtio_blk_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len);

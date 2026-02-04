@@ -87,6 +87,8 @@ typedef enum ks_io_intent {
 ks_status_t cka_block_get_info(ks_block_info_t *out_info);
 ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_len);
 ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_t buf_len, uint32_t intent);
+ks_status_t cka_block_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len);
+ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf, size_t buf_len, uint32_t intent);
 
 // ---- Scheduling ----
 
