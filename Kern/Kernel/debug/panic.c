@@ -1,6 +1,6 @@
 #include "panic.h"
 
-#include "uart_pl011.h"
+#include "hal_uart.h"
 #include "debug/klog.h"
 
 static inline __attribute__((noreturn)) void park_cpu(void)
@@ -14,7 +14,7 @@ __attribute__((noreturn))
 void panic_with_prefix(const char *prefix, const char *msg)
 {
     /* Best-effort: ensure UART is on a valid base even in very early paths. */
-    uart_init(0);
+    hal_uart_init(0);
 
     if (prefix && *prefix) {
         klog_puts(prefix);

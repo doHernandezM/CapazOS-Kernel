@@ -4,6 +4,9 @@ set -euo pipefail
 # ----- Safe defaults (must come before any other references under `set -u`) -----
 : "${PLATFORM_NAME:=}"
 : "${PLATFORM:="${PLATFORM_NAME:-}"}"
+: "${PLATFORM_EXPLICIT:=0}"
+: "${ARCH:=}"
+: "${BOARD:=}"
 
 : "${CONFIGURATION:=}"
 : "${PROJECT_DIR:=}"
@@ -100,6 +103,7 @@ usage() {
 Usage: build.sh [options]
 
 Options:
+  --virt                  (alias for --platform aarch64-virt)
   --platform <name>        (default: aarch64-virt)
   --config <debug|release> (default: debug)
   --target <kernel_c|core> (default: kernel_c)
@@ -114,8 +118,14 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
     "" ) shift ;;
+      --virt)
+        PLATFORM="aarch64-virt"
+        PLATFORM_EXPLICIT=1
+        shift 1
+        ;;
       --platform)
         PLATFORM="${2:?missing value for --platform}"
+        PLATFORM_EXPLICIT=1
         shift 2
         ;;
       --config)
@@ -218,8 +228,8 @@ preflight_common() {
   #   - produced objects are ELF, matching ld.lld + our linker scripts
   # ---------------------------------------------------------------------------
   if [[ -z "${TARGET_TRIPLE:-}" ]]; then
-    case "${PLATFORM:-}" in
-      aarch64-*|arm64-*)
+    case "${ARCH:-${PLATFORM:-}}" in
+      aarch64|aarch64-*|arm64|arm64-*)
         TARGET_TRIPLE="aarch64-none-none-elf"
         ;;
       *)
@@ -312,6 +322,24 @@ preflight_common() {
     -Wall -Wextra
     -Wno-unused-command-line-argument
   )
+
+  # Inject arch/board defines if known.
+  upper() {
+    # Bash 3.2 compatible uppercase helper.
+    printf '%s' "$1" | tr '[:lower:]' '[:upper:]'
+  }
+  if [[ -n "${ARCH:-}" ]]; then
+    local arch_uc
+    arch_uc="$(upper "${ARCH}")"
+    CFLAGS_COMMON_ARR+=("-DCAPAZ_ARCH_${arch_uc}=1")
+    ASFLAGS_COMMON_ARR+=("-DCAPAZ_ARCH_${arch_uc}=1")
+  fi
+  if [[ -n "${BOARD:-}" ]]; then
+    local board_uc
+    board_uc="$(upper "${BOARD}")"
+    CFLAGS_COMMON_ARR+=("-DCAPAZ_BOARD_${board_uc}=1")
+    ASFLAGS_COMMON_ARR+=("-DCAPAZ_BOARD_${board_uc}=1")
+  fi
 
   # Keep legacy string forms for logging/debug output.
   CFLAGS_COMMON="${CFLAGS_COMMON_ARR[*]}"
@@ -747,6 +775,11 @@ select_platform() {
   case "${PLATFORM}" in
     aarch64-virt|arm64-virt)
       ARCH="aarch64"
+      BOARD="virt"
+      ;;
+    aarch64-rpi3|arm64-rpi3)
+      ARCH="aarch64"
+      BOARD="rpi3"
       ;;
     *)
       die "unsupported PLATFORM: ${PLATFORM}"

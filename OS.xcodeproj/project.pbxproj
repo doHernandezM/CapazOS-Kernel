@@ -15,6 +15,9 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				AA91D5E82F32EF530030D4C3 /* Docs */,
+			);
 			name = "Make Disk";
 			packageProductDependencies = (
 			);
@@ -27,6 +30,9 @@
 				AAE3C9B62F2E80DC007F25C3 /* ShellScript */,
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA91D5E82F32EF530030D4C3 /* Docs */,
 			);
 			name = OS;
 			packageProductDependencies = (
@@ -43,6 +49,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA91D5E82F32EF530030D4C3 /* Docs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Docs;
+			sourceTree = "<group>";
+		};
 		AAAF96DC2F1882B300FA62F3 /* Linker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Linker;
@@ -73,6 +84,7 @@
 				AAE99A662F09C94000EAB13D /* .gitignore */,
 				AAE99A672F09C97D00EAB13D /* LICENSE */,
 				AAE99A682F09C97D00EAB13D /* README.md */,
+				AA91D5E82F32EF530030D4C3 /* Docs */,
 				AAAF96DC2F1882B300FA62F3 /* Linker */,
 				AAAF96EF2F1882B300FA62F3 /* Scripts */,
 				AAAF972A2F1882B300FA62F3 /* Kern */,
@@ -150,7 +162,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --platform aarch64-virt --target kernel_c\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --virt --target kernel_c\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

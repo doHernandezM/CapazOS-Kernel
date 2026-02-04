@@ -14,7 +14,7 @@ void irq_exit(void) {
     s_irq_depth--;
 }
 
-#include "gicv2.h"
+#include "hal_irq.h"
 
 enum { IRQ_MAX = 1024 };
 
@@ -39,7 +39,7 @@ void irq_dispatch(trap_frame_t *tf)
     irq_enter();
 
     /* Acknowledge the interrupt at the GIC CPU interface. */
-    uint32_t iar = gicv2_acknowledge();
+    uint32_t iar = hal_irq_acknowledge();
     uint32_t id = gic_irqid(iar);
 
     /* 1020-1023 are special/spurious IDs in GICv2. */
@@ -49,13 +49,13 @@ void irq_dispatch(trap_frame_t *tf)
          * On some QEMU/GIC setups, returning without EOIR here can
          * produce an IRQ storm (the CPU keeps taking the same IRQ entry).
          */
-        gicv2_end_interrupt(iar);
+        hal_irq_end(iar);
         goto out;
     }
 
     /* Defensive: ignore out-of-range IDs while still EOIR'ing. */
     if (id >= IRQ_MAX) {
-        gicv2_end_interrupt(iar);
+        hal_irq_end(iar);
         goto out;
     }
 
@@ -65,7 +65,7 @@ void irq_dispatch(trap_frame_t *tf)
     }
 
     /* End-of-interrupt (write back the original IAR value). */
-    gicv2_end_interrupt(iar);
+    hal_irq_end(iar);
 
 out:
     irq_exit();

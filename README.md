@@ -8,6 +8,12 @@ CapazOS is a from-scratch OS experiment motivated by modern SoCs (especially App
 
 ---
 
+## Roadmap (rPi3 QEMU bring-up)
+
+We are preparing a **raspi3b QEMU** bring-up to make rPi3 a first-class platform alongside `virt`. The multi-milestone task list lives in `Docs/Plan-RPi3.md`.
+
+---
+
 ## Build metadata
 
 Source: `Scripts/buildinfo.ini` (compiled into `buildinfo.h`).
@@ -101,6 +107,7 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 - `Code/OS/Kern` — boot + kernel (C + AArch64 asm)
 - `Code/OS/Core` — Core layer (Swift + small C shims)
 - `Code/OS/Docs` — design docs (boundary rules, etc.)
+- `Code/OS/Docs/Plan-RPi3.md` — rPi3 QEMU bring-up task list
 - `Code/OS/Kern/Kernel/api` — internal Core↔Kernel API surface
 
 ---
@@ -110,8 +117,16 @@ Progress here is best understood as **“kernel substrate readiness,”** not as
 From the repository root:
 
 ```bash
+./Scripts/build.sh --virt --config debug --target kernel_c
+```
+
+Or explicitly:
+
+```bash
 ./Scripts/build.sh --platform aarch64-virt --config debug --target kernel_c
 ```
+
+Note: `--platform aarch64-rpi3` is planned and tracked in `Docs/Plan-RPi3.md`.
 
 CI/parity wrapper:
 

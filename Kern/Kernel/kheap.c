@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #include "pmm.h"
-#include "uart_pl011.h"
 #include "mem.h"
 #include "contracts.h"
 #include "debug/klog.h"

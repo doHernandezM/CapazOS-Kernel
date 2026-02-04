@@ -27,8 +27,8 @@
 #include "irq.h"
 #include "preempt.h"
 #include "mm/mem.h"   // memcpy
-#include "gicv2.h"
-#include "timer_generic.h"
+#include "hal_irq.h"
+#include "hal_timer.h"
 #include "work/work_queue.h"
 #include "sched.h"
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
@@ -317,7 +317,7 @@ static void uart_driver_pump(void)
 
     // RX path: poll PL011 and post RX_EVENTs.
     char ch;
-    while (uart_getc_nonblock(&ch)) {
+    while (hal_uart_getc_nonblock(&ch)) {
         ks_ipc_msg_t evt;
         evt.tag = UART_TAG_RX_EVENT;
         evt.len = 1;
@@ -334,7 +334,7 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
     (void)irq; (void)ctx; (void)tf;
 
     /* Top-half: acknowledge/re-arm the timer. */
-    timer_handle_irq();
+    hal_timer_handle_irq();
 
     /* Enqueue the deferred tick work item (no allocation in IRQ). */
     if (!g_tick_work_pending) {
@@ -508,7 +508,7 @@ static void core_thread_entry(void *arg)
 void kmain(const boot_info_t *boot_info)
 {
     /* Ensure we have a working UART even before DTB parsing. */
-    uart_init(0);
+    hal_uart_init(0);
 
     
     
@@ -539,7 +539,7 @@ void kmain(const boot_info_t *boot_info)
 #if KMAIN_DEBUG
                 klog_puts("UART: switching to DTB base "); klog_puthex64(uart_phys); klog_putnl();
 #endif
-                uart_init(uart_phys);
+                hal_uart_init(uart_phys);
                 klog_puts("UART: "); klog_puthex64(uart_phys); klog_putnl();
             }
 
@@ -596,27 +596,25 @@ void kmain(const boot_info_t *boot_info)
 
     /* Bring up interrupts + timer tick after core init. */
     irq_global_disable();
-    gicv2_init();
+    hal_irq_init();
 
     /* Register and enable the architected timer interrupt. */
-    (void)irq_register(TIMER_PPI_IRQ, timer_irq_handler, 0);
+    (void)irq_register(hal_timer_irq(), timer_irq_handler, 0);
     /*
      * Generic timer PPIs are level-sensitive. Configuring them as edge can
      * cause missed acks / repeated wakeups depending on the model.
      */
-    gicv2_config_irq(TIMER_PPI_IRQ, false);
-    gicv2_enable_irq(TIMER_PPI_IRQ);
+    hal_irq_config(hal_timer_irq(), false);
+    hal_irq_enable(hal_timer_irq());
 
     /* 100Hz tick (10ms). */
     /*
      * Start the periodic tick (unless built in tickless mode).
      * Timer IRQ handling remains registered for one-shot deadlines.
      */
-    timer_init_hz(CONFIG_TICK_HZ);
+    hal_timer_init_hz(CONFIG_TICK_HZ);
 
     klog_puts("Kernel: ");
-    klog_puts(CAPAZ_KERNEL_PLATFORM);
-    klog_puts(" - ");
     klog_puts(CAPAZ_MACHINE);
     klog_puts(" ");
     klog_puts(CAPAZ_KERNEL_VERSION);

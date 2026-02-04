@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include "uart_pl011.h"
+#include "hal_uart.h"
 #include "serial/uart.h"
 #include "debug/klog.h"
 
@@ -1317,7 +1317,7 @@ void dtb_dump_devices(void)
                 }
             }
             uart_write(" depth=", sizeof(" depth=") - 1);
-            uart_putu64_dec((uint64_t)depth);
+            hal_uart_putu64_dec((uint64_t)depth);
             uart_write("\n", 1);
             continue;
         }

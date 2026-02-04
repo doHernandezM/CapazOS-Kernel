@@ -7,7 +7,6 @@
 
 #include "platform.h"
 #include "dtb.h"
-#include "uart_pl011.h"
 #include "panic.h"
 #include "contracts.h"
 #include "debug/klog.h"
@@ -472,5 +471,4 @@ bool pmm_get_stats_ex(pmm_stats_ex_t *out)
     out->free_page_calls = g_pmm_free_calls;
     return true;
 }
-
 

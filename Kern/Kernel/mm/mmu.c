@@ -18,7 +18,6 @@
 
 #include "mmu.h"
 #include "dtb.h"
-#include "uart_pl011.h"
 #include "panic.h"
 #include <stdint.h>
 #include <stddef.h>

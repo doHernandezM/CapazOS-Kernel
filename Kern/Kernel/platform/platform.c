@@ -2,7 +2,6 @@
 
 #include <stddef.h>
 
-#include "uart_pl011.h"
 #include "debug/klog.h"
 
 #define PLATFORM_MAX_RANGES  64

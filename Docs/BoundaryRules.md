@@ -37,6 +37,12 @@ Core owns system policy and most OS features:
   `api/core_kernel_api.h`). Core must not include kernel-private headers
   (e.g. `cap_table.h`, endpoint internals) unless explicitly marked Core-callable.
 
+## Platform HAL boundary
+
+Board-specific code should be isolated behind a small platform HAL surface
+(`uart`, `timer`, `irq`, `mmu`, `block`, `clock`, `mailbox`). Platform code must
+not leak board-only details into the generic kernel or Core policy layer.
+
 ## Context and safety rules
 
 ### IRQ context
