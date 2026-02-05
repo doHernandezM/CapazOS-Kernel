@@ -29,6 +29,7 @@
 #include "mm/mem.h"   // memcpy
 #include "hal_irq.h"
 #include "hal_timer.h"
+#include "hal_block.h"
 #include "work/work_queue.h"
 #include "sched.h"
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
@@ -88,6 +89,49 @@ static void print_total_memory_from_dtb(void)
     klog_puts(buf);
     klog_putnl();
 
+}
+
+static uint32_t checksum32(const uint8_t *buf, size_t len)
+{
+    uint32_t sum = 0;
+    for (size_t i = 0; i < len; i++) {
+        sum = (sum << 5) - sum + buf[i]; /* djb2-style rolling hash */
+    }
+    return sum;
+}
+
+static void block_sanity_test(void)
+{
+    if (!virtio_blk_ready()) {
+        klog_puts("block: no virtio block device\n");
+        return;
+    }
+
+    uint32_t sector_size = virtio_blk_sector_size();
+    if (sector_size == 0 || sector_size > (32 * 1024)) {
+        klog_puts("block: invalid sector size\n");
+        return;
+    }
+
+    uint8_t *buf = (uint8_t *)kbuf_alloc(sector_size);
+    if (!buf) {
+        klog_puts("block: alloc failed\n");
+        return;
+    }
+
+    bool ok = hal_block_read(0, buf, 1);
+    if (!ok) {
+        klog_puts("block: read LBA0 failed\n");
+        kbuf_free(buf);
+        return;
+    }
+
+    uint32_t sum = checksum32(buf, sector_size);
+    klog_puts("block: LBA0 checksum=");
+    klog_putu64_dec((uint64_t)sum);
+    klog_putnl();
+
+    kbuf_free(buf);
 }
 
 #if KMAIN_DEBUG
@@ -593,6 +637,7 @@ void kmain(const boot_info_t *boot_info)
 
     /* Initialize virtio block device (read-only bring-up). */
     (void)virtio_blk_init();
+    block_sanity_test();
 
     /* Bring up interrupts + timer tick after core init. */
     irq_global_disable();
