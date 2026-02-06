@@ -1,14 +1,14 @@
 /* OS/Kern/Arch/aarch64/start_rpi3.S
  *
- * rPi3 early boot stage (QEMU raspi3b).
+ * rPi3 early boot path (QEMU raspi3b).
  *
- * Goals for Milestone 1:
+ * Boot flow:
  *  - Drop to EL1 if needed
  *  - Set a temporary stack
  *  - Install minimal exception vectors
  *  - Initialize PL011 UART
  *  - Print a banner
- *  - No MMU (identity mapping)
+ *  - Enable identity-mapped MMU setup
  */
 
 #include "buildinfo.h"
@@ -112,7 +112,7 @@ _start:
     /* Handoff stub into kernel image (identity-mapped, no high-half) */
     bl      kernel_handoff_stub
 
-    /* Park until next milestone wiring */
+    /* Park CPU if handoff does not proceed. */
 .Lhalt:
     wfe
     b       .Lhalt

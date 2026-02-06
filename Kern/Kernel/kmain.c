@@ -25,7 +25,6 @@
 #include "platform.h"
 #include "serial/uart.h"
 #include "irq.h"
-#include "preempt.h"
 #include "mm/mem.h"   // memcpy
 #include "hal_irq.h"
 #include "hal_timer.h"
@@ -259,24 +258,9 @@ workq_t g_deferred_workq;
 static task_t g_kernel_task;
 static cap_table_t g_kernel_cap_table;
 // Removed: g_timer_token and log service seeding.  Capabilities will be
-// seeded explicitly when services are implemented.  We keep g_tick_work_pending
-// to coordinate deferred tick work.
-static volatile bool g_tick_work_pending = false;
-static volatile uint64_t g_tick_count = 0;
-
-static void tick_work_fn(void *arg);
+// seeded explicitly when services are implemented.
 static void uart_driver_pump(void);
 extern __attribute__((weak)) void core_poll(void);
-
-/* Preallocated tick work item: never freed. */
-static work_item_t g_tick_item = { .fn = tick_work_fn, .arg = NULL, .next = NULL };
-
-static void tick_work_fn(void *arg)
-{
-    (void)arg;
-    /* Mark as no longer pending before doing any work. */
-    g_tick_work_pending = false;
-}
 
 static void uart_driver_pump(void)
 {
@@ -389,25 +373,6 @@ static void uart_driver_pump(void)
     }
 }
 
-static void preempt_test_thread(void *arg)
-{
-    const char *name = (const char *)arg;
-    uint64_t last_tick = 0;
-
-    for (;;) {
-        uint64_t t = g_tick_count;
-        if (t != last_tick && (t % 100) == 0) {
-            klog_puts("preempt: ");
-            klog_puts(name ? name : "?");
-            klog_puts(" tick=");
-            klog_putu64_dec(t);
-            klog_putnl();
-            last_tick = t;
-        }
-        __asm__ volatile("nop");
-    }
-}
-
 /* Timer IRQ handler (allocation-free): ack + enqueue work. */
 static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 {
@@ -415,17 +380,6 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 
     /* Top-half: acknowledge/re-arm the timer. */
     hal_timer_handle_irq();
-
-    g_tick_count++;
-
-    /* Signal scheduler intent directly from IRQ context. */
-    preempt_set_need_resched();
-
-    /* Enqueue the deferred tick work item (no allocation in IRQ). */
-    if (!g_tick_work_pending) {
-        g_tick_work_pending = true;
-        (void)workq_enqueue_from_irq(&g_deferred_workq, &g_tick_item);
-    }
 }
 
 /*
@@ -572,17 +526,8 @@ static void core_thread_entry(void *arg)
 
             it->fn(it->arg);
 
-            /* Free cached items; the tick item is preallocated/static. */
-            if (it != &g_tick_item) {
-                work_item_free(it);
-            }
-        }
-
-        /* Cooperative scheduling hook for the current stage. */
-        if (preempt_need_resched()) {
-            preempt_clear_need_resched();
-            yield();
-            continue;
+            /* Free cached work item after processing. */
+            work_item_free(it);
         }
 
         /* Sleep until the next interrupt enqueues more work. */
@@ -689,7 +634,7 @@ void kmain(const boot_info_t *boot_info)
     (void)hal_block_init();
     block_sanity_test();
 
-    /* Bring up interrupts + timer tick after core init. */
+    /* Bring up interrupts + timer support after core init. */
     irq_global_disable();
     hal_irq_init();
 
@@ -702,9 +647,8 @@ void kmain(const boot_info_t *boot_info)
     hal_irq_config(hal_timer_irq(), false);
     hal_irq_enable(hal_timer_irq());
 
-    /* 100Hz tick (10ms). */
     /*
-     * Start the periodic tick (unless built in tickless mode).
+     * Start the timer subsystem (periodic in non-tickless mode).
      * Timer IRQ handling remains registered for one-shot deadlines.
      */
     hal_timer_init_hz(CONFIG_TICK_HZ);
@@ -726,19 +670,11 @@ void kmain(const boot_info_t *boot_info)
     core_thr->task = &g_kernel_task;
     sched_enqueue(core_thr);
 
-#if CONFIG_SCHED_PREEMPT_TEST
-    /* Preemption test threads (do not yield). */
-    thread_t *tA = thread_create_named("preempt/A", preempt_test_thread, (void *)"A");
-    thread_t *tB = thread_create_named("preempt/B", preempt_test_thread, (void *)"B");
-    if (tA) sched_enqueue(tA);
-    if (tB) sched_enqueue(tB);
-#endif
-
     irq_global_enable();
 
     klog_putnl();
     
-    /* Enter the cooperative scheduler. */
+    /* Enter the scheduler. */
     yield();
 
     /* Bootstrap thread becomes the idle thread. */

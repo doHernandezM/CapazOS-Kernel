@@ -63,7 +63,7 @@ if [[ -z "${CAPAZ_TOOLCHAIN_SOURCED:-}" ]]; then
 fi
 
 # Default target if not specified by args
-: "${TARGET:=kernel_c}"
+: "${TARGET:=both}"
 
 # Flags can come from toolchain.env; we set safe defaults
 CFLAGS_COMMON="${CFLAGS_COMMON:-}"
@@ -106,8 +106,11 @@ Options:
   --virt                  (alias for --platform aarch64-virt)
   --rpi3                  (alias for --platform aarch64-rpi3)
   --platform <name>        (default: aarch64-virt)
+  --loader                 (build loader only)
+  --kernel                 (build kernel only)
   --buildinfo-ini <path>   (default: OS/Scripts/buildinfo.ini)
   --out <dir>              (override OUT_DIR)
+  --target <name>          (both | kernel | kernel_c | loader)
   -h, --help               show help
 EOF
 }
@@ -133,9 +136,16 @@ parse_args() {
         shift 2
         ;;
       --target)
-        # Deprecated: builds are unified; keep for compatibility.
-        TARGET="kernel_c"
+        TARGET="${2:?missing value for --target}"
         shift 2
+        ;;
+      --loader)
+        TARGET="loader"
+        shift 1
+        ;;
+      --kernel)
+        TARGET="kernel"
+        shift 1
         ;;
       --buildinfo-ini)
         BUILDINFO_INI="${2:?missing value for --buildinfo-ini}"
@@ -678,6 +688,7 @@ compile_objects() {
           -I "${KERN_DIR}" \
           -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
+          -I "${KERN_DIR}/Loader" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
           -I "${KERN_DIR}/Arch" \
@@ -708,6 +719,7 @@ compile_objects() {
           -I "${KERN_DIR}" \
           -I "${KERN_DIR}/ABI" \
           -I "${KERN_DIR}/HAL" \
+          -I "${KERN_DIR}/Loader" \
           -I "${KERN_DIR}/Lib" \
           -I "${KERN_DIR}/Lib/fdt" \
           -I "${KERN_DIR}/Arch" \
@@ -921,6 +933,57 @@ build_boot_and_kernel() {
   build_kernel_img "${kern_img}" "${boot_bin}" "${kern_bin}"
 
   echo "[build] Built -> ${boot_bin}, ${kern_bin}, ${kern_img}"
+}
+
+# --- Loader -----------------------------------------------------------------
+
+build_loader() {
+  select_platform
+  preflight_common
+
+  need_cmd "${CC}"
+  need_cmd "${AR}"
+  need_cmd "${LD}"
+  need_cmd "${OBJCOPY}"
+
+  if [[ "${BOARD:-}" != "virt" ]]; then
+    die "loader is currently implemented for aarch64-virt only"
+  fi
+
+  local out_dir="${OUT_DIR:?}"
+  local obj_dir="${out_dir}/obj"
+  local gen_dir="${out_dir}/gen"
+  local gen_inc="${gen_dir}/include"
+
+  mkdirp "${out_dir}"
+  mkdirp "${obj_dir}"
+  mkdirp "${gen_dir}"
+  mkdirp "${gen_inc}"
+
+  local loader_linker="${KERNEL_DIR}/Linker/loader.ld"
+
+  local loader_sources=()
+  while IFS= read -r f; do loader_sources+=("${f}"); done < <(
+    find "${KERN_DIR}/Loader" \
+      -type f \( -name "*.c" -o -name "*.S" -o -name "*.s" \) -print | sort
+  )
+
+  if [[ ${#loader_sources[@]} -eq 0 ]]; then
+    die "no loader sources found under ${KERN_DIR}/Loader"
+  fi
+
+  compile_objects "${obj_dir}" "${gen_inc}" "${loader_sources[@]}"
+
+  local loader_objs=()
+  while IFS= read -r -d '' f; do loader_objs+=("$f"); done < <(find "${obj_dir}" -name '*.o' -print0)
+
+  local loader_elf="${out_dir}/loader.elf"
+  local loader_bin="${out_dir}/loader.bin"
+
+  link_kernel "${loader_elf}" "${loader_linker}" "${loader_objs[@]}"
+  make_binary "${loader_elf}" "${loader_bin}"
+
+  echo "[build] Built loader -> ${loader_bin}"
 }
 
 # Create kernel.img from boot.bin + padding + kernel.bin.

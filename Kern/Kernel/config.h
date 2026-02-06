@@ -19,7 +19,7 @@
  * deadline.
  */
 #ifndef CONFIG_TICKLESS
-#define CONFIG_TICKLESS 0
+#define CONFIG_TICKLESS 1
 #endif
 
 /*
@@ -36,7 +36,7 @@
 
 /* Enable simple preemption test threads in kmain. */
 #ifndef CONFIG_SCHED_PREEMPT_TEST
-#define CONFIG_SCHED_PREEMPT_TEST 1
+#define CONFIG_SCHED_PREEMPT_TEST 0
 #endif
 
 #if (CONFIG_TICK_HZ <= 0)

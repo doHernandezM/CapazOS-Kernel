@@ -1,114 +1,55 @@
-# rPi3 QEMU Bring-up Plan (raspi3b)
+# rPi3 QEMU Bring-up Notes
 
-This plan targets **QEMU `-machine raspi3b`**, not physical hardware. The goal is to make rPi3 a first-class platform alongside `virt` with a clean board abstraction and a repeatable boot flow.
+This document tracks the rPi3 (`raspi3b`) bring-up direction for CapazOS and keeps it aligned with the `virt` platform architecture.
 
-## Scope and assumptions
+## Scope
 
-- QEMU `raspi3b` only for this phase.
-- Kernel image is loaded as `KERNEL*.IMG` from a FAT32 boot partition.
-- AArch64 EL1 kernel, with board-specific init in `Start.S` and rPi-specific linker script.
-- Platform work should not regress `virt`.
+- Target environment: QEMU `raspi3b`
+- Keep shared kernel code common between `virt` and `rpi3`
+- Keep board-specific behavior isolated in board/arch/HAL layers
+- Preserve `virt` runtime behavior while expanding `rpi3`
 
-## Milestone 0 — Build discipline and platform abstraction
+## Platform model
 
-Goal: Treat `virt` as one of many platforms and introduce a clear board HAL surface.
+The platform split is:
+- `arch`: CPU and exception-level behavior
+- `board`: memory map, interrupt wiring, UART base, timers, and device topology
+- `hal`: stable kernel-facing interfaces (`uart`, `timer`, `irq`, `mmu`, `block`, `clock`, `mailbox`)
 
-Tasks:
-1. Enforce explicit platform selection in `Scripts/build.sh` (e.g. `--platform aarch64-virt`, `--platform aarch64-rpi3`).
-2. Split platform config into `arch` and `board` layers.
-3. Introduce a minimal HAL surface for `uart`, `timer`, `irq`, `mmu`, `block`, `clock`, `mailbox`.
-4. Keep `virt` booting with the new HAL surface.
+Generic kernel code should call HAL interfaces only and avoid board symbols directly.
 
-Exit criteria:
-1. `virt` still boots and prints UART output through the HAL.
-2. Build output includes platform-specific directories.
+## rPi3 bring-up checklist
 
-## Milestone 1 — rPi3 boot flow + early UART
+1. Boot and early UART
+- Enter EL1 cleanly
+- Set stack and vectors
+- Bring up PL011 UART and print boot banner
 
-Goal: Reach early serial output on QEMU raspi3b.
+2. MMU and memory map
+- Define rPi3 RAM/MMIO layout
+- Build and install early page tables
+- Validate kernel text/data/stack mappings
 
-Tasks:
-1. Add rPi3 board target with linker script and load address.
-2. Implement rPi entry point in `Start.S` (EL detection, stack, vector base).
-3. Bring up early UART (PL011 preferred for QEMU raspi3b).
-4. Install minimal exception vectors (sync and IRQ stubs).
+3. Timer and interrupt routing
+- Bring up generic timer
+- Route interrupts through board IRQ controller integration
+- Confirm periodic and one-shot timer behavior
 
-Exit criteria:
-1. Kernel prints a banner on boot under QEMU raspi3b.
-2. No MMU yet, identity-mapped physical addressing.
+4. Block device path
+- Provide HAL block backend for rPi3/QEMU path
+- Verify stable sector reads and error handling
 
-## Milestone 2 — MMU + page tables
+5. Boot media and loader handoff
+- Keep loader handoff structure aligned with kernel expectations
+- Ensure DTB pointer handoff is valid and consistent
 
-Goal: Enable MMU using the rPi3 memory map.
+## Validation targets
 
-Tasks:
-1. Define rPi3 memory map and MMIO regions.
-2. Build early page tables and enable MMU at EL1.
-3. Validate kernel text/data, stacks, and early allocations under MMU.
+- `aarch64-virt` still boots and reaches Core console
+- `aarch64-rpi3` reaches UART boot logs and kernel handoff
+- Shared HAL interfaces remain unchanged for generic kernel subsystems
 
-Exit criteria:
-1. Kernel continues logging after MMU enable.
-2. PMM and early heap remain stable.
+## Notes
 
-## Milestone 3 — Timer + IRQ wiring
-
-Goal: Establish periodic interrupts and scheduler tick.
-
-Tasks:
-1. Initialize the ARM generic timer.
-2. Wire the GIC and enable IRQs.
-3. Add a minimal timer interrupt handler and scheduler tick.
-
-Exit criteria:
-1. Timer interrupts fire at a stable interval.
-2. Scheduler tick and yield path are observable.
-
-## Milestone 4 — SD/MMC block device
-
-Goal: Replace virtio block with rPi SD/MMC.
-
-Tasks:
-1. Implement an rPi SD/MMC driver (PIO path first).
-2. Add block device abstraction to the HAL.
-3. Read a known sector and validate signature or checksum.
-
-Exit criteria:
-1. Block reads succeed from the SD/MMC device in QEMU.
-
-## Milestone 5 — FAT32 boot partition
-
-Goal: Match the real firmware boot flow.
-
-Tasks:
-1. Build a FAT32 boot partition with `KERNEL*.IMG`.
-2. Verify QEMU raspi3b boots from this image.
-3. Add minimal FAT32 read support if kernel needs modules/resources.
-
-Exit criteria:
-1. QEMU raspi3b boots from the FAT32 image and reaches the console.
-
-## Milestone 6 — Mailbox + clock setup
-
-Goal: Reliable clocks for UART and timers.
-
-Tasks:
-1. Implement mailbox property interface.
-2. Set UART clock and core clock via mailbox.
-3. Re-verify UART baud and timer accuracy.
-
-Exit criteria:
-1. UART baud remains stable across reboots.
-2. Timer interval stays accurate.
-
-## Milestone 7 — Platform hardening and CI
-
-Goal: Make rPi3 a clean, supported platform target.
-
-Tasks:
-1. Extract rPi3-specific code into a dedicated platform folder.
-2. Keep the HAL surface stable and minimal.
-3. Add a QEMU raspi3b boot test in CI or local script.
-
-Exit criteria:
-1. `--platform aarch64-rpi3` is a supported, documented target.
-2. `virt` and `rpi3` both boot with shared kernel code.
+- This document is intentionally implementation-focused and avoids release scheduling language.
+- Loader storage policy and filesystem choices are documented in loader-specific sources and README.

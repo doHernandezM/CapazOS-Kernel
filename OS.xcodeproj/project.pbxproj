@@ -55,6 +55,22 @@
 			);
 			productName = OS;
 		};
+		AAFF04F62F36882E00981622 /* OS.Virt.Loader */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = AAFF04F82F36882E00981622 /* Build configuration list for PBXAggregateTarget "OS.Virt.Loader" */;
+			buildPhases = (
+				AAFF04F72F36882E00981622 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA91D5E82F32EF530030D4C3 /* Docs */,
+			);
+			name = OS.Virt.Loader;
+			packageProductDependencies = (
+			);
+			productName = OS;
+		};
 /* End PBXAggregateTarget section */
 
 /* Begin PBXFileReference section */
@@ -141,6 +157,7 @@
 				AAE3C9B22F2E80D7007F25C3 /* OS.rpi3 */,
 				AA91D5DE2F32C8860030D4C3 /* Make Disk */,
 				AA91D7212F33A3A50030D4C3 /* OS.Virt */,
+				AAFF04F62F36882E00981622 /* OS.Virt.Loader */,
 			);
 		};
 /* End PBXProject section */
@@ -179,7 +196,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --virt\n";
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" \n";
 		};
 		AAE3C9B62F2E80DC007F25C3 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -197,6 +214,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --rpi3\n";
+		};
+		AAFF04F72F36882E00981622 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(cd \"${SRCROOT}/..\" && pwd)\"\nexec \"${ROOT}/OS/Scripts/build.sh\" --target loader\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -386,6 +421,26 @@
 			};
 			name = Release;
 		};
+		AAFF04F92F36882E00981622 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AAFF04FA2F36882E00981622 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 65FTD79W4E;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -421,6 +476,15 @@
 			buildConfigurations = (
 				AAE3C9B42F2E80D8007F25C3 /* Debug */,
 				AAE3C9B52F2E80D8007F25C3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAFF04F82F36882E00981622 /* Build configuration list for PBXAggregateTarget "OS.Virt.Loader" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAFF04F92F36882E00981622 /* Debug */,
+				AAFF04FA2F36882E00981622 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
