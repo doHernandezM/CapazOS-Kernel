@@ -3,23 +3,32 @@
 #include <stddef.h>
 
 #include "debug/klog.h"
+#include "platform_config.h"
+#include "hal_clock.h"
+#include "hal_mailbox.h"
 
 #define PLATFORM_MAX_RANGES  64
 
-/* QEMU virt baseline RAM starts at 0x4000_0000. */
-#define RAM_BASE 0x40000000ULL
-
-/* TTBR1 direct-map window size (must match mmu.c). */
-#define RAM_DIRECTMAP_SIZE 0x40000000ULL /* 1 GiB */
+/* TTBR1 direct-map window (must match mmu.c). */
+#define RAM_BASE CAPAZ_RAM_BASE
+#define RAM_DIRECTMAP_SIZE CAPAZ_RAM_DIRECTMAP_SIZE
 
 /* High-half direct map base for RAM_BASE. Must match boot + mmu.c. */
-#define HH_PHYS_4000_BASE 0xFFFF800040000000ULL
+#define HH_PHYS_4000_BASE CAPAZ_HH_RAM_BASE
 
 /* Fixed PMM metadata reservation (pages) immediately after kernel runtime end. */
 #define PMM_METADATA_PAGES 16ULL
 
 /* Linker-provided end of kernel .bss (kernel runtime footprint end). */
 extern uint8_t __kernel_runtime_end[];
+
+void platform_early_init(void)
+{
+    // Placeholder for board wiring (clocks, mailbox, etc).
+    // For virt, these calls are no-ops.
+    (void)hal_clock_set_rate(0, 0);
+    (void)hal_mailbox_call(0, NULL);
+}
 
 static inline uint64_t hh_virt_to_phys(uint64_t va) {
     if (va >= HH_PHYS_4000_BASE) {

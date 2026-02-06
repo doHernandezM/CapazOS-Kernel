@@ -30,11 +30,11 @@
 #include "hal_irq.h"
 #include "hal_timer.h"
 #include "hal_block.h"
+#include "hal_mmu.h"
 #include "work/work_queue.h"
 #include "sched.h"
 #include "kheap.h"   // kbuf_alloc/kbuf_free (buffer-tier allocator)
 #include "panic.h"   // panic()
-#include "dev/virtio_blk.h"
 
 // Core entrypoints are declared in Core (core_main and Swift).  We no longer
 // expose kernel service tables.  The kernel no longer provides
@@ -102,12 +102,12 @@ static uint32_t checksum32(const uint8_t *buf, size_t len)
 
 static void block_sanity_test(void)
 {
-    if (!virtio_blk_ready()) {
-        klog_puts("block: no virtio block device\n");
+    if (!hal_block_ready()) {
+        klog_puts("block: no block device\n");
         return;
     }
 
-    uint32_t sector_size = virtio_blk_sector_size();
+    uint32_t sector_size = hal_block_sector_size();
     if (sector_size == 0 || sector_size > (32 * 1024)) {
         klog_puts("block: invalid sector size\n");
         return;
@@ -551,6 +551,8 @@ static void core_thread_entry(void *arg)
 
 void kmain(const boot_info_t *boot_info)
 {
+    platform_early_init();
+
     /* Ensure we have a working UART even before DTB parsing. */
     hal_uart_init(0);
 
@@ -598,6 +600,13 @@ void kmain(const boot_info_t *boot_info)
         klog_puts("DTB: no pointer provided (fallback to hardcoded UART)\n");
     }
 
+    if (!hal_mmu_is_supported()) {
+        klog_puts("MMU: not supported on this platform\n");
+        for (;;) {
+            __asm__ volatile ("wfi");
+        }
+    }
+
     /* Install kernel page tables (TTBR1) and disable TTBR0. */
     mmu_init(boot_info);
 #if defined(CAPAZ_FAULT_TEST) && (CAPAZ_FAULT_TEST)
@@ -635,8 +644,8 @@ void kmain(const boot_info_t *boot_info)
     sched_init_bootstrap();
     // Cap-space is initialized and seeded in core/main thread entry (before core_main).
 
-    /* Initialize virtio block device (read-only bring-up). */
-    (void)virtio_blk_init();
+    /* Initialize block device (read-only bring-up). */
+    (void)hal_block_init();
     block_sanity_test();
 
     /* Bring up interrupts + timer tick after core init. */

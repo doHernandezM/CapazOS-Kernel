@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 #include "boot_info.h"
+#include "platform_config.h"
 
 /*
  * Bitmap Physical Memory Manager (PMM)
@@ -54,16 +55,12 @@ bool pmm_get_stats_ex(pmm_stats_ex_t *out);
 /* Direct-map helpers for the QEMU virt baseline. */
 static inline uint64_t pmm_phys_to_virt(uint64_t pa) {
     /* Must match mmu.c and boot mapping. */
-    const uint64_t RAM_BASE = 0x40000000ULL;
-    const uint64_t HH_PHYS_4000_BASE = 0xFFFF800040000000ULL;
-    return HH_PHYS_4000_BASE + (pa - RAM_BASE);
+    return CAPAZ_HH_RAM_BASE + (pa - CAPAZ_RAM_BASE);
 }
 
 static inline uint64_t pmm_virt_to_phys(uint64_t va) {
-    const uint64_t RAM_BASE = 0x40000000ULL;
-    const uint64_t HH_PHYS_4000_BASE = 0xFFFF800040000000ULL;
-    if (va >= HH_PHYS_4000_BASE) {
-        return (va - HH_PHYS_4000_BASE) + RAM_BASE;
+    if (va >= CAPAZ_HH_RAM_BASE) {
+        return (va - CAPAZ_HH_RAM_BASE) + CAPAZ_RAM_BASE;
     }
     return va;
 }

@@ -18,11 +18,9 @@ source "${SCRIPT_DIR}/build_common.sh"
 
 parse_args_common "$@"
 
-# Enforce explicit platform selection for CLI builds.
-# Use --virt or --platform <name>. To bypass (e.g. for experiments), set:
-#   CAPAZ_ALLOW_IMPLICIT_PLATFORM=1
-if [[ "${PLATFORM_EXPLICIT:-0}" != "1" && "${CAPAZ_ALLOW_IMPLICIT_PLATFORM:-0}" != "1" ]]; then
-  die "Platform must be explicit. Use --virt or --platform <name>."
+# Default to aarch64-virt unless a platform flag is provided.
+if [[ "${PLATFORM_EXPLICIT:-0}" != "1" ]]; then
+  log "No platform specified; defaulting to ${PLATFORM}"
 fi
 
 select_platform

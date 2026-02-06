@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "debug/klog.h"
+#include "platform_config.h"
 
 /* Symbols exported by the linker marking the end of the loaded
  * kernel image.  We use this to place the page‑table allocator just
@@ -53,10 +54,10 @@ extern uint8_t KERNEL_PHYS_BASE[];
  * translating virtual addresses of objects in .bss to their
  * corresponding physical addresses.
  */
-#define HH_PHYS_4000_BASE 0xFFFF800040000000ULL
+#define HH_PHYS_4000_BASE CAPAZ_HH_RAM_BASE
 
 /* Offset of the physical RAM base used by the boot mapping. */
-#define RAM_BASE 0x40000000ULL
+#define RAM_BASE CAPAZ_RAM_BASE
 
 /* Translate a physical address in RAM to its higher-half direct-map VA. */
 static inline uint64_t mmu_pa_to_va(uint64_t pa)
@@ -66,7 +67,7 @@ static inline uint64_t mmu_pa_to_va(uint64_t pa)
 }
 
 #define RAM_BLOCK_SIZE (2ULL * 1024 * 1024)
-#define RAM_DIRECTMAP_SIZE (512ULL * RAM_BLOCK_SIZE) /* 1GiB window; no longer clamps DTB RAM mapping */
+#define RAM_DIRECTMAP_SIZE CAPAZ_RAM_DIRECTMAP_SIZE /* 1GiB window by default; board-specific */
 
 /* Fixed PMM metadata reservation (pages) immediately after kernel runtime end. */
 #define PMM_METADATA_PAGES 16ULL

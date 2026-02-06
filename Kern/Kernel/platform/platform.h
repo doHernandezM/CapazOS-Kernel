@@ -7,6 +7,9 @@
 #include "boot_info.h"
 #include "dtb.h"
 
+/* Early board/arch wiring hooks (clock/mailbox, etc). */
+void platform_early_init(void);
+
 /*
  * Derive usable physical memory ranges:
  *   usable = dtb /memory ranges - (DTB reserved ranges) - (implicit reservations)

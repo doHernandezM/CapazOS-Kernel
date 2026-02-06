@@ -5,8 +5,9 @@
 #include "mm/mem.h"
 #include "platform/dtb.h"
 #include "serial/uart.h"
+#include "platform_config.h"
 
-#define HH_PHYS_BASE 0xFFFF800000000000ULL
+#define HH_PHYS_BASE CAPAZ_HH_BASE
 #define VIRTIO_PAGE_SIZE 0x1000ULL
 #define CACHE_LINE_SIZE 64ULL
 

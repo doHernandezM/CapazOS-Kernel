@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 #include "platform.h"
+#include "platform_config.h"
 #include "dtb.h"
 #include "panic.h"
 #include "contracts.h"
@@ -13,9 +14,6 @@
 
 /* Must match platform.c + mmu.c direct-map assumptions. */
 #define PAGE_SIZE 0x1000ULL
-#define RAM_BASE 0x40000000ULL
-#define RAM_DIRECTMAP_SIZE 0x40000000ULL /* 1 GiB */
-#define HH_PHYS_4000_BASE 0xFFFF800040000000ULL
 
 /* Option B: fixed metadata reservation immediately after kernel runtime end. */
 #define PMM_METADATA_PAGES 16ULL
@@ -68,14 +66,14 @@ static inline uint64_t align_down_4k(uint64_t x) { return x & ~(PAGE_SIZE - 1ULL
 static inline uint64_t align_up_4k(uint64_t x)   { return (x + (PAGE_SIZE - 1ULL)) & ~(PAGE_SIZE - 1ULL); }
 
 static inline uint64_t hh_virt_to_phys(uint64_t va) {
-    if (va >= HH_PHYS_4000_BASE) {
-        return (va - HH_PHYS_4000_BASE) + RAM_BASE;
+    if (va >= CAPAZ_HH_RAM_BASE) {
+        return (va - CAPAZ_HH_RAM_BASE) + CAPAZ_RAM_BASE;
     }
     return va;
 }
 
 static inline uint64_t phys_to_hh_virt(uint64_t pa) {
-    return HH_PHYS_4000_BASE + (pa - RAM_BASE);
+    return CAPAZ_HH_RAM_BASE + (pa - CAPAZ_RAM_BASE);
 }
 
 static inline void bit_set(uint8_t *bm, uint64_t idx) {
@@ -164,29 +162,29 @@ static void pmm_panic(const char *msg) {
 }
 
 #if 0  /* Unused helper retained for future use; disabled to avoid -Wunused-function under -Werror. */
-/* Compute the max end of clamped DTB memory ranges, or fall back to RAM_DIRECTMAP_SIZE. */
+/* Compute the max end of clamped DTB memory ranges, or fall back to the direct-map size. */
 static uint64_t compute_limit_from_dtb(void) {
     dtb_range_t mem[64];
     uint32_t mem_n = (uint32_t)(sizeof(mem) / sizeof(mem[0]));
     if (!dtb_get_memory_ranges(mem, &mem_n) || mem_n == 0) {
-        return RAM_BASE + RAM_DIRECTMAP_SIZE;
+        return CAPAZ_RAM_BASE + CAPAZ_RAM_DIRECTMAP_SIZE;
     }
 
-    uint64_t max_end = RAM_BASE;
+    uint64_t max_end = CAPAZ_RAM_BASE;
     for (uint32_t i = 0; i < mem_n; i++) {
         uint64_t start = mem[i].base;
         uint64_t end = mem[i].base + mem[i].size;
         /* Clamp to our direct-map window. */
-        if (end <= RAM_BASE) continue;
-        if (start < RAM_BASE) start = RAM_BASE;
-        uint64_t window_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+        if (end <= CAPAZ_RAM_BASE) continue;
+        if (start < CAPAZ_RAM_BASE) start = CAPAZ_RAM_BASE;
+        uint64_t window_end = CAPAZ_RAM_BASE + CAPAZ_RAM_DIRECTMAP_SIZE;
         if (start >= window_end) continue;
         if (end > window_end) end = window_end;
         if (end > max_end) max_end = end;
     }
 
-    if (max_end <= RAM_BASE) {
-        max_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+    if (max_end <= CAPAZ_RAM_BASE) {
+        max_end = CAPAZ_RAM_BASE + CAPAZ_RAM_DIRECTMAP_SIZE;
     }
     return max_end;
 }
@@ -220,8 +218,8 @@ void pmm_init(const boot_info_t *boot_info) {
     }
 
     /* Clamp to our TTBR1 direct-map window for short-term correctness. */
-    const uint64_t win_start = RAM_BASE;
-    const uint64_t win_end = RAM_BASE + RAM_DIRECTMAP_SIZE;
+    const uint64_t win_start = CAPAZ_RAM_BASE;
+    const uint64_t win_end = CAPAZ_RAM_BASE + CAPAZ_RAM_DIRECTMAP_SIZE;
     if (base_pa < win_start) base_pa = win_start;
     if (limit_pa > win_end) limit_pa = win_end;
     base_pa = align_up_4k(base_pa);
@@ -471,4 +469,3 @@ bool pmm_get_stats_ex(pmm_stats_ex_t *out)
     out->free_page_calls = g_pmm_free_calls;
     return true;
 }
-

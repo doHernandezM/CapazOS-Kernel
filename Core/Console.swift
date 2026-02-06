@@ -168,6 +168,9 @@ struct ConsoleService {
             writeUserOutput("testtask <path> - read-only task (no list)\r\n")
             writeUserOutput("ioreadtest <a> <b> - latency vs background read\r\n")
             writeUserOutput("kerneltest <path> - read kernel file via caps/contracts\r\n")
+            writeUserOutput("fsstats - show FAT32 stats\r\n")
+            writeUserOutput("fsstatsreset - reset FAT32 stats\r\n")
+            writeUserOutput("fstress <path> <iters> <size> <safe|fast> - FAT32 stress test\r\n")
             writeUserOutput("findkernel - locate kernel image\r\n")
             return
         }
@@ -412,6 +415,52 @@ struct ConsoleService {
             return
         }
 
+        if bytesEqual(tokens[0], "fsstats") {
+            writeUserOutput("\r\n")
+            fat32StatsPrint()
+            return
+        }
+
+        if bytesEqual(tokens[0], "fsstatsreset") {
+            writeUserOutput("\r\n")
+            fat32StatsReset()
+            writeUserOutput("[fs] stats reset\r\n")
+            return
+        }
+
+        if bytesEqual(tokens[0], "fstress") {
+            writeUserOutput("\r\n")
+            if tokens.count < 5 {
+                writeUserOutput("[fs] stress: usage fstress <path> <iters> <size> <safe|fast>\r\n")
+                return
+            }
+            guard let norm = normalizePath(tokens[1]) else {
+                writeUserOutput("[fs] stress: invalid path\r\n")
+                return
+            }
+            if norm.isRoot {
+                writeUserOutput("[fs] stress: invalid path\r\n")
+                return
+            }
+            let iters = parseU32(tokens[2])
+            let size = parseU32(tokens[3])
+            if iters == 0 || size == 0 {
+                writeUserOutput("[fs] stress: invalid params\r\n")
+                return
+            }
+            let policy: UInt32
+            if bytesEqual(tokens[4], "safe") {
+                policy = FAT32_POLICY_SAFE
+            } else if bytesEqual(tokens[4], "fast") {
+                policy = FAT32_POLICY_FAST
+            } else {
+                writeUserOutput("[fs] stress: invalid policy\r\n")
+                return
+            }
+            runFsStressTest(path: norm, iterations: Int(iters), size: Int(size), policy: policy)
+            return
+        }
+
         if bytesEqual(tokens[0], "findkernel") {
             writeUserOutput("\r\n")
             if var task = gConsoleTask {
@@ -465,4 +514,15 @@ fileprivate func parseContractRights(_ token: [UInt8]) -> UInt32? {
         i += 1
     }
     return rights == 0 ? nil : rights
+}
+
+fileprivate func parseU32(_ token: [UInt8]) -> UInt32 {
+    if token.isEmpty { return 0 }
+    var value: UInt32 = 0
+    for b in token {
+        if b < 0x30 || b > 0x39 { return 0 }
+        let digit = UInt32(b - 0x30)
+        value = value &* 10 &+ digit
+    }
+    return value
 }

@@ -698,6 +698,7 @@ compile_objects() {
           -I "${KERN_DIR}/Kernel/task" \
           -I "${KERN_DIR}/Kernel/util" \
           -I "${KERN_DIR}/Kernel/work" \
+          -I "${KERN_DIR}/Platform" \
           -I "${REPO_ROOT}/Code/OS/Core" \
           -I "${gen_include_dir}" \
           -c "${src}" -o "${obj}"

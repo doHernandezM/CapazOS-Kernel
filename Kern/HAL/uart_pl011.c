@@ -2,8 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define HH_PHYS_BASE 0xFFFF800000000000ULL
-#define UART_FALLBACK_PHYS_BASE 0x09000000ULL
+#include "platform_config.h"
 
 /* PL011 register offsets */
 #define UARTDR      0x00
@@ -45,7 +44,7 @@
 #define UARTICR_ALL 0x7FFu
 
 static volatile uint32_t *g_uart_base =
-    (volatile uint32_t *)(HH_PHYS_BASE + UART_FALLBACK_PHYS_BASE);
+    (volatile uint32_t *)(CAPAZ_HH_BASE + CAPAZ_UART_FALLBACK_PHYS_BASE);
 
 static inline void mmio_write(uint32_t off, uint32_t v) {
     g_uart_base[off / 4] = v;
@@ -57,7 +56,7 @@ static inline uint32_t mmio_read(uint32_t off) {
 void uart_init(uint64_t uart_phys_base)
 {
     if (uart_phys_base != 0) {
-        g_uart_base = (volatile uint32_t *)(HH_PHYS_BASE + uart_phys_base);
+        g_uart_base = (volatile uint32_t *)(CAPAZ_HH_BASE + uart_phys_base);
     }
 }
 

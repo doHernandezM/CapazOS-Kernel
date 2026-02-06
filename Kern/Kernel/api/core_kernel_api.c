@@ -8,7 +8,7 @@
 #include "api/kernel_log_proto.h"
 #include "platform/dtb.h"
 #include "buildinfo.h"
-#include "dev/virtio_blk.h"
+#include "hal_block.h"
 
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
@@ -105,11 +105,11 @@ ks_status_t cka_block_get_info(ks_block_info_t *out_info)
     if (!out_info) {
         return KS_STATUS_INVALID_ARG;
     }
-    if (!virtio_blk_ready()) {
+    if (!hal_block_ready()) {
         return KS_STATUS_NOT_SUPPORTED;
     }
-    out_info->sector_size = virtio_blk_sector_size();
-    out_info->capacity_sectors = virtio_blk_capacity_sectors();
+    out_info->sector_size = hal_block_sector_size();
+    out_info->capacity_sectors = hal_block_capacity_sectors();
     return KS_STATUS_OK;
 }
 
@@ -123,10 +123,10 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
     if (!buf || count == 0) {
         return KS_STATUS_INVALID_ARG;
     }
-    if (!virtio_blk_ready()) {
+    if (!hal_block_ready()) {
         return KS_STATUS_NOT_SUPPORTED;
     }
-    uint64_t need = (uint64_t)count * (uint64_t)virtio_blk_sector_size();
+    uint64_t need = (uint64_t)count * (uint64_t)hal_block_sector_size();
     if ((uint64_t)buf_len < need) {
         return KS_STATUS_INVALID_ARG;
     }
@@ -141,7 +141,7 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
     uint32_t remaining = count;
     uint32_t offset_sectors = 0;
     uint8_t *dst = (uint8_t *)buf;
-    uint32_t sector_size = virtio_blk_sector_size();
+    uint32_t sector_size = hal_block_sector_size();
 
     while (remaining > 0) {
         uint32_t chunk = remaining;
@@ -155,7 +155,7 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
         if (!tmp) {
             return KS_STATUS_OUT_OF_MEMORY;
         }
-        if (!virtio_blk_read(lba + offset_sectors, chunk, tmp, (size_t)chunk_bytes)) {
+        if (!hal_block_read(lba + offset_sectors, tmp, chunk)) {
             kheap_free_pages(tmp, (uint32_t)pages);
             return KS_STATUS_INTERNAL;
         }
@@ -185,10 +185,10 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
     if (!buf || count == 0) {
         return KS_STATUS_INVALID_ARG;
     }
-    if (!virtio_blk_ready()) {
+    if (!hal_block_ready()) {
         return KS_STATUS_NOT_SUPPORTED;
     }
-    uint64_t need = (uint64_t)count * (uint64_t)virtio_blk_sector_size();
+    uint64_t need = (uint64_t)count * (uint64_t)hal_block_sector_size();
     if ((uint64_t)buf_len < need) {
         return KS_STATUS_INVALID_ARG;
     }
@@ -203,7 +203,7 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
     uint32_t remaining = count;
     uint32_t offset_sectors = 0;
     const uint8_t *src = (const uint8_t *)buf;
-    uint32_t sector_size = virtio_blk_sector_size();
+    uint32_t sector_size = hal_block_sector_size();
 
     while (remaining > 0) {
         uint32_t chunk = remaining;
@@ -218,7 +218,7 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
             return KS_STATUS_OUT_OF_MEMORY;
         }
         memcpy(tmp, src + ((uint64_t)offset_sectors * (uint64_t)sector_size), (size_t)chunk_bytes);
-        if (!virtio_blk_write(lba + offset_sectors, chunk, tmp, (size_t)chunk_bytes)) {
+        if (!hal_block_write(lba + offset_sectors, tmp, chunk)) {
             kheap_free_pages(tmp, (uint32_t)pages);
             return KS_STATUS_INTERNAL;
         }

@@ -43,7 +43,162 @@ func readU64LE(_ data: [UInt8], _ offset: Int) -> UInt64 {
     return value
 }
 
+struct Fat32Stats {
+    var mountCount: UInt64 = 0
+    var dirListCount: UInt64 = 0
+    var fileReadCount: UInt64 = 0
+    var fileWriteCount: UInt64 = 0
+    var readOps: UInt64 = 0
+    var writeOps: UInt64 = 0
+    var readBytes: UInt64 = 0
+    var writeBytes: UInt64 = 0
+    var readLatencyOps: UInt64 = 0
+    var readThroughputOps: UInt64 = 0
+    var readBackgroundOps: UInt64 = 0
+    var writeLatencyOps: UInt64 = 0
+    var writeThroughputOps: UInt64 = 0
+    var writeBackgroundOps: UInt64 = 0
+    var walWrites: UInt64 = 0
+    var walReplays: UInt64 = 0
+    var errorCount: UInt64 = 0
+}
 
+private var gFat32Stats = Fat32Stats()
+private var gFat32FatCache: [UInt8] = []
+private var gFat32FatCacheSig: UInt64 = 0
+private var gFat32LoggedIoFailure = false
+
+func fat32StatsReset() {
+    gFat32Stats = Fat32Stats()
+    gFat32FatCache.removeAll(keepingCapacity: false)
+    gFat32FatCacheSig = 0
+    gFat32LoggedIoFailure = false
+}
+
+func fat32StatsSnapshot() -> Fat32Stats {
+    return gFat32Stats
+}
+
+func fat32StatsPrint() {
+    let s = gFat32Stats
+    gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stats\r\n")))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" mounts=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.mountCount))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" dirs=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.dirListCount))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" reads=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.fileReadCount))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" writes=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.fileWriteCount))
+    gConsole?.writeUserOutput([0x0D, 0x0A])
+    gConsole?.writeUserOutput(Array(staticStringBytes(" io reads=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.readOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" bytes=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.readBytes))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" (lat=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.readLatencyOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" thr=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.readThroughputOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" bg=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.readBackgroundOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(")\r\n")))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" io writes=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.writeOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" bytes=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.writeBytes))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" (lat=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.writeLatencyOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" thr=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.writeThroughputOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" bg=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.writeBackgroundOps))
+    gConsole?.writeUserOutput(Array(staticStringBytes(")\r\n")))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" wal writes=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.walWrites))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" replays=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.walReplays))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" errors=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(s.errorCount))
+    gConsole?.writeUserOutput([0x0D, 0x0A])
+}
+
+private func fat32StatsRecordError() {
+    gFat32Stats.errorCount &+= 1
+}
+
+private func fat32LogIoFailureOnce(_ label: StaticString,
+                                   lba: UInt64,
+                                   count: UInt32,
+                                   capacity: UInt64,
+                                   vol: Fat32Volume?) {
+    if gFat32LoggedIoFailure {
+        return
+    }
+    gFat32LoggedIoFailure = true
+    gConsole?.writeUserOutput(Array(staticStringBytes("[fs] io fail ")))
+    gConsole?.writeUserOutput(Array(staticStringBytes(label)))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" lba=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(lba))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" count=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(UInt64(count)))
+    gConsole?.writeUserOutput(Array(staticStringBytes(" cap=")))
+    gConsole?.writeUserOutput(u64ToDecBytes(capacity))
+    if let v = vol {
+        gConsole?.writeUserOutput(Array(staticStringBytes(" base=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.baseLBA)))
+        gConsole?.writeUserOutput(Array(staticStringBytes(" total=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.totalSectors)))
+        gConsole?.writeUserOutput(Array(staticStringBytes(" fat=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.fatStartLBA)))
+        gConsole?.writeUserOutput(Array(staticStringBytes(" spf=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.sectorsPerFAT)))
+        gConsole?.writeUserOutput(Array(staticStringBytes(" data=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.dataStartLBA)))
+        gConsole?.writeUserOutput(Array(staticStringBytes(" spc=")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(v.sectorsPerCluster)))
+    }
+    gConsole?.writeUserOutput([0x0D, 0x0A])
+}
+
+private func fat32StatsRecordMount() {
+    gFat32Stats.mountCount &+= 1
+}
+
+private func fat32StatsRecordDirList() {
+    gFat32Stats.dirListCount &+= 1
+}
+
+private func fat32StatsRecordFileRead() {
+    gFat32Stats.fileReadCount &+= 1
+}
+
+private func fat32StatsRecordFileWrite() {
+    gFat32Stats.fileWriteCount &+= 1
+}
+
+private func fat32StatsRecordRead(bytes: Int, intent: UInt32) {
+    gFat32Stats.readOps &+= 1
+    gFat32Stats.readBytes &+= UInt64(bytes)
+    if intent == IO_INTENT_THROUGHPUT {
+        gFat32Stats.readThroughputOps &+= 1
+    } else if intent == IO_INTENT_BACKGROUND {
+        gFat32Stats.readBackgroundOps &+= 1
+    } else {
+        gFat32Stats.readLatencyOps &+= 1
+    }
+}
+
+private func fat32StatsRecordWrite(bytes: Int, intent: UInt32) {
+    gFat32Stats.writeOps &+= 1
+    gFat32Stats.writeBytes &+= UInt64(bytes)
+    if intent == IO_INTENT_THROUGHPUT {
+        gFat32Stats.writeThroughputOps &+= 1
+    } else if intent == IO_INTENT_BACKGROUND {
+        gFat32Stats.writeBackgroundOps &+= 1
+    } else {
+        gFat32Stats.writeLatencyOps &+= 1
+    }
+}
 
 //private func u64ToDecBytes(_ value: UInt64) -> [UInt8] {
 //    if value == 0 { return [0x30] }
@@ -149,6 +304,12 @@ struct BlockDevice {
         if count == 0 {
             return []
         }
+        let cap = capacitySectors
+        if lba + UInt64(count) > cap {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("range", lba: lba, count: count, capacity: cap, vol: nil)
+            return nil
+        }
         let byteCount = Int(count) * Int(sectorSize)
         var buf = [UInt8](repeating: 0, count: byteCount)
         let st = buf.withUnsafeMutableBytes { raw -> Int32 in
@@ -156,14 +317,23 @@ struct BlockDevice {
             return cka_block_read_intent(lba, count, base, byteCount, intent)
         }
         if st != KS_STATUS_OK {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("read", lba: lba, count: count, capacity: cap, vol: nil)
             return nil
         }
+        fat32StatsRecordRead(bytes: byteCount, intent: intent)
         return buf
     }
 
     func write(lba: UInt64, count: UInt32, data: [UInt8], intent: UInt32) -> Bool {
         if count == 0 {
             return true
+        }
+        let cap = capacitySectors
+        if lba + UInt64(count) > cap {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("range", lba: lba, count: count, capacity: cap, vol: nil)
+            return false
         }
         let byteCount = Int(count) * Int(sectorSize)
         if data.count < byteCount {
@@ -173,7 +343,13 @@ struct BlockDevice {
             guard let base = raw.baseAddress else { return KS_STATUS_INVALID_ARG }
             return cka_block_write_intent(lba, count, base, byteCount, intent)
         }
-        return st == KS_STATUS_OK
+        if st != KS_STATUS_OK {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("write", lba: lba, count: count, capacity: cap, vol: nil)
+            return false
+        }
+        fat32StatsRecordWrite(bytes: byteCount, intent: intent)
+        return true
     }
 }
 
@@ -372,6 +548,7 @@ private func walReplayIfNeeded(_ block: BlockDevice, _ vol: Fat32Volume) {
     if data.count < Int(vol.bytesPerSector) { return }
     if targetLBA == 0 { return }
     _ = block.write(lba: targetLBA, count: 1, data: data, intent: IO_INTENT_THROUGHPUT)
+    gFat32Stats.walReplays &+= 1
     var clear = [UInt8](repeating: 0, count: Int(vol.bytesPerSector))
     _ = block.write(lba: UInt64(vol.walStartLBA), count: 1, data: clear, intent: IO_INTENT_THROUGHPUT)
 }
@@ -407,15 +584,18 @@ private func walWriteSector(_ block: BlockDevice, _ vol: Fat32Volume, targetLBA:
     }
     var clear = [UInt8](repeating: 0, count: sectorSize)
     _ = block.write(lba: UInt64(vol.walStartLBA), count: 1, data: clear, intent: IO_INTENT_THROUGHPUT)
+    gFat32Stats.walWrites &+= 1
     return true
 }
 
 private func mountFat32(_ block: BlockDevice) -> Fat32Volume? {
+    fat32StatsRecordMount()
     guard let boot0 = block.read(lba: 0, count: 1, intent: IO_INTENT_THROUGHPUT) else {
         return nil
     }
     if let vol = parseFat32BootSector(boot0, baseLBA: 0) {
         let out = configureWalRegion(vol)
+        if !validateFat32Volume(block, out) { return nil }
         walReplayIfNeeded(block, out)
         return out
     }
@@ -424,6 +604,7 @@ private func mountFat32(_ block: BlockDevice) -> Fat32Volume? {
            let boot = block.read(lba: gptLBA, count: 1, intent: IO_INTENT_THROUGHPUT) {
             if let vol = parseFat32BootSector(boot, baseLBA: UInt32(gptLBA)) {
                 let out = configureWalRegion(vol)
+                if !validateFat32Volume(block, out) { return nil }
                 walReplayIfNeeded(block, out)
                 return out
             }
@@ -437,10 +618,37 @@ private func mountFat32(_ block: BlockDevice) -> Fat32Volume? {
     }
     if let vol = parseFat32BootSector(boot, baseLBA: partLBA) {
         let out = configureWalRegion(vol)
+        if !validateFat32Volume(block, out) { return nil }
         walReplayIfNeeded(block, out)
         return out
     }
     return nil
+}
+
+private func validateFat32Volume(_ block: BlockDevice, _ vol: Fat32Volume) -> Bool {
+    if vol.bytesPerSector == 0 || vol.sectorsPerCluster == 0 || vol.sectorsPerFAT == 0 {
+        fat32StatsRecordError()
+        return false
+    }
+    if UInt32(block.sectorSize) != UInt32(vol.bytesPerSector) {
+        fat32StatsRecordError()
+        return false
+    }
+    let cap = UInt64(block.capacitySectors)
+    let base = UInt64(vol.baseLBA)
+    let total = UInt64(vol.totalSectors)
+    if total == 0 || base + total > cap {
+        fat32StatsRecordError()
+        return false
+    }
+    let fatStart = UInt64(vol.fatStartLBA)
+    let fatEnd = fatStart + UInt64(vol.sectorsPerFAT) * UInt64(vol.numFATs)
+    let dataStart = UInt64(vol.dataStartLBA)
+    if fatStart < base || fatEnd > base + total || dataStart < base || dataStart >= base + total {
+        fat32StatsRecordError()
+        return false
+    }
+    return true
 }
 
 private func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
@@ -454,15 +662,55 @@ private func trimSpaces(_ bytes: [UInt8]) -> [UInt8] {
 
 private func readFat32FAT(_ block: BlockDevice, _ vol: Fat32Volume) -> [UInt8]? {
     if vol.sectorsPerFAT == 0 { return nil }
-    var fatData: [UInt8] = []
+    let cap = UInt64(block.capacitySectors)
+    let fatStart = UInt64(vol.fatStartLBA)
+    let fatSectors = UInt64(vol.sectorsPerFAT)
+    if fatStart + fatSectors > cap {
+        fat32StatsRecordError()
+        fat32LogIoFailureOnce("fat-range", lba: fatStart, count: vol.sectorsPerFAT, capacity: cap, vol: vol)
+        return nil
+    }
+    let sig = fat32VolumeSig(vol)
+    let expectedBytes = Int(vol.sectorsPerFAT) * Int(vol.bytesPerSector)
+    if gFat32FatCacheSig != sig || gFat32FatCache.count != expectedBytes {
+        gFat32FatCache = [UInt8](repeating: 0, count: expectedBytes)
+        gFat32FatCacheSig = sig
+    }
+    var offset = 0
     for i in 0..<vol.sectorsPerFAT {
         if let part = block.read(lba: UInt64(vol.fatStartLBA + i), count: 1, intent: IO_INTENT_THROUGHPUT) {
-            fatData.append(contentsOf: part)
+            if part.count != Int(vol.bytesPerSector) {
+                fat32StatsRecordError()
+                fat32LogIoFailureOnce("fat-short", lba: UInt64(vol.fatStartLBA + i), count: 1, capacity: cap, vol: vol)
+                return nil
+            }
+            gFat32FatCache.replaceSubrange(offset..<(offset + part.count), with: part)
+            offset += part.count
         } else {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("fat-read", lba: UInt64(vol.fatStartLBA + i), count: 1, capacity: cap, vol: vol)
             return nil
         }
     }
-    return fatData
+    return gFat32FatCache
+}
+
+private func fat32VolumeSig(_ vol: Fat32Volume) -> UInt64 {
+    var sig: UInt64 = 0
+    sig ^= UInt64(vol.baseLBA)
+    sig = (sig << 16) ^ UInt64(vol.sectorsPerFAT)
+    sig = (sig << 8) ^ UInt64(vol.numFATs)
+    sig = (sig << 16) ^ UInt64(vol.dataStartLBA)
+    sig = (sig << 16) ^ UInt64(vol.totalSectors)
+    return sig
+}
+
+private func fat32MaxCluster(_ vol: Fat32Volume) -> UInt32 {
+    let dataSectors = Int64(vol.totalSectors) - Int64(vol.dataStartLBA - vol.baseLBA)
+    if dataSectors <= 0 { return 0 }
+    let clusters = UInt64(dataSectors) / UInt64(vol.sectorsPerCluster)
+    if clusters == 0 { return 0 }
+    return UInt32(clusters + 1)
 }
 
 private func fat32NextCluster(_ fat: [UInt8], _ cluster: UInt32) -> UInt32 {
@@ -480,11 +728,12 @@ private func fat32SetCluster(_ fat: inout [UInt8], _ cluster: UInt32, _ value: U
     writeU32LE(merged, &fat, off)
 }
 
-private func fat32ClusterChain(_ fat: [UInt8], _ start: UInt32) -> [UInt32] {
+private func fat32ClusterChain(_ vol: Fat32Volume, _ fat: [UInt8], _ start: UInt32) -> [UInt32] {
     var chain: [UInt32] = []
     var cluster = start
     var guardCount: UInt32 = 0
-    while cluster >= 2 && guardCount < 0x100000 {
+    let maxCluster = fat32MaxCluster(vol)
+    while cluster >= 2 && cluster <= maxCluster && guardCount < 0x100000 {
         chain.append(cluster)
         let next = fat32NextCluster(fat, cluster)
         if next >= 0x0FFFFFF8 || next == 0x0FFFFFF7 {
@@ -496,12 +745,12 @@ private func fat32ClusterChain(_ fat: [UInt8], _ start: UInt32) -> [UInt32] {
     return chain
 }
 
-private func fat32FindFreeClusters(_ fat: [UInt8], count: Int) -> [UInt32]? {
+private func fat32FindFreeClusters(_ vol: Fat32Volume, _ fat: [UInt8], count: Int) -> [UInt32]? {
     if count <= 0 { return [] }
     var result: [UInt32] = []
-    let maxClusters = fat.count / 4
-    if maxClusters <= 2 { return nil }
-    for c in 2..<maxClusters {
+    let maxCluster = fat32MaxCluster(vol)
+    if maxCluster < 2 { return nil }
+    for c in 2...Int(maxCluster) {
         let cluster = UInt32(c)
         let val = fat32NextCluster(fat, cluster)
         if val == 0 {
@@ -542,12 +791,27 @@ private func writeFatTables(_ block: BlockDevice, _ vol: Fat32Volume, _ fat: [UI
 }
 
 private func readCluster(_ block: BlockDevice, _ vol: Fat32Volume, _ cluster: UInt32, intent: UInt32) -> [UInt8]? {
+    let maxCluster = fat32MaxCluster(vol)
+    if cluster < 2 || cluster > maxCluster {
+        fat32StatsRecordError()
+        fat32LogIoFailureOnce("cluster", lba: UInt64(cluster), count: 0, capacity: UInt64(block.capacitySectors), vol: vol)
+        return nil
+    }
     let dataLBA = UInt64(vol.dataStartLBA) + UInt64(cluster - 2) * UInt64(vol.sectorsPerCluster)
+    let cap = UInt64(block.capacitySectors)
+    let end = dataLBA + UInt64(vol.sectorsPerCluster)
+    if end > cap {
+        fat32StatsRecordError()
+        fat32LogIoFailureOnce("cluster-range", lba: dataLBA, count: UInt32(vol.sectorsPerCluster), capacity: cap, vol: vol)
+        return nil
+    }
     var out: [UInt8] = []
     for s in 0..<UInt32(vol.sectorsPerCluster) {
         if let part = block.read(lba: dataLBA + UInt64(s), count: 1, intent: intent) {
             out.append(contentsOf: part)
         } else {
+            fat32StatsRecordError()
+            fat32LogIoFailureOnce("cluster-read", lba: dataLBA + UInt64(s), count: 1, capacity: cap, vol: vol)
             return nil
         }
     }
@@ -555,7 +819,20 @@ private func readCluster(_ block: BlockDevice, _ vol: Fat32Volume, _ cluster: UI
 }
 
 private func writeCluster(_ block: BlockDevice, _ vol: Fat32Volume, _ cluster: UInt32, data: [UInt8], safe: Bool) -> Bool {
+    let maxCluster = fat32MaxCluster(vol)
+    if cluster < 2 || cluster > maxCluster {
+        fat32StatsRecordError()
+        fat32LogIoFailureOnce("cluster", lba: UInt64(cluster), count: 0, capacity: UInt64(block.capacitySectors), vol: vol)
+        return false
+    }
     let dataLBA = UInt64(vol.dataStartLBA) + UInt64(cluster - 2) * UInt64(vol.sectorsPerCluster)
+    let cap = UInt64(block.capacitySectors)
+    let end = dataLBA + UInt64(vol.sectorsPerCluster)
+    if end > cap {
+        fat32StatsRecordError()
+        fat32LogIoFailureOnce("cluster-range", lba: dataLBA, count: UInt32(vol.sectorsPerCluster), capacity: cap, vol: vol)
+        return false
+    }
     let sectorSize = Int(vol.bytesPerSector)
     if data.count < sectorSize * Int(vol.sectorsPerCluster) {
         return false
@@ -772,18 +1049,22 @@ func listFat32Directory(task: inout TaskContext, path: NormalizedPath) {
     let capPath: [UInt8] = path.isRoot ? [0x2F] : path.flat
     if !task.canListDir(path: capPath) || !task.hasContract(rights: FAT32_CONTRACT_R_LIST) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
+        fat32StatsRecordError()
         return
     }
     guard let block = gBlockDevice else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
+        fat32StatsRecordError()
         return
     }
     guard let vol = mountFat32(block) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
+        fat32StatsRecordError()
         return
     }
     guard let fat = readFat32FAT(block, vol) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
+        fat32StatsRecordError()
         return
     }
     let entry: Fat32DirEntry
@@ -792,14 +1073,17 @@ func listFat32Directory(task: inout TaskContext, path: NormalizedPath) {
     } else {
         guard let found = resolvePathEntry(block, vol, fat, path) else {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] path not found\r\n")))
+            fat32StatsRecordError()
             return
         }
         entry = found
     }
     if !entry.isDir {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a directory\r\n")))
+        fat32StatsRecordError()
         return
     }
+    fat32StatsRecordDirList()
     let listIntent: UInt32
     if task.contractPolicy(rights: FAT32_CONTRACT_R_LIST) == FAT32_POLICY_BACKGROUND {
         listIntent = IO_INTENT_BACKGROUND
@@ -808,6 +1092,7 @@ func listFat32Directory(task: inout TaskContext, path: NormalizedPath) {
     }
     guard let entries = readDirEntries(block, vol, fat, startCluster: entry.firstCluster, intent: listIntent) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read directory\r\n")))
+        fat32StatsRecordError()
         return
     }
     gConsole?.writeUserOutput(Array(staticStringBytes("FAT32 dir:\r\n")))
@@ -990,54 +1275,57 @@ struct TaskContext {
     }
 }
 
-func readFat32File(task: inout TaskContext, path: NormalizedPath) {
+func fat32ReadFileData(task: inout TaskContext, path: NormalizedPath, intent: UInt32) -> [UInt8]? {
     if !task.canReadFile(path: path.flat) || !task.hasContract(rights: FAT32_CONTRACT_R_READ) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     guard let block = gBlockDevice else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     guard let vol = mountFat32(block) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     guard let fat = readFat32FAT(block, vol) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     guard let (entry, _) = resolvePathEntryLocation(block, vol, fat, path) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] file not found\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     if entry.isDir {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a file\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
     if entry.fileSize == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] empty file\r\n")))
-        return
+        return []
     }
     if entry.firstCluster < 2 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] invalid file cluster\r\n")))
-        return
+        fat32StatsRecordError()
+        return nil
     }
+    fat32StatsRecordFileRead()
     let clusterSizeBytes = UInt32(vol.bytesPerSector) * UInt32(vol.sectorsPerCluster)
     var remaining = entry.fileSize
     var cluster = entry.firstCluster
     var output: [UInt8] = []
     var guardCount: UInt32 = 0
-    let readIntent: UInt32
-    if task.contractPolicy(rights: FAT32_CONTRACT_R_READ) == FAT32_POLICY_BACKGROUND {
-        readIntent = IO_INTENT_BACKGROUND
-    } else {
-        readIntent = IO_INTENT_LATENCY
-    }
     while cluster >= 2 && remaining > 0 && guardCount < 0x100000 {
-        guard let data = readCluster(block, vol, cluster, intent: readIntent) else {
+        guard let data = readCluster(block, vol, cluster, intent: intent) else {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read file data\r\n")))
-            return
+            fat32StatsRecordError()
+            return nil
         }
         output.append(contentsOf: data)
         let next = fat32NextCluster(fat, cluster)
@@ -1055,76 +1343,89 @@ func readFat32File(task: inout TaskContext, path: NormalizedPath) {
     if output.count > Int(entry.fileSize) {
         output = Array(output[0..<Int(entry.fileSize)])
     }
-    gConsole?.writeUserOutput(output)
-    gConsole?.writeUserOutput([0x0D, 0x0A])
+    return output
 }
 
-func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8], safe: Bool) {
+func fat32WriteFileData(task: inout TaskContext, path: NormalizedPath, data: [UInt8], safe: Bool, emitOk: Bool) -> Bool {
     let _ = safe
     let policy = task.contractPolicy(rights: FAT32_CONTRACT_R_WRITE)
     if policy == nil {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     if policy == FAT32_POLICY_BACKGROUND {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     let needSafe = (policy == FAT32_POLICY_SAFE)
     let allow = needSafe ? task.canWriteFileSafe(path: path.flat) : task.canWriteFileFast(path: path.flat)
     if !allow {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] denied\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     guard let block = gBlockDevice else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no block device\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     guard let vol = mountFat32(block) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a FAT32 volume\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     guard let fat = readFat32FAT(block, vol) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read FAT\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     guard let (entry, location) = resolvePathEntryLocation(block, vol, fat, path) else {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] file not found\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     if entry.isDir {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] not a file\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     let clusterSizeBytes = Int(UInt32(vol.bytesPerSector) * UInt32(vol.sectorsPerCluster))
     if clusterSizeBytes == 0 {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] invalid cluster size\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     let targetSize = data.count
     if targetSize == 0 {
         if !updateDirEntryOnDisk(block, vol, location, newFirstCluster: entry.firstCluster, newSize: 0, safe: needSafe) {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to update dir entry\r\n")))
-            return
+            fat32StatsRecordError()
+            return false
         }
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] write ok\r\n")))
-        return
+        fat32StatsRecordFileWrite()
+        if emitOk {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] write ok\r\n")))
+        }
+        return true
     }
     if data.isEmpty {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] nothing to write\r\n")))
-        return
+        return false
     }
     let requiredClusters = (targetSize + clusterSizeBytes - 1) / clusterSizeBytes
     var chain: [UInt32] = []
     if entry.firstCluster >= 2 {
-        chain = fat32ClusterChain(fat, entry.firstCluster)
+        chain = fat32ClusterChain(vol, fat, entry.firstCluster)
     }
     let oldCount = chain.count
     if requiredClusters > chain.count {
         let need = requiredClusters - chain.count
-        guard let newClusters = fat32FindFreeClusters(fat, count: need) else {
+        guard let newClusters = fat32FindFreeClusters(vol, fat, count: need) else {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no free clusters\r\n")))
-            return
+            fat32StatsRecordError()
+            return false
         }
         if chain.isEmpty {
             chain = newClusters
@@ -1141,19 +1442,24 @@ func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8]
         }
         if !writeFatTables(block, vol, fatCopy, safe: needSafe) {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to write FAT\r\n")))
-            return
+            fat32StatsRecordError()
+            return false
         }
         if !chain.isEmpty {
             if !updateDirEntryOnDisk(block, vol, location, newFirstCluster: chain[0], newSize: UInt32(targetSize), safe: needSafe) {
                 gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to update dir entry\r\n")))
-                return
+                fat32StatsRecordError()
+                return false
             }
         }
-        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] fat extended\r\n")))
+        if emitOk {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] fat extended\r\n")))
+        }
     }
     if chain.isEmpty {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] no cluster chain\r\n")))
-        return
+        fat32StatsRecordError()
+        return false
     }
     var remaining = targetSize
     var dataOffset = 0
@@ -1165,11 +1471,13 @@ func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8]
         if i < oldCount {
             guard let existing = readCluster(block, vol, cluster, intent: IO_INTENT_THROUGHPUT) else {
                 gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to read file data\r\n")))
-                return
+                fat32StatsRecordError()
+                return false
             }
             if existing.count < clusterSizeBytes {
                 gConsole?.writeUserOutput(Array(staticStringBytes("[fs] short cluster read\r\n")))
-                return
+                fat32StatsRecordError()
+                return false
             }
             clusterData = existing
         } else {
@@ -1179,7 +1487,8 @@ func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8]
         clusterData.replaceSubrange(0..<writeCount, with: data[dataOffset..<(dataOffset + writeCount)])
         if !writeCluster(block, vol, cluster, data: clusterData, safe: needSafe) {
             gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to write file data\r\n")))
-            return
+            fat32StatsRecordError()
+            return false
         }
         dataOffset += writeCount
         remaining -= writeCount
@@ -1188,9 +1497,32 @@ func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8]
     }
     if !updateDirEntryOnDisk(block, vol, location, newFirstCluster: chain[0], newSize: UInt32(targetSize), safe: needSafe) {
         gConsole?.writeUserOutput(Array(staticStringBytes("[fs] failed to update dir entry\r\n")))
+        fat32StatsRecordError()
+        return false
+    }
+    fat32StatsRecordFileWrite()
+    if emitOk {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] write ok\r\n")))
+    }
+    return true
+}
+
+func readFat32File(task: inout TaskContext, path: NormalizedPath) {
+    let readIntent: UInt32
+    if task.contractPolicy(rights: FAT32_CONTRACT_R_READ) == FAT32_POLICY_BACKGROUND {
+        readIntent = IO_INTENT_BACKGROUND
+    } else {
+        readIntent = IO_INTENT_LATENCY
+    }
+    guard let output = fat32ReadFileData(task: &task, path: path, intent: readIntent) else {
         return
     }
-    gConsole?.writeUserOutput(Array(staticStringBytes("[fs] write ok\r\n")))
+    gConsole?.writeUserOutput(output)
+    gConsole?.writeUserOutput([0x0D, 0x0A])
+}
+
+func writeFat32File(task: inout TaskContext, path: NormalizedPath, data: [UInt8], safe: Bool) {
+    _ = fat32WriteFileData(task: &task, path: path, data: data, safe: safe, emitOk: true)
 }
 
 func runTestTask(path: NormalizedPath) {
@@ -1213,6 +1545,59 @@ func runTestTask(path: NormalizedPath) {
     }
     gConsole?.writeUserOutput(Array(staticStringBytes("[fs] testtask: read file\r\n")))
     readFat32File(task: &test, path: path)
+}
+
+func runFsStressTest(path: NormalizedPath, iterations: Int, size: Int, policy: UInt32) {
+    if iterations <= 0 || size <= 0 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: invalid parameters\r\n")))
+        return
+    }
+    var task = TaskContext()
+    let readCap = issueFileCap(path: path.flat, rights: CAP_R_FILE_READ)
+    let writeRights: UInt32 = (policy == FAT32_POLICY_SAFE) ? CAP_R_FILE_WRITE_SAFE : CAP_R_FILE_WRITE_FAST
+    let writeCap = issueFileCap(path: path.flat, rights: writeRights)
+    if readCap == 0 || writeCap == 0 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: cap table full\r\n")))
+        return
+    }
+    task.addCap(readCap)
+    task.addCap(writeCap)
+    let contract = issueFat32Contract(rights: FAT32_CONTRACT_R_READ | FAT32_CONTRACT_R_WRITE,
+                                      policy: policy)
+    if contract == 0 {
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: contract table full\r\n")))
+        return
+    }
+    task.addContract(contract)
+    gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: start\r\n")))
+    for i in 0..<iterations {
+        var data = [UInt8](repeating: 0, count: size)
+        for j in 0..<size {
+            data[j] = UInt8(truncatingIfNeeded: j + i)
+        }
+        if !fat32WriteFileData(task: &task, path: path, data: data, safe: policy == FAT32_POLICY_SAFE, emitOk: false) {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: write failed\r\n")))
+            return
+        }
+        guard let readBack = fat32ReadFileData(task: &task, path: path, intent: IO_INTENT_LATENCY) else {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: read failed\r\n")))
+            return
+        }
+        if readBack.count < size {
+            gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: short read\r\n")))
+            return
+        }
+        for j in 0..<size {
+            if readBack[j] != data[j] {
+                gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: data mismatch\r\n")))
+                return
+            }
+        }
+        gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: iter ")))
+        gConsole?.writeUserOutput(u64ToDecBytes(UInt64(i + 1)))
+        gConsole?.writeUserOutput([0x0D, 0x0A])
+    }
+    gConsole?.writeUserOutput(Array(staticStringBytes("[fs] stress: ok\r\n")))
 }
 
 func runIoReadTest(pathA: NormalizedPath, pathB: NormalizedPath) {

@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "boot_info.h"
+#include "platform_config.h"
 
 /* Linker-provided .bss bounds (see Linker/kernel.ld). */
 extern uint8_t __bss_start[];
@@ -52,6 +53,8 @@ void _kcrt0_c(const boot_info_t *boot_info);
  */
 __attribute__((naked, section(".text._kcrt0"), used))
 void _kcrt0(void) {
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
     __asm__ volatile(
         /* Canonicalize x0 for 48-bit VA: sign-extend bit 47 into the top 16 bits. */
         "lsl    x0, x0, #16\n"
@@ -65,15 +68,17 @@ void _kcrt0(void) {
          * VA 0xFFFF8000_4000_0000.. (direct map base for that PA window).
          */
         "mov    x1, sp\n"
-        "movz   x2, #0x4000, lsl #16\n"         /* x2 = 0x4000_0000 */
+        "ldr    x2, =" STR(CAPAZ_RAM_BASE) "\n"
         "sub    x1, x1, x2\n"
-        "ldr    x2, =0xFFFF800040000000\n"      /* HH_PHYS_4000_BASE */
+        "ldr    x2, =" STR(CAPAZ_HH_RAM_BASE) "\n"
         "add    x1, x1, x2\n"
         "mov    sp, x1\n"
 
         /* Tail-call into the real C entry. */
         "b      _kcrt0_c\n"
     );
+#undef STR
+#undef STR_HELPER
 }
 
 void _kcrt0_c(const boot_info_t *boot_info) {
