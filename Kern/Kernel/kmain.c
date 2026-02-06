@@ -112,11 +112,29 @@ static void block_sanity_test(void)
         klog_puts("block: invalid sector size\n");
         return;
     }
+    uint64_t capacity = hal_block_capacity_sectors();
+    if (capacity == 0) {
+        klog_puts("block: invalid capacity\n");
+        return;
+    }
+    klog_puts("block: sector_size=");
+    klog_putu64_dec((uint64_t)sector_size);
+    klog_puts(" capacity=");
+    klog_putu64_dec(capacity);
+    klog_putnl();
 
     uint8_t *buf = (uint8_t *)kbuf_alloc(sector_size);
     if (!buf) {
         klog_puts("block: alloc failed\n");
         return;
+    }
+
+    // Negative tests: verify error paths are exercised.
+    if (hal_block_read(0, NULL, 1)) {
+        klog_puts("block: error path failed (NULL buffer)\n");
+    }
+    if (hal_block_read(0, buf, 0)) {
+        klog_puts("block: error path failed (zero blocks)\n");
     }
 
     bool ok = hal_block_read(0, buf, 1);
@@ -244,6 +262,7 @@ static cap_table_t g_kernel_cap_table;
 // seeded explicitly when services are implemented.  We keep g_tick_work_pending
 // to coordinate deferred tick work.
 static volatile bool g_tick_work_pending = false;
+static volatile uint64_t g_tick_count = 0;
 
 static void tick_work_fn(void *arg);
 static void uart_driver_pump(void);
@@ -257,8 +276,6 @@ static void tick_work_fn(void *arg)
     (void)arg;
     /* Mark as no longer pending before doing any work. */
     g_tick_work_pending = false;
-    /* Defer scheduler signal out of IRQ context. */
-    preempt_set_need_resched();
 }
 
 static void uart_driver_pump(void)
@@ -372,6 +389,25 @@ static void uart_driver_pump(void)
     }
 }
 
+static void preempt_test_thread(void *arg)
+{
+    const char *name = (const char *)arg;
+    uint64_t last_tick = 0;
+
+    for (;;) {
+        uint64_t t = g_tick_count;
+        if (t != last_tick && (t % 100) == 0) {
+            klog_puts("preempt: ");
+            klog_puts(name ? name : "?");
+            klog_puts(" tick=");
+            klog_putu64_dec(t);
+            klog_putnl();
+            last_tick = t;
+        }
+        __asm__ volatile("nop");
+    }
+}
+
 /* Timer IRQ handler (allocation-free): ack + enqueue work. */
 static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 {
@@ -379,6 +415,11 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 
     /* Top-half: acknowledge/re-arm the timer. */
     hal_timer_handle_irq();
+
+    g_tick_count++;
+
+    /* Signal scheduler intent directly from IRQ context. */
+    preempt_set_need_resched();
 
     /* Enqueue the deferred tick work item (no allocation in IRQ). */
     if (!g_tick_work_pending) {
@@ -684,6 +725,14 @@ void kmain(const boot_info_t *boot_info)
     }
     core_thr->task = &g_kernel_task;
     sched_enqueue(core_thr);
+
+#if CONFIG_SCHED_PREEMPT_TEST
+    /* Preemption test threads (do not yield). */
+    thread_t *tA = thread_create_named("preempt/A", preempt_test_thread, (void *)"A");
+    thread_t *tB = thread_create_named("preempt/B", preempt_test_thread, (void *)"B");
+    if (tA) sched_enqueue(tA);
+    if (tB) sched_enqueue(tB);
+#endif
 
     irq_global_enable();
 

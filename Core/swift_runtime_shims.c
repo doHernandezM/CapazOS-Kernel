@@ -111,3 +111,38 @@ void *calloc(size_t n, size_t size) {
     cka_memset(p, 0, total);
     return p;
 }
+
+// ---------- RNG helpers (Swift hashing) ----------
+
+static uint64_t shim_rng_state = 0x9E3779B97F4A7C15ULL;
+
+static uint32_t shim_rand_u32(void) {
+    // Xorshift64*
+    uint64_t x = shim_rng_state;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    shim_rng_state = x;
+    return (uint32_t)((x * 0x2545F4914F6CDD1DULL) >> 32);
+}
+
+__attribute__((weak))
+uint32_t arc4random(void) {
+    return shim_rand_u32();
+}
+
+__attribute__((weak))
+void arc4random_buf(void *buf, size_t n) {
+    if (!buf || n == 0) {
+        return;
+    }
+    uint8_t *p = (uint8_t *)buf;
+    size_t i = 0;
+    while (i < n) {
+        uint32_t v = shim_rand_u32();
+        for (int b = 0; b < 4 && i < n; b++, i++) {
+            p[i] = (uint8_t)(v & 0xFFu);
+            v >>= 8;
+        }
+    }
+}

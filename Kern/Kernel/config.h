@@ -28,10 +28,15 @@
  * Cooperative scheduling means:
  *  - IRQ handlers never switch threads.
  *  - Thread switches occur only via explicit yield() (or explicit safe points).
- * A preemptive mode may be introduced in the future.
+ * Preemptive scheduling uses the timer IRQ to switch threads at IRQ exit.
  */
 #ifndef CONFIG_SCHED_COOPERATIVE
-#define CONFIG_SCHED_COOPERATIVE 1
+#define CONFIG_SCHED_COOPERATIVE 0
+#endif
+
+/* Enable simple preemption test threads in kmain. */
+#ifndef CONFIG_SCHED_PREEMPT_TEST
+#define CONFIG_SCHED_PREEMPT_TEST 1
 #endif
 
 #if (CONFIG_TICK_HZ <= 0)

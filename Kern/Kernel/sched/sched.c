@@ -178,6 +178,9 @@ void yield(void) {
     SCHED_ASSERT(prev != NULL, "sched: current is NULL");
     SCHED_ASSERT(prev->rq_next == NULL, "sched: current unexpectedly enqueued");
 
+    // Clear any pending preemption request when we voluntarily yield.
+    preempt_clear_need_resched();
+
     // Only enqueue non-bootstrap runnable threads.
     // Blocked threads must not be re-enqueued.
     if (prev != &bootstrap_thread && prev->state == THREAD_RUNNING) {
@@ -288,8 +291,40 @@ trap_frame_t *sched_irq_exit(trap_frame_t *tf) {
      */
     return tf;
 #else
-    /* When preemptive scheduling is enabled this hook may return a different trap frame. */
-    return tf;
+    /* Preemptive scheduling: switch threads if the timer requested it. */
+    if (!preempt_need_resched()) {
+        return tf;
+    }
+    if (!preemptible()) {
+        return tf;
+    }
+    preempt_clear_need_resched();
+
+    thread_t *next = NULL;
+
+    // Only enqueue the current thread if it's a normal runnable thread.
+    if (cur != &bootstrap_thread && cur->state == THREAD_RUNNING) {
+        // Save the IRQ-return frame pointer so we can resume this thread later.
+        cur->irq_sp = (uint64_t)(uintptr_t)tf;
+        cur->state = THREAD_READY;
+        rq_insert_tail(cur);
+    }
+
+    next = rq_pop_head();
+    if (!next) {
+        cur->state = THREAD_RUNNING;
+        return tf;
+    }
+
+    if (next == cur) {
+        cur->state = THREAD_RUNNING;
+        return tf;
+    }
+
+    SCHED_ASSERT(next->irq_sp != 0, "sched: next thread irq_sp is NULL");
+    next->state = THREAD_RUNNING;
+    s_current = next;
+
+    return (trap_frame_t *)(uintptr_t)next->irq_sp;
 #endif
 }
-

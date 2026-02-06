@@ -168,9 +168,13 @@ struct ConsoleService {
             writeUserOutput("testtask <path> - read-only task (no list)\r\n")
             writeUserOutput("ioreadtest <a> <b> - latency vs background read\r\n")
             writeUserOutput("kerneltest <path> - read kernel file via caps/contracts\r\n")
-            writeUserOutput("fsstats - show FAT32 stats\r\n")
-            writeUserOutput("fsstatsreset - reset FAT32 stats\r\n")
-            writeUserOutput("fstress <path> <iters> <size> <safe|fast> - FAT32 stress test\r\n")
+            writeUserOutput("fsstats - show FS stats\r\n")
+            writeUserOutput("fsstatsreset - reset FS stats\r\n")
+            writeUserOutput("fstress <path> <iters> <size> <safe|fast> - FS stress test\r\n")
+            writeUserOutput("fat16cat <path> - read FAT16 file by path\r\n")
+            writeUserOutput("fat16test <path> <size> <checksum> - FAT16 smoke test\r\n")
+            writeUserOutput("fat32test <path> <size> <checksum> - FAT32 smoke test\r\n")
+            writeUserOutput("fat16crash <path> <data> - simulate FAT16 crash recovery\r\n")
             writeUserOutput("findkernel - locate kernel image\r\n")
             return
         }
@@ -183,18 +187,29 @@ struct ConsoleService {
         
         if bytesEqual(tokens[0], "ls") {
             writeUserOutput("\r\n")
-            if var task = gConsoleTask {
-                if tokens.count >= 2 {
-                    guard let norm = normalizePath(tokens[1]) else {
-                        writeUserOutput("[fs] ls: invalid path\r\n")
-                        return
-                    }
-                    listFat32Directory(task: &task, path: norm)
-                } else {
-                    let root = NormalizedPath(flat: [0x2F], segments: [], isRoot: true)
-                    listFat32Directory(task: &task, path: root)
+            let path: NormalizedPath
+            if tokens.count >= 2 {
+                guard let norm = normalizePath(tokens[1]) else {
+                    writeUserOutput("[fs] ls: invalid path\r\n")
+                    return
                 }
-                gConsoleTask = task
+                path = norm
+            } else {
+                path = NormalizedPath(flat: [0x2F], segments: [], isRoot: true)
+            }
+            guard let entries = fsList(path: path) else {
+                writeUserOutput("[fs] ls: failed\r\n")
+                return
+            }
+            for entry in entries {
+                var line: [UInt8] = [0x20, 0x20]
+                line.append(contentsOf: entry.name)
+                if entry.isDir {
+                    line.append(0x2F)
+                }
+                line.append(0x0D)
+                line.append(0x0A)
+                writeUserOutput(line)
             }
             return
         }
@@ -264,6 +279,10 @@ struct ConsoleService {
                 writeUserOutput("[fs] open: cannot open root\r\n")
                 return
             }
+            if let kind = fsDetectKind(), kind == .fat16 {
+                writeUserOutput("[fs] open: not supported on FAT16\r\n")
+                return
+            }
             let cap = issueFileCap(path: norm.flat, rights: CAP_R_FILE_READ)
             if cap == 0 {
                 writeUserOutput("[fs] open: cap table full\r\n")
@@ -291,6 +310,10 @@ struct ConsoleService {
             }
             if norm.isRoot {
                 writeUserOutput("[fs] openw: cannot open root\r\n")
+                return
+            }
+            if let kind = fsDetectKind(), kind == .fat16 {
+                writeUserOutput("[fs] openw: not supported on FAT16\r\n")
                 return
             }
             var rights: UInt32 = 0
@@ -331,9 +354,101 @@ struct ConsoleService {
                 writeUserOutput("[fs] cat: invalid path\r\n")
                 return
             }
-            if var task = gConsoleTask {
-                readFat32File(task: &task, path: norm)
-                gConsoleTask = task
+            if let data = fsRead(path: norm, intent: IO_INTENT_THROUGHPUT) {
+                writeUserOutput(data)
+                writeUserOutput("\r\n")
+            } else {
+                writeUserOutput("[fs] cat: read failed\r\n")
+            }
+            return
+        }
+
+        if bytesEqual(tokens[0], "fat16cat") {
+            writeUserOutput("\r\n")
+            if tokens.count < 2 {
+                writeUserOutput("[fs] fat16cat: missing path\r\n")
+                return
+            }
+            guard let norm = normalizePath(tokens[1]) else {
+                writeUserOutput("[fs] fat16cat: invalid path\r\n")
+                return
+            }
+            if norm.isRoot {
+                writeUserOutput("[fs] fat16cat: invalid path\r\n")
+                return
+            }
+            if let data = fat16ReadFile(path: norm, intent: IO_INTENT_THROUGHPUT) {
+                writeUserOutput(data)
+                writeUserOutput("\r\n")
+            } else {
+                writeUserOutput("[fs] fat16cat: read failed\r\n")
+            }
+            return
+        }
+
+        if bytesEqual(tokens[0], "fat16test") {
+            writeUserOutput("\r\n")
+            if tokens.count < 4 {
+                writeUserOutput("[fs] fat16test: usage fat16test <path> <size> <checksum>\r\n")
+                return
+            }
+            guard let norm = normalizePath(tokens[1]) else {
+                writeUserOutput("[fs] fat16test: invalid path\r\n")
+                return
+            }
+            let size = parseU32(tokens[2])
+            let sum = parseU32(tokens[3])
+            if size == 0 || sum == 0 {
+                writeUserOutput("[fs] fat16test: invalid size/checksum\r\n")
+                return
+            }
+            if fat16SmokeTest(path: norm, expectedSize: size, expectedChecksum: sum) {
+                writeUserOutput("[fs] fat16test: ok\r\n")
+            } else {
+                writeUserOutput("[fs] fat16test: failed\r\n")
+            }
+            return
+        }
+
+        if bytesEqual(tokens[0], "fat16crash") {
+            writeUserOutput("\r\n")
+            if tokens.count < 3 {
+                writeUserOutput("[fs] fat16crash: usage fat16crash <path> <data>\r\n")
+                return
+            }
+            guard let norm = normalizePath(tokens[1]) else {
+                writeUserOutput("[fs] fat16crash: invalid path\r\n")
+                return
+            }
+            let data = tokens[2]
+            if fat16CrashTest(path: norm, data: data) {
+                writeUserOutput("[fs] fat16crash: ok\r\n")
+            } else {
+                writeUserOutput("[fs] fat16crash: failed\r\n")
+            }
+            return
+        }
+
+        if bytesEqual(tokens[0], "fat32test") {
+            writeUserOutput("\r\n")
+            if tokens.count < 4 {
+                writeUserOutput("[fs] fat32test: usage fat32test <path> <size> <checksum>\r\n")
+                return
+            }
+            guard let norm = normalizePath(tokens[1]) else {
+                writeUserOutput("[fs] fat32test: invalid path\r\n")
+                return
+            }
+            let size = parseU32(tokens[2])
+            let sum = parseU32(tokens[3])
+            if size == 0 || sum == 0 {
+                writeUserOutput("[fs] fat32test: invalid size/checksum\r\n")
+                return
+            }
+            if fat32SmokeTest(path: norm, expectedSize: size, expectedChecksum: sum) {
+                writeUserOutput("[fs] fat32test: ok\r\n")
+            } else {
+                writeUserOutput("[fs] fat32test: failed\r\n")
             }
             return
         }
@@ -352,10 +467,11 @@ struct ConsoleService {
                 writeUserOutput("[fs] write: invalid path\r\n")
                 return
             }
-            if var task = gConsoleTask {
-                let data = tokens[2]
-                writeFat32File(task: &task, path: norm, data: data, safe: true)
-                gConsoleTask = task
+            let data = tokens[2]
+            if fsWrite(path: norm, data: data, safe: true) {
+                writeUserOutput("[fs] write ok\r\n")
+            } else {
+                writeUserOutput("[fs] write failed\r\n")
             }
             return
         }
@@ -417,13 +533,41 @@ struct ConsoleService {
 
         if bytesEqual(tokens[0], "fsstats") {
             writeUserOutput("\r\n")
-            fat32StatsPrint()
+            let s = fsStatsSnapshot()
+            writeUserOutput("[fs] stats\r\n")
+            writeUserOutput(" reads=")
+            writeUserOutput(u64ToDecBytes(s.readOps))
+            writeUserOutput(" bytes=")
+            writeUserOutput(u64ToDecBytes(s.readBytes))
+            writeUserOutput(" (lat=")
+            writeUserOutput(u64ToDecBytes(s.readLatencyOps))
+            writeUserOutput(" thr=")
+            writeUserOutput(u64ToDecBytes(s.readThroughputOps))
+            writeUserOutput(" bg=")
+            writeUserOutput(u64ToDecBytes(s.readBackgroundOps))
+            writeUserOutput(")\r\n")
+            writeUserOutput(" writes=")
+            writeUserOutput(u64ToDecBytes(s.writeOps))
+            writeUserOutput(" bytes=")
+            writeUserOutput(u64ToDecBytes(s.writeBytes))
+            writeUserOutput(" (lat=")
+            writeUserOutput(u64ToDecBytes(s.writeLatencyOps))
+            writeUserOutput(" thr=")
+            writeUserOutput(u64ToDecBytes(s.writeThroughputOps))
+            writeUserOutput(" bg=")
+            writeUserOutput(u64ToDecBytes(s.writeBackgroundOps))
+            writeUserOutput(")\r\n")
+            writeUserOutput(" list=")
+            writeUserOutput(u64ToDecBytes(s.listOps))
+            writeUserOutput(" stat=")
+            writeUserOutput(u64ToDecBytes(s.statOps))
+            writeUserOutput("\r\n")
             return
         }
 
         if bytesEqual(tokens[0], "fsstatsreset") {
             writeUserOutput("\r\n")
-            fat32StatsReset()
+            fsStatsReset()
             writeUserOutput("[fs] stats reset\r\n")
             return
         }
@@ -448,23 +592,27 @@ struct ConsoleService {
                 writeUserOutput("[fs] stress: invalid params\r\n")
                 return
             }
-            let policy: UInt32
+            let safe: Bool
             if bytesEqual(tokens[4], "safe") {
-                policy = FAT32_POLICY_SAFE
+                safe = true
             } else if bytesEqual(tokens[4], "fast") {
-                policy = FAT32_POLICY_FAST
+                safe = false
             } else {
                 writeUserOutput("[fs] stress: invalid policy\r\n")
                 return
             }
-            runFsStressTest(path: norm, iterations: Int(iters), size: Int(size), policy: policy)
+            if fsStressTest(path: norm, iterations: Int(iters), size: Int(size), safe: safe) {
+                writeUserOutput("[fs] stress: ok\r\n")
+            } else {
+                writeUserOutput("[fs] stress: failed\r\n")
+            }
             return
         }
 
         if bytesEqual(tokens[0], "findkernel") {
             writeUserOutput("\r\n")
             if var task = gConsoleTask {
-                locateKernelImage(task: &task)
+                fsLocateKernelImage(task: &task)
                 gConsoleTask = task
             }
             return
