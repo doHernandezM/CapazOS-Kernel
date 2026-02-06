@@ -171,6 +171,9 @@ struct ConsoleService {
             writeUserOutput("fsstats - show FS stats\r\n")
             writeUserOutput("fsstatsreset - reset FS stats\r\n")
             writeUserOutput("fstress <path> <iters> <size> <safe|fast> - FS stress test\r\n")
+            writeUserOutput("qos <interactive|latency|throughput|background>\r\n")
+            writeUserOutput("schedcontract [intent cpu readB writeB memB [window]]\r\n")
+            writeUserOutput("schedstats - show scheduler/accounting stats\r\n")
             writeUserOutput("fat16cat <path> - read FAT16 file by path\r\n")
             writeUserOutput("fat16test <path> <size> <checksum> - FAT16 smoke test\r\n")
             writeUserOutput("fat32test <path> <size> <checksum> - FAT32 smoke test\r\n")
@@ -609,6 +612,180 @@ struct ConsoleService {
             return
         }
 
+        if bytesEqual(tokens[0], "qos") {
+            writeUserOutput("\r\n")
+            if tokens.count < 2 {
+                writeUserOutput("[sched] qos: usage qos <interactive|latency|throughput|background>\r\n")
+                return
+            }
+            guard let intent = parseSchedIntent(tokens[1]) else {
+                writeUserOutput("[sched] qos: invalid intent\r\n")
+                return
+            }
+            var contract = KsSchedContract(intent: intent,
+                                           flags: 0,
+                                           window_ticks: 100,
+                                           cpu_ticks_limit: 85,
+                                           io_read_bytes_limit: 4 * 1024 * 1024,
+                                           io_write_bytes_limit: 2 * 1024 * 1024,
+                                           mem_bytes_limit: 16 * 1024 * 1024)
+            _ = cka_sched_get_contract(&contract)
+            contract.intent = intent
+            let st = withUnsafePointer(to: &contract) { ptr in
+                cka_sched_set_contract(ptr)
+            }
+            _ = cka_sched_set_current_thread_intent(intent)
+            if st == KS_STATUS_OK {
+                writeUserOutput("[sched] qos updated\r\n")
+            } else {
+                writeUserOutput("[sched] qos update failed\r\n")
+            }
+            return
+        }
+
+        if bytesEqual(tokens[0], "schedcontract") {
+            writeUserOutput("\r\n")
+            var contract = KsSchedContract(intent: KS_SCHED_INTENT_INTERACTIVE,
+                                           flags: 0,
+                                           window_ticks: 100,
+                                           cpu_ticks_limit: 0,
+                                           io_read_bytes_limit: 0,
+                                           io_write_bytes_limit: 0,
+                                           mem_bytes_limit: 0)
+            let getSt = cka_sched_get_contract(&contract)
+            if getSt != KS_STATUS_OK {
+                writeUserOutput("[sched] contract unavailable\r\n")
+                return
+            }
+
+            if tokens.count > 1 {
+                if tokens.count < 6 {
+                    writeUserOutput("[sched] usage: schedcontract <intent> <cpuTicks> <readBytes> <writeBytes> <memBytes> [windowTicks]\r\n")
+                    return
+                }
+                guard let intent = parseSchedIntent(tokens[1]) else {
+                    writeUserOutput("[sched] invalid intent\r\n")
+                    return
+                }
+                let cpuLimit = parseU64(tokens[2])
+                let readLimit = parseU64(tokens[3])
+                let writeLimit = parseU64(tokens[4])
+                let memLimit = parseU64(tokens[5])
+                let window = (tokens.count >= 7) ? parseU64(tokens[6]) : contract.window_ticks
+                contract.intent = intent
+                contract.cpu_ticks_limit = cpuLimit
+                contract.io_read_bytes_limit = readLimit
+                contract.io_write_bytes_limit = writeLimit
+                contract.mem_bytes_limit = memLimit
+                contract.window_ticks = window == 0 ? 100 : window
+                let st = withUnsafePointer(to: &contract) { ptr in
+                    cka_sched_set_contract(ptr)
+                }
+                _ = cka_sched_set_current_thread_intent(intent)
+                if st != KS_STATUS_OK {
+                    writeUserOutput("[sched] contract update failed\r\n")
+                    return
+                }
+            }
+
+            writeUserOutput("[sched] contract intent=")
+            writeUserOutput(u64ToDecBytes(UInt64(contract.intent)))
+            writeUserOutput(" window=")
+            writeUserOutput(u64ToDecBytes(contract.window_ticks))
+            writeUserOutput(" cpu=")
+            writeUserOutput(u64ToDecBytes(contract.cpu_ticks_limit))
+            writeUserOutput(" read=")
+            writeUserOutput(u64ToDecBytes(contract.io_read_bytes_limit))
+            writeUserOutput(" write=")
+            writeUserOutput(u64ToDecBytes(contract.io_write_bytes_limit))
+            writeUserOutput(" mem=")
+            writeUserOutput(u64ToDecBytes(contract.mem_bytes_limit))
+            writeUserOutput("\r\n")
+            return
+        }
+
+        if bytesEqual(tokens[0], "schedstats") {
+            writeUserOutput("\r\n")
+            var stats = KsSchedStats(tick_now: 0,
+                                     window_start_tick: 0,
+                                     window_ticks: 0,
+                                     cpu_ticks_total: 0,
+                                     cpu_ticks_window: 0,
+                                     cpu_throttle_events: 0,
+                                     io_read_bytes_total: 0,
+                                     io_read_bytes_window: 0,
+                                     io_write_bytes_total: 0,
+                                     io_write_bytes_window: 0,
+                                     io_throttle_events: 0,
+                                     mem_bytes_current: 0,
+                                     mem_bytes_peak: 0,
+                                     mem_throttle_events: 0,
+                                     io_ops_total: 0,
+                                     io_ops_interactive: 0,
+                                     io_ops_latency: 0,
+                                     io_ops_throughput: 0,
+                                     io_ops_background: 0,
+                                     sched_context_switches: 0,
+                                     sched_yields: 0,
+                                     sched_preempt_switches: 0,
+                                     sched_runs_interactive: 0,
+                                     sched_runs_latency: 0,
+                                     sched_runs_throughput: 0,
+                                     sched_runs_background: 0)
+            let st = cka_sched_get_stats(&stats)
+            if st != KS_STATUS_OK {
+                writeUserOutput("[sched] stats unavailable\r\n")
+                return
+            }
+            writeUserOutput("[sched] tick=")
+            writeUserOutput(u64ToDecBytes(stats.tick_now))
+            writeUserOutput(" window=")
+            writeUserOutput(u64ToDecBytes(stats.window_ticks))
+            writeUserOutput(" cpu=")
+            writeUserOutput(u64ToDecBytes(stats.cpu_ticks_window))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.cpu_ticks_total))
+            writeUserOutput("\r\n")
+            writeUserOutput("[sched] io_r=")
+            writeUserOutput(u64ToDecBytes(stats.io_read_bytes_window))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.io_read_bytes_total))
+            writeUserOutput(" io_w=")
+            writeUserOutput(u64ToDecBytes(stats.io_write_bytes_window))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.io_write_bytes_total))
+            writeUserOutput("\r\n")
+            writeUserOutput("[sched] mem=")
+            writeUserOutput(u64ToDecBytes(stats.mem_bytes_current))
+            writeUserOutput(" peak=")
+            writeUserOutput(u64ToDecBytes(stats.mem_bytes_peak))
+            writeUserOutput("\r\n")
+            writeUserOutput("[sched] switches=")
+            writeUserOutput(u64ToDecBytes(stats.sched_context_switches))
+            writeUserOutput(" preempt=")
+            writeUserOutput(u64ToDecBytes(stats.sched_preempt_switches))
+            writeUserOutput(" yields=")
+            writeUserOutput(u64ToDecBytes(stats.sched_yields))
+            writeUserOutput("\r\n")
+            writeUserOutput("[sched] runs i/l/t/b = ")
+            writeUserOutput(u64ToDecBytes(stats.sched_runs_interactive))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.sched_runs_latency))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.sched_runs_throughput))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.sched_runs_background))
+            writeUserOutput("\r\n")
+            writeUserOutput("[sched] throttles cpu/io/mem = ")
+            writeUserOutput(u64ToDecBytes(stats.cpu_throttle_events))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.io_throttle_events))
+            writeUserOutput("/")
+            writeUserOutput(u64ToDecBytes(stats.mem_throttle_events))
+            writeUserOutput("\r\n")
+            return
+        }
+
         if bytesEqual(tokens[0], "findkernel") {
             writeUserOutput("\r\n")
             if var task = gConsoleTask {
@@ -673,4 +850,31 @@ fileprivate func parseU32(_ token: [UInt8]) -> UInt32 {
         value = value &* 10 &+ digit
     }
     return value
+}
+
+fileprivate func parseU64(_ token: [UInt8]) -> UInt64 {
+    if token.isEmpty { return 0 }
+    var value: UInt64 = 0
+    for b in token {
+        if b < 0x30 || b > 0x39 { return 0 }
+        let digit = UInt64(b - 0x30)
+        value = value &* 10 &+ digit
+    }
+    return value
+}
+
+fileprivate func parseSchedIntent(_ token: [UInt8]) -> UInt32? {
+    if bytesEqual(token, "interactive") {
+        return KS_SCHED_INTENT_INTERACTIVE
+    }
+    if bytesEqual(token, "latency") {
+        return KS_SCHED_INTENT_LATENCY
+    }
+    if bytesEqual(token, "throughput") {
+        return KS_SCHED_INTENT_THROUGHPUT
+    }
+    if bytesEqual(token, "background") {
+        return KS_SCHED_INTENT_BACKGROUND
+    }
+    return nil
 }

@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #include "alloc/slab_cache.h"
+#include "intent.h"
 
 // Forward declaration (defined in irq.h).
 typedef struct trap_frame trap_frame_t;
@@ -117,6 +118,16 @@ typedef struct thread {
     // Saved interrupt mask state for cooperative yield/restore.
     // Only the DAIF.I bit is currently restored (see irq_restore).
     uint64_t saved_daif;
+
+    // Scheduling policy and runtime accounting.
+    uint8_t sched_intent;
+    uint8_t _sched_pad0;
+    uint16_t _sched_pad1;
+    uint32_t _sched_pad2;
+    uint64_t slice_ticks_budget;
+    uint64_t slice_ticks_used;
+    uint64_t runtime_ticks_total;
+    uint64_t preemptions;
 
     thread_state_t state;
 } thread_t;

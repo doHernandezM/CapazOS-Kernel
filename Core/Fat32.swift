@@ -1515,7 +1515,7 @@ func runIoReadTest(pathA: NormalizedPath, pathB: NormalizedPath) {
     taskA.addCap(capA)
     taskB.addCap(capB)
     let contractA = issueFat32Contract(rights: FAT32_CONTRACT_R_READ, policy: FAT32_POLICY_FAST)
-    let contractB = issueFat32Contract(rights: FAT32_CONTRACT_R_READ, policy: FAT32_POLICY_FAST)
+    let contractB = issueFat32Contract(rights: FAT32_CONTRACT_R_READ, policy: FAT32_POLICY_BACKGROUND)
     if contractA != 0 {
         taskA.addContract(contractA)
     }

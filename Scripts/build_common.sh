@@ -916,6 +916,28 @@ build_boot_and_kernel() {
     fi
   fi
 
+  # Defensive de-duplication of object paths before linking.
+  #
+  # Some toolchain/build graph combinations can surface the same object path
+  # more than once, which leads to duplicate-symbol link failures.
+  local _obj=""
+  local _existing=""
+  local _seen=0
+  local _dedup_kern_objs=()
+  for _obj in "${kern_objs[@]}"; do
+    _seen=0
+    for _existing in ${_dedup_kern_objs[@]+"${_dedup_kern_objs[@]}"}; do
+      if [[ "${_existing}" == "${_obj}" ]]; then
+        _seen=1
+        break
+      fi
+    done
+    if [[ "${_seen}" == "0" ]]; then
+      _dedup_kern_objs+=("${_obj}")
+    fi
+  done
+  kern_objs=("${_dedup_kern_objs[@]}")
+
   local boot_elf="${out_dir}/boot.elf"
   local kern_elf="${out_dir}/kernel.elf"
   local boot_bin="${out_dir}/boot.bin"

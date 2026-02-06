@@ -82,6 +82,57 @@ func cka_block_write(_ lba: UInt64, _ count: UInt32, _ buf: UnsafeRawPointer, _ 
 @_silgen_name("cka_block_write_intent")
 func cka_block_write_intent(_ lba: UInt64, _ count: UInt32, _ buf: UnsafeRawPointer, _ bufLen: Int, _ intent: UInt32) -> Int32
 
+struct KsSchedContract {
+    var intent: UInt32
+    var flags: UInt32
+    var window_ticks: UInt64
+    var cpu_ticks_limit: UInt64
+    var io_read_bytes_limit: UInt64
+    var io_write_bytes_limit: UInt64
+    var mem_bytes_limit: UInt64
+}
+
+struct KsSchedStats {
+    var tick_now: UInt64
+    var window_start_tick: UInt64
+    var window_ticks: UInt64
+    var cpu_ticks_total: UInt64
+    var cpu_ticks_window: UInt64
+    var cpu_throttle_events: UInt64
+    var io_read_bytes_total: UInt64
+    var io_read_bytes_window: UInt64
+    var io_write_bytes_total: UInt64
+    var io_write_bytes_window: UInt64
+    var io_throttle_events: UInt64
+    var mem_bytes_current: UInt64
+    var mem_bytes_peak: UInt64
+    var mem_throttle_events: UInt64
+    var io_ops_total: UInt64
+    var io_ops_interactive: UInt64
+    var io_ops_latency: UInt64
+    var io_ops_throughput: UInt64
+    var io_ops_background: UInt64
+    var sched_context_switches: UInt64
+    var sched_yields: UInt64
+    var sched_preempt_switches: UInt64
+    var sched_runs_interactive: UInt64
+    var sched_runs_latency: UInt64
+    var sched_runs_throughput: UInt64
+    var sched_runs_background: UInt64
+}
+
+@_silgen_name("cka_sched_set_contract")
+func cka_sched_set_contract(_ contract: UnsafePointer<KsSchedContract>) -> Int32
+
+@_silgen_name("cka_sched_get_contract")
+func cka_sched_get_contract(_ outContract: UnsafeMutablePointer<KsSchedContract>) -> Int32
+
+@_silgen_name("cka_sched_get_stats")
+func cka_sched_get_stats(_ outStats: UnsafeMutablePointer<KsSchedStats>) -> Int32
+
+@_silgen_name("cka_sched_set_current_thread_intent")
+func cka_sched_set_current_thread_intent(_ intent: UInt32) -> Int32
+
 @_silgen_name("cka_contract_open")
 func cka_contract_open(_ kind: UInt32, _ rights: UInt32, _ policy: UInt32, _ outHandle: UnsafeMutablePointer<UInt64>) -> Int32
 
@@ -126,6 +177,10 @@ let CAP_R_FILE_WRITE_FAST: UInt32 = 1 << 29
 let IO_INTENT_LATENCY: UInt32 = 1
 let IO_INTENT_THROUGHPUT: UInt32 = 2
 let IO_INTENT_BACKGROUND: UInt32 = 3
+let KS_SCHED_INTENT_INTERACTIVE: UInt32 = 0
+let KS_SCHED_INTENT_LATENCY: UInt32 = 1
+let KS_SCHED_INTENT_THROUGHPUT: UInt32 = 2
+let KS_SCHED_INTENT_BACKGROUND: UInt32 = 3
 let FAT32_CONTRACT_R_READ: UInt32 = 1 << 0
 let FAT32_CONTRACT_R_LIST: UInt32 = 1 << 1
 let FAT32_CONTRACT_R_WRITE: UInt32 = 1 << 2
@@ -147,6 +202,20 @@ private func fetchBuildInfo() -> KsBuildInfo? {
                            core_version: nil)
     let st = cka_get_build_info(&info)
     return st == KS_STATUS_OK ? info : nil
+}
+
+private func applyDefaultSchedContract() {
+    var contract = KsSchedContract(intent: KS_SCHED_INTENT_INTERACTIVE,
+                                   flags: 0,
+                                   window_ticks: 100,
+                                   cpu_ticks_limit: 85,
+                                   io_read_bytes_limit: 4 * 1024 * 1024,
+                                   io_write_bytes_limit: 2 * 1024 * 1024,
+                                   mem_bytes_limit: 16 * 1024 * 1024)
+    _ = withUnsafePointer(to: &contract) { ptr in
+        cka_sched_set_contract(ptr)
+    }
+    _ = cka_sched_set_current_thread_intent(contract.intent)
 }
 
 private let ansiRed: [UInt8] = [0x1B, 0x5B, 0x33, 0x31, 0x6D]          // ESC[31m
@@ -437,6 +506,7 @@ public func core_main_swift() -> Int32 {
         gUartCmdEp = cmd
         gUartEvtEp = evt
         gUartReady = (cmd != 0 && evt != 0)
+        applyDefaultSchedContract()
         gConsole = ConsoleService(uart: uart)
         var consoleTask = TaskContext()
         let rootCap = issueFileCap(path: [0x2F], rights: CAP_R_DIR_LIST)

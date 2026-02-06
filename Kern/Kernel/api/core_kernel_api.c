@@ -9,6 +9,9 @@
 #include "platform/dtb.h"
 #include "buildinfo.h"
 #include "hal_block.h"
+#include "task/task.h"
+#include "sched/thread.h"
+#include "config.h"
 
 static cap_table_t *g_core_caps;
 static cap_handle_t g_kernel_log_ep = CAP_HANDLE_INVALID;
@@ -20,6 +23,36 @@ typedef struct ks_contract_entry {
 } ks_contract_entry_t;
 
 static ks_contract_entry_t g_contracts[64];
+
+typedef struct core_alloc_hdr {
+    uint64_t magic;
+    uint64_t size;
+} core_alloc_hdr_t;
+
+#define CORE_ALLOC_MAGIC 0x434150415A4D454DULL
+
+static task_t *cka_current_task(void)
+{
+    thread_t *cur = sched_current();
+    if (!cur) {
+        return NULL;
+    }
+    return cur->task;
+}
+
+static uint32_t cka_sched_intent_from_io(uint32_t io_intent)
+{
+    switch (io_intent) {
+        case KS_IO_INTENT_LATENCY:
+            return (uint32_t)SCHED_INTENT_LATENCY;
+        case KS_IO_INTENT_THROUGHPUT:
+            return (uint32_t)SCHED_INTENT_THROUGHPUT;
+        case KS_IO_INTENT_BACKGROUND:
+            return (uint32_t)SCHED_INTENT_BACKGROUND;
+        default:
+            return (uint32_t)SCHED_INTENT_INTERACTIVE;
+    }
+}
 
 void cka_attach_core_caps(cap_table_t *core_caps)
 {
@@ -120,6 +153,8 @@ ks_status_t cka_block_read(uint64_t lba, uint32_t count, void *buf, size_t buf_l
 
 ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_t buf_len, uint32_t intent)
 {
+    ks_status_t status = KS_STATUS_OK;
+
     if (!buf || count == 0) {
         return KS_STATUS_INVALID_ARG;
     }
@@ -129,6 +164,19 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
     uint64_t need = (uint64_t)count * (uint64_t)hal_block_sector_size();
     if ((uint64_t)buf_len < need) {
         return KS_STATUS_INVALID_ARG;
+    }
+
+    task_t *task = cka_current_task();
+#if CONFIG_RES_CEILINGS
+    if (task && !task_allow_io(task, need, false, sched_ticks_now())) {
+        return KS_STATUS_BUSY;
+    }
+#endif
+
+    thread_t *cur = sched_current();
+    uint32_t old_intent = cur ? (uint32_t)cur->sched_intent : (uint32_t)SCHED_INTENT_INTERACTIVE;
+    if (cur) {
+        sched_set_thread_intent(cur, cka_sched_intent_from_io(intent));
     }
 
     uint32_t max_chunk = count;
@@ -153,11 +201,13 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
         uint64_t tmp_pa = 0;
         void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
         if (!tmp) {
-            return KS_STATUS_OUT_OF_MEMORY;
+            status = KS_STATUS_OUT_OF_MEMORY;
+            break;
         }
         if (!hal_block_read(lba + offset_sectors, tmp, chunk)) {
             kheap_free_pages(tmp, (uint32_t)pages);
-            return KS_STATUS_INTERNAL;
+            status = KS_STATUS_INTERNAL;
+            break;
         }
         memcpy(dst + ((uint64_t)offset_sectors * (uint64_t)sector_size), tmp, (size_t)chunk_bytes);
         kheap_free_pages(tmp, (uint32_t)pages);
@@ -172,7 +222,14 @@ ks_status_t cka_block_read_intent(uint64_t lba, uint32_t count, void *buf, size_
             }
         }
     }
-    return KS_STATUS_OK;
+
+    if (status == KS_STATUS_OK && task) {
+        task_account_io(task, need, false, cka_sched_intent_from_io(intent), sched_ticks_now());
+    }
+    if (cur) {
+        sched_set_thread_intent(cur, old_intent);
+    }
+    return status;
 }
 
 ks_status_t cka_block_write(uint64_t lba, uint32_t count, const void *buf, size_t buf_len)
@@ -182,6 +239,8 @@ ks_status_t cka_block_write(uint64_t lba, uint32_t count, const void *buf, size_
 
 ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf, size_t buf_len, uint32_t intent)
 {
+    ks_status_t status = KS_STATUS_OK;
+
     if (!buf || count == 0) {
         return KS_STATUS_INVALID_ARG;
     }
@@ -191,6 +250,19 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
     uint64_t need = (uint64_t)count * (uint64_t)hal_block_sector_size();
     if ((uint64_t)buf_len < need) {
         return KS_STATUS_INVALID_ARG;
+    }
+
+    task_t *task = cka_current_task();
+#if CONFIG_RES_CEILINGS
+    if (task && !task_allow_io(task, need, true, sched_ticks_now())) {
+        return KS_STATUS_BUSY;
+    }
+#endif
+
+    thread_t *cur = sched_current();
+    uint32_t old_intent = cur ? (uint32_t)cur->sched_intent : (uint32_t)SCHED_INTENT_INTERACTIVE;
+    if (cur) {
+        sched_set_thread_intent(cur, cka_sched_intent_from_io(intent));
     }
 
     uint32_t max_chunk = count;
@@ -215,12 +287,14 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
         uint64_t tmp_pa = 0;
         void *tmp = kheap_alloc_pages((uint32_t)pages, &tmp_pa);
         if (!tmp) {
-            return KS_STATUS_OUT_OF_MEMORY;
+            status = KS_STATUS_OUT_OF_MEMORY;
+            break;
         }
         memcpy(tmp, src + ((uint64_t)offset_sectors * (uint64_t)sector_size), (size_t)chunk_bytes);
         if (!hal_block_write(lba + offset_sectors, tmp, chunk)) {
             kheap_free_pages(tmp, (uint32_t)pages);
-            return KS_STATUS_INTERNAL;
+            status = KS_STATUS_INTERNAL;
+            break;
         }
         kheap_free_pages(tmp, (uint32_t)pages);
 
@@ -233,7 +307,14 @@ ks_status_t cka_block_write_intent(uint64_t lba, uint32_t count, const void *buf
             }
         }
     }
-    return KS_STATUS_OK;
+
+    if (status == KS_STATUS_OK && task) {
+        task_account_io(task, need, true, cka_sched_intent_from_io(intent), sched_ticks_now());
+    }
+    if (cur) {
+        sched_set_thread_intent(cur, old_intent);
+    }
+    return status;
 }
 
 // ---- Contracts ----
@@ -295,11 +376,44 @@ static ks_status_t ks_from_ipc_status(ks_ipc_status_t st)
 
 void *cka_kmalloc(size_t size)
 {
-    return kmalloc(size);
+    size_t total = size + sizeof(core_alloc_hdr_t);
+    task_t *task = cka_current_task();
+#if CONFIG_RES_CEILINGS
+    if (task && !task_allow_mem_alloc(task, (uint64_t)size)) {
+        return NULL;
+    }
+#endif
+
+    core_alloc_hdr_t *hdr = (core_alloc_hdr_t *)kmalloc(total);
+    if (!hdr) {
+        return NULL;
+    }
+    hdr->magic = CORE_ALLOC_MAGIC;
+    hdr->size = (uint64_t)size;
+    if (task) {
+        task_account_mem_alloc(task, (uint64_t)size);
+    }
+    return (void *)(hdr + 1);
 }
 
 void cka_kfree(void *ptr)
 {
+    if (!ptr) {
+        return;
+    }
+
+    core_alloc_hdr_t *hdr = ((core_alloc_hdr_t *)ptr) - 1;
+    if (hdr->magic == CORE_ALLOC_MAGIC) {
+        task_t *task = cka_current_task();
+        if (task) {
+            task_account_mem_free(task, hdr->size);
+        }
+        hdr->magic = 0;
+        kfree(hdr);
+        return;
+    }
+
+    // Fallback for legacy pointers not wrapped by cka_kmalloc.
     kfree(ptr);
 }
 
@@ -368,6 +482,113 @@ void cka_sleep_ticks(uint64_t ticks)
     while (ticks--) {
         yield();
     }
+}
+
+ks_status_t cka_sched_set_contract(const ks_sched_contract_t *contract)
+{
+    if (!contract) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    thread_t *cur = sched_current();
+    if (!cur || !cur->task) {
+        return KS_STATUS_INVALID_STATE;
+    }
+
+    task_contract_t tc = {
+        .intent = contract->intent,
+        .flags = contract->flags,
+        .window_ticks = contract->window_ticks,
+        .cpu_ticks_limit = contract->cpu_ticks_limit,
+        .io_read_bytes_limit = contract->io_read_bytes_limit,
+        .io_write_bytes_limit = contract->io_write_bytes_limit,
+        .mem_bytes_limit = contract->mem_bytes_limit,
+    };
+    task_set_contract(cur->task, &tc, sched_ticks_now());
+    sched_set_thread_intent(cur, tc.intent);
+    return KS_STATUS_OK;
+}
+
+ks_status_t cka_sched_get_contract(ks_sched_contract_t *out_contract)
+{
+    if (!out_contract) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    thread_t *cur = sched_current();
+    if (!cur || !cur->task) {
+        return KS_STATUS_INVALID_STATE;
+    }
+
+    task_contract_t tc = {0};
+    task_get_contract(cur->task, &tc);
+    out_contract->intent = tc.intent;
+    out_contract->flags = tc.flags;
+    out_contract->window_ticks = tc.window_ticks;
+    out_contract->cpu_ticks_limit = tc.cpu_ticks_limit;
+    out_contract->io_read_bytes_limit = tc.io_read_bytes_limit;
+    out_contract->io_write_bytes_limit = tc.io_write_bytes_limit;
+    out_contract->mem_bytes_limit = tc.mem_bytes_limit;
+    return KS_STATUS_OK;
+}
+
+ks_status_t cka_sched_get_stats(ks_sched_stats_t *out_stats)
+{
+    if (!out_stats) {
+        return KS_STATUS_INVALID_ARG;
+    }
+    thread_t *cur = sched_current();
+    if (!cur || !cur->task) {
+        return KS_STATUS_INVALID_STATE;
+    }
+
+    sched_stats_t ss = {0};
+    sched_get_stats(&ss);
+
+    task_stats_t ts = {0};
+    task_get_stats(cur->task, ss.tick_now, &ts);
+
+    out_stats->tick_now = ts.tick_now;
+    out_stats->window_start_tick = ts.window_start_tick;
+    out_stats->window_ticks = ts.window_ticks;
+
+    out_stats->cpu_ticks_total = ts.cpu_ticks_total;
+    out_stats->cpu_ticks_window = ts.cpu_ticks_window;
+    out_stats->cpu_throttle_events = ts.cpu_throttle_events;
+
+    out_stats->io_read_bytes_total = ts.io_read_bytes_total;
+    out_stats->io_read_bytes_window = ts.io_read_bytes_window;
+    out_stats->io_write_bytes_total = ts.io_write_bytes_total;
+    out_stats->io_write_bytes_window = ts.io_write_bytes_window;
+    out_stats->io_throttle_events = ts.io_throttle_events;
+
+    out_stats->mem_bytes_current = ts.mem_bytes_current;
+    out_stats->mem_bytes_peak = ts.mem_bytes_peak;
+    out_stats->mem_throttle_events = ts.mem_throttle_events;
+
+    out_stats->io_ops_total = ts.io_ops_total;
+    out_stats->io_ops_interactive = ts.io_ops_interactive;
+    out_stats->io_ops_latency = ts.io_ops_latency;
+    out_stats->io_ops_throughput = ts.io_ops_throughput;
+    out_stats->io_ops_background = ts.io_ops_background;
+
+    out_stats->sched_context_switches = ss.context_switches;
+    out_stats->sched_yields = ss.yield_calls;
+    out_stats->sched_preempt_switches = ss.preempt_switches;
+    out_stats->sched_runs_interactive = ss.intent_runs_interactive;
+    out_stats->sched_runs_latency = ss.intent_runs_latency;
+    out_stats->sched_runs_throughput = ss.intent_runs_throughput;
+    out_stats->sched_runs_background = ss.intent_runs_background;
+
+    return KS_STATUS_OK;
+}
+
+ks_status_t cka_sched_set_current_thread_intent(uint32_t intent)
+{
+    thread_t *cur = sched_current();
+    if (!cur) {
+        return KS_STATUS_INVALID_STATE;
+    }
+    sched_set_thread_intent(cur, intent);
+    return KS_STATUS_OK;
 }
 
 // ---- Capability operations ----

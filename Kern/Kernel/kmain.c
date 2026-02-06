@@ -380,6 +380,7 @@ static void timer_irq_handler(uint32_t irq, void *ctx, trap_frame_t *tf)
 
     /* Top-half: acknowledge/re-arm the timer. */
     hal_timer_handle_irq();
+    sched_on_timer_tick();
 }
 
 /*
@@ -659,6 +660,20 @@ void kmain(const boot_info_t *boot_info)
     klog_puts(CAPAZ_KERNEL_VERSION);
     klog_putnl();
 
+    klog_puts("Sched: preempt=");
+#if CONFIG_SCHED_COOPERATIVE
+    klog_puts("off");
+#else
+    klog_puts("on");
+#endif
+    klog_puts(" tickless=");
+#if CONFIG_TICKLESS
+    klog_puts("on");
+#else
+    klog_puts("off");
+#endif
+    klog_putnl();
+
     /* Create and enqueue a dedicated Core thread. */
     thread_t *core_thr = thread_create_named("core/main", core_thread_entry, NULL);
     if (!core_thr) {
@@ -668,6 +683,7 @@ void kmain(const boot_info_t *boot_info)
         }
     }
     core_thr->task = &g_kernel_task;
+    sched_set_thread_intent(core_thr, (uint32_t)SCHED_INTENT_INTERACTIVE);
     sched_enqueue(core_thr);
 
     irq_global_enable();

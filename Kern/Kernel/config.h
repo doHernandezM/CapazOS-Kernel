@@ -13,6 +13,11 @@
 #define CONFIG_TICK_HZ 100
 #endif
 
+// Enable timer-driven preemption decisions at IRQ-exit safe points.
+#ifndef CONFIG_PREEMPT
+#define CONFIG_PREEMPT 1
+#endif
+
 /*
  * When enabled, the kernel will not start a periodic timer tick by default.
  * One-shot timer events are expected to be armed explicitly based on the next
@@ -37,6 +42,16 @@
 /* Enable simple preemption test threads in kmain. */
 #ifndef CONFIG_SCHED_PREEMPT_TEST
 #define CONFIG_SCHED_PREEMPT_TEST 0
+#endif
+
+// Enable intent-aware scheduler runqueue selection.
+#ifndef CONFIG_SCHED_INTENT
+#define CONFIG_SCHED_INTENT 1
+#endif
+
+// Enable task-level contract ceilings and accounting hooks.
+#ifndef CONFIG_RES_CEILINGS
+#define CONFIG_RES_CEILINGS 1
 #endif
 
 #if (CONFIG_TICK_HZ <= 0)

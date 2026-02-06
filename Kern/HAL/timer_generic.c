@@ -20,6 +20,8 @@ typedef enum {
 static event_mode_t s_mode = EVENT_MODE_OFF;
 static uint64_t s_period_ticks;
 static uint64_t s_next_deadline;
+static uint64_t s_tick_period_ticks;
+static uint8_t s_tickless_periodic;
 
 static inline uint64_t read_cntfrq(void)
 {
@@ -71,12 +73,14 @@ void event_arm_periodic(uint32_t hz)
     uint64_t period = hz_to_period_ticks(hz);
     if (period == 0) {
         s_mode = EVENT_MODE_OFF;
+        s_tickless_periodic = 0;
         write_cntv_ctl(0);
         return;
     }
 
     s_period_ticks = period;
     s_mode = EVENT_MODE_PERIODIC;
+    s_tickless_periodic = 0;
 
     /* Program the next firing using an absolute compare (CVAL). */
     s_next_deadline = time_now() + s_period_ticks;
@@ -95,6 +99,13 @@ void event_arm_oneshot(uint64_t absolute_deadline)
 
     /* enable=1, imask=0 */
     write_cntv_ctl(0x1);
+}
+
+void event_disable(void)
+{
+    s_mode = EVENT_MODE_OFF;
+    s_tickless_periodic = 0;
+    write_cntv_ctl(0x0);
 }
 
 void event_handle_irq(void)
@@ -120,8 +131,16 @@ void event_handle_irq(void)
         return;
     }
 
+    if (s_mode == EVENT_MODE_ONESHOT && s_tickless_periodic && s_tick_period_ticks != 0) {
+        uint64_t now = time_now();
+        s_next_deadline = now + s_tick_period_ticks;
+        write_cntv_cval(s_next_deadline);
+        return;
+    }
+
     /* One-shot: disarm to avoid refiring on a stale compare. */
     s_mode = EVENT_MODE_OFF;
+    s_tickless_periodic = 0;
     write_cntv_ctl(0x0);
 }
 
@@ -129,12 +148,24 @@ void event_handle_irq(void)
 
 void timer_init_hz(uint32_t hz)
 {
+    s_tick_period_ticks = hz_to_period_ticks(hz);
+    if (s_tick_period_ticks == 0) {
+        event_disable();
+        return;
+    }
+
 #if CONFIG_TICKLESS
-    (void)hz;
-    /* Tickless build: do not start a periodic tick. */
-    s_mode = EVENT_MODE_OFF;
-    write_cntv_ctl(0x0);
+    /*
+     * Tickless mode uses one-shot programming but keeps scheduling ticks
+     * flowing by re-arming the next absolute deadline at each IRQ.
+     */
+    s_tickless_periodic = 1;
+    s_mode = EVENT_MODE_ONESHOT;
+    s_next_deadline = time_now() + s_tick_period_ticks;
+    write_cntv_cval(s_next_deadline);
+    write_cntv_ctl(0x1);
 #else
+    s_tickless_periodic = 0;
     event_arm_periodic(hz);
 #endif
 }
@@ -148,4 +179,3 @@ uint64_t timer_ticks_read(void)
 {
     return s_ticks;
 }
-

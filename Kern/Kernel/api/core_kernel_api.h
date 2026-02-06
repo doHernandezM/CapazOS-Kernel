@@ -14,6 +14,7 @@
 #include "cap/cap_types.h"
 #include "ipc/endpoint.h"
 #include "ks_status.h"
+#include "sched/intent.h"
 
 // Internal capability identifier type used across the Core<->Kernel API.
 // The kernel's canonical handle type is cap_handle_t.
@@ -105,6 +106,62 @@ void cka_yield(void);
 // Placeholder sleep hook. Until the kernel exposes a timer-based sleep,
 // this yields in a loop.
 void cka_sleep_ticks(uint64_t ticks);
+
+typedef enum ks_sched_intent {
+    KS_SCHED_INTENT_INTERACTIVE = SCHED_INTENT_INTERACTIVE,
+    KS_SCHED_INTENT_LATENCY = SCHED_INTENT_LATENCY,
+    KS_SCHED_INTENT_THROUGHPUT = SCHED_INTENT_THROUGHPUT,
+    KS_SCHED_INTENT_BACKGROUND = SCHED_INTENT_BACKGROUND,
+} ks_sched_intent_t;
+
+typedef struct ks_sched_contract {
+    uint32_t intent;
+    uint32_t flags;
+    uint64_t window_ticks;
+    uint64_t cpu_ticks_limit;
+    uint64_t io_read_bytes_limit;
+    uint64_t io_write_bytes_limit;
+    uint64_t mem_bytes_limit;
+} ks_sched_contract_t;
+
+typedef struct ks_sched_stats {
+    uint64_t tick_now;
+    uint64_t window_start_tick;
+    uint64_t window_ticks;
+
+    uint64_t cpu_ticks_total;
+    uint64_t cpu_ticks_window;
+    uint64_t cpu_throttle_events;
+
+    uint64_t io_read_bytes_total;
+    uint64_t io_read_bytes_window;
+    uint64_t io_write_bytes_total;
+    uint64_t io_write_bytes_window;
+    uint64_t io_throttle_events;
+
+    uint64_t mem_bytes_current;
+    uint64_t mem_bytes_peak;
+    uint64_t mem_throttle_events;
+
+    uint64_t io_ops_total;
+    uint64_t io_ops_interactive;
+    uint64_t io_ops_latency;
+    uint64_t io_ops_throughput;
+    uint64_t io_ops_background;
+
+    uint64_t sched_context_switches;
+    uint64_t sched_yields;
+    uint64_t sched_preempt_switches;
+    uint64_t sched_runs_interactive;
+    uint64_t sched_runs_latency;
+    uint64_t sched_runs_throughput;
+    uint64_t sched_runs_background;
+} ks_sched_stats_t;
+
+ks_status_t cka_sched_set_contract(const ks_sched_contract_t *contract);
+ks_status_t cka_sched_get_contract(ks_sched_contract_t *out_contract);
+ks_status_t cka_sched_get_stats(ks_sched_stats_t *out_stats);
+ks_status_t cka_sched_set_current_thread_intent(uint32_t intent);
 
 // ---- Capability operations (Core-callable) ----
 

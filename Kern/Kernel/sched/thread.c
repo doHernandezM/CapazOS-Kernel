@@ -160,6 +160,11 @@ if (!entry) {
 
     t->state = THREAD_READY;
     t->saved_daif = 0; // default: IRQs unmasked
+    t->sched_intent = (uint8_t)SCHED_INTENT_INTERACTIVE;
+    t->slice_ticks_budget = 0;
+    t->slice_ticks_used = 0;
+    t->runtime_ticks_total = 0;
+    t->preemptions = 0;
     return t;
 }
 
@@ -193,4 +198,3 @@ void thread_destroy(thread_t *t) {
 
     slab_free(&g_thread_cache, t);
 }
-

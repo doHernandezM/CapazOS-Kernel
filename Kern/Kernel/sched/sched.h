@@ -8,6 +8,7 @@
 
 
 #include "thread.h"
+#include "intent.h"
 
 // Initialize scheduler state for the currently running context (kmain/bootstrap thread).
 void sched_init_bootstrap(void);
@@ -38,3 +39,25 @@ trap_frame_t *sched_irq_exit(trap_frame_t *tf);
 
 // Return the currently running thread (bootstrap thread included).
 thread_t *sched_current(void);
+
+// Called by the timer IRQ top-half after acknowledging the interrupt.
+void sched_on_timer_tick(void);
+
+// Scheduler-visible tick counter (increments on each timer interrupt).
+uint64_t sched_ticks_now(void);
+
+// Update thread scheduling intent class.
+void sched_set_thread_intent(thread_t *t, uint32_t intent);
+
+typedef struct sched_stats {
+    uint64_t tick_now;
+    uint64_t context_switches;
+    uint64_t yield_calls;
+    uint64_t preempt_switches;
+    uint64_t intent_runs_interactive;
+    uint64_t intent_runs_latency;
+    uint64_t intent_runs_throughput;
+    uint64_t intent_runs_background;
+} sched_stats_t;
+
+void sched_get_stats(sched_stats_t *out_stats);
